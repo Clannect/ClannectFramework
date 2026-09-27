@@ -7,9 +7,12 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-option(CFW_BUILD_TESTS "Build the per-module unit tests" ON)
+# As a subproject (e.g. ClannectEngine's add_subdirectory/FetchContent), only
+# the libraries build: tests, benchmarks and fuzzers are CFW's own business.
+option(CFW_BUILD_TESTS "Build the per-module unit tests" ${PROJECT_IS_TOP_LEVEL})
+option(CFW_BUILD_TOOLS "Build the benchmarks and fuzz targets" ${PROJECT_IS_TOP_LEVEL})
 option(CFW_BUILD_FUZZERS "Build libFuzzer binaries for every parser (Clang only; see fuzz/)" OFF)
-option(CFW_WARNINGS_AS_ERRORS "Treat compiler warnings in CFW's own code as errors" ON)
+option(CFW_WARNINGS_AS_ERRORS "Treat compiler warnings in CFW's own code as errors" ${PROJECT_IS_TOP_LEVEL})
 set(CFW_SANITIZE "" CACHE STRING
     "Sanitizers: a list of address, undefined, thread, or ubsan-trap (UBSan without a runtime; works on MinGW)")
 
@@ -23,8 +26,8 @@ if(CFW_BUILD_TESTS)
     # library appears in sources, build files or linked binaries.
     find_program(CFW_OBJDUMP NAMES objdump llvm-objdump)
     add_test(NAME NoQt COMMAND ${CMAKE_COMMAND}
-        -DROOT=${CMAKE_SOURCE_DIR} -DBINARY_DIR=${CMAKE_BINARY_DIR} -DOBJDUMP=${CFW_OBJDUMP}
-        -P ${CMAKE_SOURCE_DIR}/cmake/CheckNoQt.cmake)
+        -DROOT=${PROJECT_SOURCE_DIR} -DBINARY_DIR=${PROJECT_BINARY_DIR} -DOBJDUMP=${CFW_OBJDUMP}
+        -P ${PROJECT_SOURCE_DIR}/cmake/CheckNoQt.cmake)
     # Its own timeout, so the CI's global --timeout for Wine runs does not apply.
     set_tests_properties(NoQt PROPERTIES LABELS policy TIMEOUT 600)
 endif()
@@ -37,9 +40,12 @@ add_subdirectory(modules/cfw-image)
 add_subdirectory(modules/cfw-text)
 add_subdirectory(modules/cfw-gfx)
 
-add_subdirectory(fuzz)
+if(CFW_BUILD_TOOLS)
+    add_subdirectory(fuzz)
+endif()
 if(CFW_BUILD_TESTS)
     add_subdirectory(testing/tls-interop)
 endif()
-
-add_subdirectory(bench)
+if(CFW_BUILD_TOOLS)
+    add_subdirectory(bench)
+endif()
