@@ -32,6 +32,7 @@ endif()
 add_subdirectory(modules/cfw-core)
 add_subdirectory(modules/cfw-io)
 add_subdirectory(modules/cfw-net)
+add_subdirectory(modules/cfw-image)
 
 add_subdirectory(fuzz)
 
