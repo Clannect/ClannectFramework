@@ -6,9 +6,11 @@ cfw_add_module(cfw-core
     SOURCES
         src/Arena.cpp
         src/Base64.cpp
+        src/Checksum.cpp
         src/ClassInfo.cpp
         src/Color.cpp
         src/Contract.cpp
+        src/Deflate.cpp
         src/Error.cpp
         src/Logger.cpp
         src/Mat3.cpp
@@ -26,6 +28,7 @@ cfw_add_module(cfw-core
 )
 
 cfw_add_test(cfw-core ResultTest)
+cfw_add_test(cfw-core DeflateTest)
 cfw_add_test(cfw-core Utf8Test)
 cfw_add_test(cfw-core StringsTest)
 cfw_add_test(cfw-core NameTest)
