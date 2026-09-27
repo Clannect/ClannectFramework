@@ -461,6 +461,7 @@ struct Iterator {
     bool ignoreZwnj = false;
     bool ignoreZwj = false;
     std::uint32_t mask = 0;
+    std::uint8_t syllable = 0; // match only this syllable (per-syllable lookups; 0: any)
     MatchKind kind = MatchKind::None;
     std::uint32_t data = 0;   // position of the next value to match (u16 array in the table)
     std::uint32_t base = 0;   // coverage offsets are relative to this
@@ -490,6 +491,7 @@ struct Context {
     std::uint32_t lookupMask = 1;
     std::uint32_t lookupProps = 0;
     bool autoZwnj = true;
+    bool perSyllable = false;
     bool autoZwj = true;
     bool random = false;
     int nestingLeft = kMaxNesting;
@@ -620,6 +622,7 @@ void Iterator::reset(std::size_t start, unsigned items) {
     idx = start;
     numItems = items;
     end = c->buffer.len();
+    syllable = c->perSyllable && c->buffer.idx < c->buffer.len() ? c->buffer.cur().syllable : 0;
 }
 
 Iterator::Skip Iterator::maySkip(const GlyphInfo &info) const {
@@ -635,7 +638,7 @@ Iterator::Skip Iterator::maySkip(const GlyphInfo &info) const {
 }
 
 Iterator::Match Iterator::mayMatch(const GlyphInfo &info) const {
-    if (!(info.mask & mask)) {
+    if (!(info.mask & mask) || (syllable != 0 && info.syllable != syllable)) {
         return MatchNo;
     }
     if (kind == MatchKind::None) {
@@ -1563,6 +1566,7 @@ void applyLookups(const FontFace &face, const Gdef &gdef, const LayoutTable &tab
         c.lookupMask = l.mask;
         c.autoZwj = l.autoZwj;
         c.autoZwnj = l.autoZwnj;
+        c.perSyllable = l.perSyllable && table.kind() == TableKind::Gsub;
         c.random = l.random;
         c.lookupProps = c.lookupPropsOf(lookup);
         c.lastBase = -1;

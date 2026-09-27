@@ -276,6 +276,7 @@ def write(source, ms_use, stamp, root, shift):
         use[u] = use_category(u, use_isc.get(u, 'Other'), use_ipc.get(u, 'Not_Applicable'), v['jt'][u],
                               bool(v['DI'][u]), v['gc'][u] or 'Cn')
     indic = indic_categories(isc_of, ipc_of, block_of)
+    constraints = vowel_constraints(os.path.join(ms_use, 'IndicShapingInvalidCluster.txt'), lambda u: v['sc'][u])
 
     records = {}
     record_of = []
@@ -330,6 +331,18 @@ inline constexpr std::uint8_t kStage2[{len(stage2)}] = {{
 {rows(stage2, 24)}
 }};
 
+// Vowel sequences that look like another vowel (the USE script development spec): a dotted circle
+// goes after the first `before` + 1 characters of the sequence. By script (ISO 15924).
+struct VowelConstraint {{
+    char script[5];
+    std::uint8_t length;
+    std::uint8_t before;
+    char32_t sequence[4];
+}};
+inline constexpr VowelConstraint kVowelConstraints[{len(constraints)}] = {{
+{rows(['{"%s", %d, %d, {%s}}' % (sc, len(seq), n, ", ".join("0x%04X" % u for u in seq)) for sc, seq, n in constraints], 2)}
+}};
+
 }} // namespace data
 
 }} // namespace cfw::syllabic
@@ -337,3 +350,61 @@ inline constexpr std::uint8_t kStage2[{len(stage2)}] = {{
     with open(os.path.join(root, 'modules/cfw-text/src/SyllabicTables.inc'), 'w') as f:
         f.write(out)
     print(f'syllabic: {len(records)} records, {len(blocks)} blocks, {len(use)} USE entries, {len(indic)} Indic')
+
+
+# ---- Vowel constraints ----
+
+class _ConstraintSet:
+    """Prohibited sequences of one script, merged as HarfBuzz's generator merges them (a sequence
+    that is a prefix of another replaces it)."""
+
+    def __init__(self, constraint):
+        self.c = constraint
+
+    def add(self, constraint):
+        if not constraint:
+            return
+        first, rest = constraint[0], constraint[1:]
+        if isinstance(self.c, list):
+            if constraint == self.c[:len(constraint)]:
+                self.c = constraint
+            elif self.c != constraint[:len(self.c)]:
+                self.c = {self.c[0]: _ConstraintSet(self.c[1:])}
+        if isinstance(self.c, dict):
+            if first in self.c:
+                self.c[first].add(rest)
+            else:
+                self.c[first] = _ConstraintSet(rest)
+
+    def rules(self, path=(), index=0):
+        """(sequence, n): the sequence to match, and how many of its characters come before the dotted
+        circle, less one."""
+        if isinstance(self.c, list):
+            if len(self.c) <= 1:
+                return [(list(path) + self.c, 0)]
+            return [(list(path) + self.c, index)]
+        out = []
+        for first, rest in sorted(self.c.items()):
+            out += rest.rules(path + (first,), index + 1)
+        return out
+
+
+def vowel_constraints(path, script_of):
+    sets = {}
+    for line in open(path, encoding='utf-8'):
+        line = line.split('#', 1)[0]
+        seq = [int(x, 16) for x in line.split(';')[0].split()]
+        if not seq:
+            continue
+        assert len(seq) >= 2
+        script = script_of(seq[0])
+        if script in sets:
+            sets[script].add(seq)
+        else:
+            sets[script] = _ConstraintSet(seq)
+    rules = []
+    for script in sorted(sets):
+        for seq, n in sets[script].rules():
+            assert 2 <= len(seq) <= 4, seq
+            rules.append((script, seq, n))
+    return rules

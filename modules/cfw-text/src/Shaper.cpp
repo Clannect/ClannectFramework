@@ -6,6 +6,7 @@
 #include <cstring>
 
 #include "OtLayout.h"
+#include "Syllabic.h"
 #include "ArabicFallback.inc"
 #include "cfw/text/Unicode.h"
 
@@ -17,10 +18,26 @@ using unicode::Script;
 namespace {
 
 constexpr std::uint32_t tag(const char (&t)[5]) { return FontFace::tag(t); }
+constexpr std::uint32_t tag4(const char *t) {
+    return static_cast<std::uint32_t>(static_cast<unsigned char>(t[0])) << 24 |
+           static_cast<std::uint32_t>(static_cast<unsigned char>(t[1])) << 16 |
+           static_cast<std::uint32_t>(static_cast<unsigned char>(t[2])) << 8 | static_cast<unsigned char>(t[3]);
+}
 constexpr std::uint32_t kGlobalBit = 1u << 31;
 constexpr unsigned kMaxCombiningMarks = 32;
 
-enum class Engine : std::uint8_t { Default, Arabic, Hebrew, Thai, Hangul };
+enum class Engine : std::uint8_t { Default, Arabic, Hebrew, Thai, Hangul, Use };
+
+// What runs between two GSUB stages.
+enum Pause : std::uint8_t {
+    PauseNone,
+    PauseClearSubstitution, // forget which glyphs were substituted
+    PauseClearSyllables,
+    PauseUseSyllables, // USE: find syllables, set the rphf and joining masks
+    PauseUseRphf,      // USE: a substituted glyph under rphf is a repha
+    PauseUsePref,      // USE: a substituted glyph under pref is a pre-base vowel
+    PauseUseReorder,   // USE: dotted circles, then reordering
+};
 
 // Arabic joining forms, in the order of kArabicFeatures.
 enum ArabicAction : std::uint8_t { Isol, Fina, Fin2, Fin3, Medi, Med2, Init, None };
@@ -176,16 +193,18 @@ SpaceType spaceType(char32_t u) {
 void scriptTags(Script script, std::vector<std::uint32_t> &out) {
     out.clear();
     const auto add = [&](const char (&t)[5]) { out.push_back(tag(t)); };
+    // Indic scripts: the Universal Shaping Engine's tag, then the second
+    // Indic spec's, then the first's.
     switch (script) {
-    case Script::Bengali: add("bng2"); break;
-    case Script::Devanagari: add("dev2"); break;
-    case Script::Gujarati: add("gjr2"); break;
-    case Script::Gurmukhi: add("gur2"); break;
-    case Script::Kannada: add("knd2"); break;
-    case Script::Malayalam: add("mlm2"); break;
-    case Script::Oriya: add("ory2"); break;
-    case Script::Tamil: add("tml2"); break;
-    case Script::Telugu: add("tel2"); break;
+    case Script::Bengali: add("bng3"); add("bng2"); break;
+    case Script::Devanagari: add("dev3"); add("dev2"); break;
+    case Script::Gujarati: add("gjr3"); add("gjr2"); break;
+    case Script::Gurmukhi: add("gur3"); add("gur2"); break;
+    case Script::Kannada: add("knd3"); add("knd2"); break;
+    case Script::Malayalam: add("mlm3"); add("mlm2"); break;
+    case Script::Oriya: add("ory3"); add("ory2"); break;
+    case Script::Tamil: add("tml3"); add("tml2"); break;
+    case Script::Telugu: add("tel3"); add("tel2"); break;
     case Script::Myanmar: add("mym2"); break;
     default: break;
     }
@@ -244,6 +263,68 @@ int joiningColumn(char32_t u) {
     case unicode::JoiningType::D:
     case unicode::JoiningType::C: return 3;
     default: return 0;
+    }
+}
+
+// The scripts HarfBuzz shapes with the Universal Shaping Engine (given a
+// font with the script's own lookups).
+bool isUseScript(Script s) {
+    switch (s) {
+    case Script::Tibetan: case Script::Mongolian: case Script::Sinhala: case Script::Buhid: case Script::Hanunoo:
+    case Script::Tagalog: case Script::Tagbanwa: case Script::Limbu: case Script::TaiLe: case Script::Buginese:
+    case Script::Kharoshthi: case Script::SylotiNagri: case Script::Tifinagh: case Script::Balinese: case Script::Nko:
+    case Script::PhagsPa: case Script::Cham: case Script::KayahLi: case Script::Lepcha: case Script::Rejang:
+    case Script::Saurashtra: case Script::Sundanese: case Script::EgyptianHieroglyphs: case Script::Javanese:
+    case Script::Kaithi: case Script::MeeteiMayek: case Script::TaiTham: case Script::TaiViet: case Script::Batak:
+    case Script::Brahmi: case Script::Mandaic: case Script::Chakma: case Script::Miao: case Script::Sharada:
+    case Script::Takri: case Script::Duployan: case Script::Grantha: case Script::Khojki: case Script::Khudawadi:
+    case Script::Mahajani: case Script::Manichaean: case Script::Modi: case Script::PahawhHmong:
+    case Script::PsalterPahlavi: case Script::Siddham: case Script::Tirhuta: case Script::Ahom: case Script::Multani:
+    case Script::Adlam: case Script::Bhaiksuki: case Script::Marchen: case Script::Newa: case Script::MasaramGondi:
+    case Script::Soyombo: case Script::ZanabazarSquare: case Script::Dogra: case Script::GunjalaGondi:
+    case Script::HanifiRohingya: case Script::Makasar: case Script::Medefaidrin: case Script::OldSogdian:
+    case Script::Sogdian: case Script::Elymaic: case Script::Nandinagari: case Script::NyiakengPuachueHmong:
+    case Script::Wancho: case Script::Chorasmian: case Script::DivesAkuru: case Script::KhitanSmallScript:
+    case Script::Yezidi: case Script::CyproMinoan: case Script::OldUyghur: case Script::Tangsa: case Script::Toto:
+    case Script::Vithkuqi: case Script::Kawi: case Script::NagMundari: case Script::Garay: case Script::GurungKhema:
+    case Script::KiratRai: case Script::OlOnal: case Script::Sunuwar: case Script::Todhri: case Script::TuluTigalari:
+    case Script::BeriaErfe: case Script::Sidetic: case Script::TaiYo: case Script::TolongSiki: case Script::Jurchen:
+    case Script::ProtoCuneiform: case Script::Seal:
+        return true;
+    default: return false;
+    }
+}
+
+bool isIndicScript(Script s) {
+    switch (s) {
+    case Script::Bengali: case Script::Devanagari: case Script::Gujarati: case Script::Gurmukhi: case Script::Kannada:
+    case Script::Malayalam: case Script::Oriya: case Script::Tamil: case Script::Telugu:
+        return true;
+    default: return false;
+    }
+}
+
+// Scripts that join like Arabic (in the Arabic engine or the USE).
+bool hasArabicJoining(Script s) {
+    switch (s) {
+    case Script::Adlam: case Script::Arabic: case Script::Chorasmian: case Script::HanifiRohingya: case Script::Mandaic:
+    case Script::Manichaean: case Script::Mongolian: case Script::Nko: case Script::OldUyghur: case Script::PhagsPa:
+    case Script::PsalterPahlavi: case Script::Sogdian: case Script::Syriac:
+        return true;
+    default: return false;
+    }
+}
+
+void zeroMarkWidths(ot::Buffer &b, bool adjust) {
+    for (std::size_t i = 0; i < b.len(); ++i) {
+        if (ot::isMark(b.info[i])) {
+            if (adjust) {
+                b.pos[i].xOffset -= b.pos[i].xAdvance;
+                b.pos[i].yOffset -= b.pos[i].yAdvance;
+            }
+            b.pos[i].xAdvance = 0;
+            b.pos[i].yAdvance = 0;
+        }
     }
 }
 
@@ -489,6 +570,13 @@ struct Shaper::Plan {
     bool zeroMarks = true;
     bool composeCharacters = true;
     std::uint32_t hangulMasks[4] = {};
+    // The syllabic engines: what runs after each GSUB stage, and their masks.
+    std::vector<std::uint8_t> pauses;
+    std::uint32_t rphfMask = 0;
+    std::uint32_t topographicalMasks[4] = {}; // isol, init, medi, fina
+    bool arabicJoining = false;
+    bool zeroMarksEarly = false;
+    bool shortCircuit = true; // normalisation may keep precomposed characters the font has
     std::uint32_t caltMask = 0;
     // Arabic fallback shaping: lookups made from presentation forms, run
     // after GSUB stage fallbackStage.
@@ -565,10 +653,15 @@ const Shaper::Plan &Shaper::plan(const FontFace &face, Script script, TextDirect
     case Script::Hangul: p->engine = Engine::Hangul; break;
     default: break;
     }
+    const std::uint32_t gsubScript = p->gsub.chosenScript();
+    if ((isUseScript(script) || (isIndicScript(script) && (gsubScript & 0xFF) == '3')) && gsubScript != tag("DFLT") &&
+        gsubScript != tag("latn")) {
+        p->engine = Engine::Use;
+    }
 
     // The features, in HarfBuzz's order and GSUB stages (a stage ends at
     // each pause; lookups within a stage run in lookup-list order).
-    enum : std::uint8_t { Global = 1, ManualZwj = 2, ManualZwnj = 4, HasFallback = 8, Random = 16 };
+    enum : std::uint8_t { Global = 1, ManualZwj = 2, ManualZwnj = 4, HasFallback = 8, Random = 16, PerSyllable = 32 };
     struct Feature {
         std::uint32_t tag;
         std::uint8_t flags;
@@ -578,8 +671,13 @@ const Shaper::Plan &Shaper::plan(const FontFace &face, Script script, TextDirect
     };
     std::vector<Feature> list;
     unsigned stage = 0;
+    std::vector<std::pair<unsigned, std::uint8_t>> pauses;
     const auto add = [&](std::uint32_t t, std::uint8_t flags, std::uint32_t value = 1) {
         list.push_back({t, flags, value, (flags & Global) ? value : 0u, stage});
+    };
+    const auto pause = [&](std::uint8_t action) {
+        pauses.emplace_back(stage, action);
+        ++stage;
     };
     add(tag("rvrn"), Global);
     ++stage;
@@ -598,6 +696,33 @@ const Shaper::Plan &Shaper::plan(const FontFace &face, Script script, TextDirect
         add(tag("ljmo"), 0);
         add(tag("vjmo"), 0);
         add(tag("tjmo"), 0);
+    }
+    if (p->engine == Engine::Use) {
+        constexpr std::uint8_t Zs = ManualZwj | PerSyllable;
+        pause(PauseUseSyllables);
+        add(tag("locl"), Global | PerSyllable);
+        add(tag("ccmp"), Global | PerSyllable);
+        add(tag("nukt"), Global | PerSyllable);
+        add(tag("akhn"), Global | Zs);
+        pause(PauseClearSubstitution);
+        add(tag("rphf"), Zs);
+        pause(PauseUseRphf);
+        pause(PauseClearSubstitution);
+        add(tag("pref"), Global | Zs);
+        pause(PauseUsePref);
+        for (const char *f : {"rkrf", "abvf", "blwf", "half", "pstf", "vatu", "cjct"}) {
+            add(tag4(f), Global | Zs);
+        }
+        pause(PauseUseReorder);
+        pause(PauseClearSyllables);
+        add(tag("isol"), 0);
+        add(tag("init"), 0);
+        add(tag("medi"), 0);
+        add(tag("fina"), 0);
+        pause(PauseNone);
+        for (const char *f : {"abvs", "blws", "haln", "pres", "psts"}) {
+            add(tag4(f), Global | ManualZwj);
+        }
     }
     if (p->engine == Engine::Arabic) {
         add(tag("stch"), Global);
@@ -646,6 +771,10 @@ const Shaper::Plan &Shaper::plan(const FontFace &face, Script script, TextDirect
         add(tag("calt"), 0); // its own mask bit, so jamo can be kept out of it
     }
     const unsigned stages = stage + 1;
+    p->pauses.assign(stages, PauseNone);
+    for (const auto &[at, action] : pauses) {
+        p->pauses[at] = action;
+    }
 
     // Merge duplicates: the first keeps its flags (but global-ness and the
     // fallback flag merge in) and the earliest stage.
@@ -714,8 +843,9 @@ const Shaper::Plan &Shaper::plan(const FontFace &face, Script script, TextDirect
         const bool autoZwj = !(f.flags & ManualZwj);
         const bool autoZwnj = !(f.flags & ManualZwnj);
         const bool random = (f.flags & Random) != 0;
+        const bool perSyllable = (f.flags & PerSyllable) != 0;
         for (const std::uint16_t l : gsubLookups) {
-            p->gsubStages[f.stage].push_back({l, mask, autoZwnj, autoZwj, random});
+            p->gsubStages[f.stage].push_back({l, mask, autoZwnj, autoZwj, random, perSyllable});
         }
         for (const std::uint16_t l : gposLookups) {
             gpos.push_back({l, mask, autoZwnj, autoZwj, random});
@@ -729,6 +859,8 @@ const Shaper::Plan &Shaper::plan(const FontFace &face, Script script, TextDirect
         }
         if (f.tag == tag("rlig")) {
             rligMask = oneMask;
+        } else if (f.tag == tag("rphf")) {
+            p->rphfMask = oneMask;
         }
         if (f.tag == tag("ljmo")) {
             p->hangulMasks[1] = oneMask;
@@ -802,7 +934,7 @@ const Shaper::Plan &Shaper::plan(const FontFace &face, Script script, TextDirect
     // Hebrew in it); the kern table unless GPOS kerns this script (not for
     // Thai and Lao); without GPOS, marks are placed by their bounding boxes
     // (except in Thai and Lao).
-    const bool fallbackPosition = p->engine != Engine::Thai;
+    const bool fallbackPosition = p->engine != Engine::Thai && p->engine != Engine::Use;
     const bool disableGpos = p->engine == Engine::Hebrew && p->gpos.chosenScript() != tag("hebr");
     p->applyGpos = !disableGpos && p->gpos.present();
     p->applyKern = (!p->hasGposKern || !p->applyGpos) && ot::hasKernTable(face) && fallbackPosition;
@@ -811,6 +943,15 @@ const Shaper::Plan &Shaper::plan(const FontFace &face, Script script, TextDirect
     p->fallbackMarkPositioning = p->adjustMarkOffsets && fallbackPosition;
     p->zeroMarks = p->engine != Engine::Hangul && (!p->applyKern || !ot::hasMachineKerning(face));
     p->composeCharacters = p->engine != Engine::Hangul; // HarfBuzz's normalisation mode "none" for Hangul
+    p->zeroMarksEarly = p->engine == Engine::Use;
+    p->shortCircuit = p->engine != Engine::Use;
+    p->arabicJoining = p->engine == Engine::Use && hasArabicJoining(script);
+    if (p->engine == Engine::Use && !p->arabicJoining) {
+        for (std::size_t k = 0; k < 4; ++k) {
+            const std::size_t form = k == 0 ? Isol : k == 1 ? Init : k == 2 ? Medi : Fina;
+            p->topographicalMasks[k] = p->arabicMasks[form];
+        }
+    }
     p->thaiPua = script == Script::Thai && !p->gsub.foundScript();
     // Arabic fonts without the joining forms: forms and ligatures from the
     // presentation forms the font maps.
@@ -843,6 +984,7 @@ struct Normalizer {
     bool hasGposMark;
     ot::Buffer &b;
     bool recompose = true; // false: decompose only what the font lacks, never recompose
+    bool shortCircuit = true; // false: decompose characters without marks too, if the font has the parts
 
     // A character replacing the current one (a decomposition part): its
     // own Unicode properties.
@@ -859,6 +1001,9 @@ struct Normalizer {
         b.nextGlyph();
     }
     bool compose(char32_t a, char32_t c, char32_t &ab) const {
+        if (engine == Engine::Use && unicode::isMark(unicode::generalCategory(a))) {
+            return false; // the USE never composes a mark with a mark
+        }
         if (unicode::compose(a, c, ab)) {
             return true;
         }
@@ -976,7 +1121,7 @@ struct Normalizer {
                 --end; // leave one base for the marks
             }
             while (b.idx < end) {
-                decomposeCurrent(true);
+                decomposeCurrent(shortCircuit);
             }
             if (b.idx == count) {
                 break;
@@ -1788,6 +1933,9 @@ void Shaper::shape(const FontFace &face, Span<const char32_t> text, const ShapeO
     if (p.engine == Engine::Hangul) {
         hangulPreprocess(face, b);
     }
+    if (p.engine == Engine::Use) {
+        syllabic::insertVowelConstraintCircles(b, script);
+    }
     if (p.engine == Engine::Thai) {
         decomposeSaraAm(b);
         if (p.thaiPua) {
@@ -1806,7 +1954,7 @@ void Shaper::shape(const FontFace &face, Span<const char32_t> text, const ShapeO
         }
     }
 
-    Normalizer{face, p.engine, p.hasGposMark, b, p.composeCharacters}.run();
+    Normalizer{face, p.engine, p.hasGposMark, b, p.composeCharacters, p.shortCircuit}.run();
     if (p.engine == Engine::Hangul) {
         for (ot::GlyphInfo &g : b.info) {
             g.mask |= p.hangulMasks[g.shaperAction & 3];
@@ -1848,7 +1996,7 @@ void Shaper::shape(const FontFace &face, Span<const char32_t> text, const ShapeO
             i = end - 1;
         }
     }
-    if (p.engine == Engine::Arabic) {
+    if (p.engine == Engine::Arabic || p.arabicJoining) {
         std::size_t prev = static_cast<std::size_t>(-1);
         unsigned state = 0;
         for (std::size_t i = 0; i < b.len(); ++i) {
@@ -1866,11 +2014,22 @@ void Shaper::shape(const FontFace &face, Span<const char32_t> text, const ShapeO
             prev = i;
             state = e.next;
         }
+        if (script == Script::Mongolian) { // free variation selectors take their base's form
+            for (std::size_t i = 1; i < b.len(); ++i) {
+                const char32_t u = b.info[i].codepoint;
+                if ((u >= 0x180B && u <= 0x180D) || u == 0x180F) {
+                    b.info[i].shaperAction = b.info[i - 1].shaperAction;
+                }
+            }
+        }
         for (ot::GlyphInfo &g : b.info) {
             if (g.shaperAction < 7) {
                 g.mask |= p.arabicMasks[g.shaperAction];
             }
         }
+    }
+    if (p.engine == Engine::Use) {
+        syllabic::setUseCategories(b);
     }
     for (const Plan::RangedFeature &f : p.ranged) {
         const std::uint32_t value = (f.value << f.shift) & f.mask;
@@ -1901,8 +2060,111 @@ void Shaper::shape(const FontFace &face, Span<const char32_t> text, const ShapeO
             g.glyphProps = p.gdef.glyphProps(g.glyph);
         }
     }
+    // What runs after each GSUB stage.
+    bool broken = false;
+    const auto forEachSyllable = [&](auto &&f) {
+        for (std::size_t start = 0; start < b.len();) {
+            const std::size_t end = syllabic::nextSyllable(b, start);
+            f(start, end);
+            start = end;
+        }
+    };
+    const auto runPause = [&](Pause pause) {
+        switch (pause) {
+        case PauseNone: break;
+        case PauseClearSubstitution:
+            for (ot::GlyphInfo &g : b.info) {
+                g.glyphProps &= static_cast<std::uint16_t>(~ot::kSubstituted);
+            }
+            break;
+        case PauseClearSyllables:
+            for (ot::GlyphInfo &g : b.info) {
+                g.syllable = 0;
+            }
+            break;
+        case PauseUseSyllables: {
+            broken = syllabic::findUseSyllables(b);
+            // rphf applies to a leading repha, else to the first three glyphs.
+            if (p.rphfMask) {
+                forEachSyllable([&](std::size_t start, std::size_t end) {
+                    const bool repha = static_cast<syllabic::UseCat>(b.info[start].category) == syllabic::UseCat::R;
+                    const std::size_t limit = repha ? 1 : std::min<std::size_t>(3, end - start);
+                    for (std::size_t i = start; i < start + limit; ++i) {
+                        b.info[i].mask |= p.rphfMask;
+                    }
+                });
+            }
+            // Scripts that do not join like Arabic: clusters take isolated,
+            // initial, medial and final forms.
+            std::uint32_t all = 0;
+            for (const std::uint32_t m : p.topographicalMasks) {
+                all |= m;
+            }
+            if (all == 0) {
+                break;
+            }
+            enum { Isolated, Initial, Medial, Final, NoForm };
+            int last = NoForm;
+            std::size_t lastStart = 0;
+            forEachSyllable([&](std::size_t start, std::size_t end) {
+                const unsigned type = b.info[start].syllable & 0x0Fu;
+                if (type == syllabic::UseHieroglyph || type == syllabic::UseNonCluster) {
+                    last = NoForm;
+                } else {
+                    const bool join = last == Final || last == Isolated;
+                    if (join) {
+                        last = last == Final ? Medial : Initial;
+                        for (std::size_t i = lastStart; i < start; ++i) {
+                            b.info[i].mask = (b.info[i].mask & ~all) | p.topographicalMasks[last];
+                        }
+                    }
+                    last = join ? Final : Isolated;
+                    for (std::size_t i = start; i < end; ++i) {
+                        b.info[i].mask = (b.info[i].mask & ~all) | p.topographicalMasks[last];
+                    }
+                }
+                lastStart = start;
+            });
+            break;
+        }
+        case PauseUseRphf:
+            if (p.rphfMask) {
+                forEachSyllable([&](std::size_t start, std::size_t end) {
+                    for (std::size_t i = start; i < end && (b.info[i].mask & p.rphfMask); ++i) {
+                        if (ot::isSubstituted(b.info[i])) {
+                            b.info[i].category = static_cast<std::uint8_t>(syllabic::UseCat::R);
+                            break;
+                        }
+                    }
+                });
+            }
+            break;
+        case PauseUsePref:
+            forEachSyllable([&](std::size_t start, std::size_t end) {
+                for (std::size_t i = start; i < end; ++i) {
+                    if (ot::isSubstituted(b.info[i])) {
+                        b.info[i].category = static_cast<std::uint8_t>(syllabic::UseCat::VPre);
+                        break;
+                    }
+                }
+            });
+            break;
+        case PauseUseReorder:
+            if (broken) {
+                syllabic::insertDottedCircles(face, b, syllabic::UseBroken,
+                                              static_cast<std::uint8_t>(syllabic::UseCat::B),
+                                              static_cast<int>(syllabic::UseCat::R));
+            }
+            syllabic::reorderUse(b);
+            break;
+        }
+    };
+    for (ot::GlyphInfo &g : b.info) {
+        g.syllable = 0;
+    }
     for (std::size_t stage = 0; stage < p.gsubStages.size(); ++stage) {
         ot::applyLookups(face, p.gdef, p.gsub, p.gsubStages[stage], b);
+        runPause(static_cast<Pause>(p.pauses[stage]));
         if (stage == p.fallbackStage && !p.fallbackLookups.empty()) {
             for (const ot::PlannedLookup &l : p.fallbackLookups) {
                 ot::applyLookups(face, p.gdef, p.fallbackTable, Span<const ot::PlannedLookup>(&l, 1), b);
@@ -1950,6 +2212,9 @@ void Shaper::shape(const FontFace &face, Span<const char32_t> text, const ShapeO
     }
     b.idx = 0;
     b.haveOutput = false;
+    if (p.zeroMarks && p.zeroMarksEarly) { // the USE zeroes marks before GPOS
+        zeroMarkWidths(b, p.adjustMarkOffsets && !b.backward);
+    }
     if (p.applyGpos) {
         ot::applyLookups(face, p.gdef, p.gpos, p.gposLookups, b);
     }
@@ -1957,17 +2222,8 @@ void Shaper::shape(const FontFace &face, Span<const char32_t> text, const ShapeO
         (void)ot::applyKernTable(face, p.gdef, p.kernMask, b);
     }
     const bool adjust = p.adjustMarkOffsets && !b.backward;
-    if (p.zeroMarks) { // marks take no space (by GDEF class, after positioning)
-        for (std::size_t i = 0; i < b.len(); ++i) {
-            if (ot::isMark(b.info[i])) {
-                if (adjust) {
-                    b.pos[i].xOffset -= b.pos[i].xAdvance;
-                    b.pos[i].yOffset -= b.pos[i].yAdvance;
-                }
-                b.pos[i].xAdvance = 0;
-                b.pos[i].yAdvance = 0;
-            }
-        }
+    if (p.zeroMarks && !p.zeroMarksEarly) { // marks take no space (by GDEF class, after positioning)
+        zeroMarkWidths(b, adjust);
     }
     for (std::size_t i = 0; i < b.len(); ++i) {
         if (ot::isDefaultIgnorable(b.info[i])) {

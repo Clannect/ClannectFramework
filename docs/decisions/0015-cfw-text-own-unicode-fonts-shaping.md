@@ -101,7 +101,7 @@ findings; the `hostileData` test adds every truncation and random corruption of 
 **Not supported yet:** variable fonts (`fvar`, `gvar`, CFF2), vertical metrics, colour and bitmap glyphs,
 WOFF/WOFF2, and the deprecated `seac` accent form of `endchar`.
 
-## Shaping (done for the default, Arabic, Hebrew and Thai engines)
+## Shaping (done for the default, Arabic, Hebrew, Thai, Hangul and Universal Shaping engines)
 
 `Shaper::shape(face, text, options, out)` turns a run of one script and direction into glyph ids, clusters,
 advances and offsets. It is modelled on HarfBuzz 13 and matches it exactly (every glyph, cluster and
@@ -125,11 +125,13 @@ linked. The pipeline:
    - Spaces and U+2011 the font lacks fall back to the space and hyphen glyphs.
 3. **The plan**, cached per face, script, direction, language and features, is built as HarfBuzz's map
    builder builds it:
-   - Script and language system selection, with Indic v2 tags and the DFLT, dflt and latn fallbacks.
+   - Script and language system selection, with the Indic USE (`dev3`) and v2 tags and the DFLT, dflt and
+     latn fallbacks.
    - Features in HarfBuzz's order and GSUB stages, including the Arabic pauses. Duplicates merge.
    - Mask bits: a shared global bit, plus bits for non-boolean and ranged features.
    - Per-stage lookups, sorted and merged, and the required feature.
-   - The engine: default, Arabic, which also serves Syriac in fonts made for it, Hebrew, or Thai/Lao.
+   - The engine: default, Arabic, which also serves Syriac in fonts made for it, Hebrew, Thai/Lao, Hangul,
+     or the Universal Shaping Engine (below).
 4. **Masks:** automatic fractions (`frac`, `numr`, `dnom` around U+2044), Arabic joining (HarfBuzz's
    state machine, with Syriac Alaph and Dalath-Rish), and ranged user features.
 5. **GSUB:**
@@ -149,13 +151,32 @@ linked. The pipeline:
 7. **Output:** the reversal for right-to-left runs, and default ignorables become the space glyph with no
    advance.
 
+**Hangul:** jamo compose into the syllables the font has; syllables it lacks, or that a trailing jamo
+follows, decompose into jamo marked for `ljmo`/`vjmo`/`tjmo`; tone marks move before their syllable.
+
+**The Universal Shaping Engine** serves the 90-odd scripts HarfBuzz gives it (Tibetan, Mongolian, Sinhala,
+Javanese, Balinese, N'Ko, Tai Tham, Chakma and more), and Indic scripts in fonts with `dev3`-style tags:
+
+- **Categories:** `tools/unicode/syllabic.py` derives each character's USE category (and the Indic, Khmer
+  and Myanmar categories and positions, for the engines still to come) from the UCD and Microsoft's USE
+  additions, with HarfBuzz's adjustments. The generated `SyllabicTables.inc` equals HarfBuzz's tables on
+  every code point.
+- **Syllables:** the USE grammar is written with small regular-expression combinators and compiled once to
+  a DFA. The scanner has Ragel's semantics (longest match, the first pattern on a tie), so syllables split
+  exactly as HarfBuzz's machine splits them, including its filtering of CGJ and of ZWNJ before a mark.
+- **Pipeline:** prohibited vowel sequences get a dotted circle; normalisation decomposes even characters
+  the font has; the GSUB stages run per syllable with pauses between them (repha and pre-base forms
+  recorded, substitution flags cleared); broken syllables get a dotted circle; repha and pre-base vowels
+  are reordered; clusters take isolated/initial/medial/final forms, or Arabic joining in the scripts that
+  join; marks are zeroed before GPOS.
+
 **Checked against HarfBuzz (`ShaperTest`, committed):**
 
 | Font | Covers | Cases |
 |---|---|---:|
-| DejaVu Sans | Real GSUB/GPOS for Latin, Greek, Cyrillic, Arabic, Hebrew and more | 2,117 |
+| DejaVu Sans | Real GSUB/GPOS for Latin, Greek, Cyrillic, Arabic, Hebrew, N'Ko, Tifinagh and more | 2,123 |
 | `CfwTestLayout.ttf` | Built with fontTools to use every lookup type and subtable format, the required feature, a language system and `kern` formats 0 and 2 | 3,079 |
-| `CfwTestPlain.ttf` / `.otf` | DejaVu without layout tables: box-placed marks (glyf and CFF), Arabic fallback forms, Hebrew presentation forms, legacy kerning | 1,617 / 1,117 |
+| `CfwTestPlain.ttf` / `.otf` | DejaVu without layout tables: box-placed marks (glyf and CFF), Arabic fallback forms, Hebrew presentation forms, legacy kerning | 1,623 / 1,123 |
 
 The cases are a fixed corpus plus random strings from per-script pools. The corpus covers:
 
@@ -163,13 +184,16 @@ The cases are a fixed corpus plus random strings from per-script pools. The corp
 - spaces, ignorables, joiners and variation sequences;
 - emoji sequences and fractions;
 - Arabic joining and lam-alef;
-- Hebrew points, Thai and Lao;
+- Hebrew points, Thai and Lao, Hangul;
+- syllables of USE scripts, broken ones and prohibited vowel sequences;
 - features on, off and ranged;
 - forced directions and a language system.
 
 In development, every font in the container was also compared with 3,118 cases each: 61 files, among them
 FreeSerif, Liberation, IPA Gothic, WenQuanYi, Loma (Thai) and Unifont (Arabic without GSUB). All of them
-match, except NKo in a font without GSUB, because that goes to the Universal Shaping Engine (below).
+match. The Hangul engine matched on WenQuanYi Zen Hei, Unifont and IPA Gothic, and the Universal Shaping
+Engine on Noto Sans Javanese, Balinese, Sinhala, Tai Tham, Chakma, Mongolian and N'Ko, with 1,500 random
+strings from each script's whole block (most of them broken syllables): 1,617 cases per font, all equal.
 
 **Fuzzing:** `FuzzShape` shapes arbitrary text in the test fonts and in `CfwTestLayout` with patched table
 bytes. It ran 245,000 inputs with no findings, and 1,726 of them are the committed corpus. `ShaperTest`
@@ -177,8 +201,8 @@ also shapes 400 corrupted and truncated copies of the layout font.
 
 **Not yet:**
 
-- The complex-script engines: Indic, Khmer, Myanmar, Hangul and the Universal Shaping Engine. Those
-  scripts shape with the default engine, which differs from HarfBuzz once a font has their script tags.
+- The Indic (v1/v2 tags), Khmer and Myanmar engines. Those scripts shape with the default engine, which
+  differs from HarfBuzz once a font has their script tags.
 - Arabic `stch` stretching, and Windows-1256 legacy Arabic fonts.
 - Vertical text, variable fonts, AAT (`morx`, `kerx`, `trak`), and `kern` state machines (formats 1 and 3).
 

@@ -1163,6 +1163,67 @@ inline constexpr std::uint8_t kStage2[13824] = {
     7, 7, 7, 7, 7, 7, 7, 7, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5,
 };
 
+// Vowel sequences that look like another vowel (the USE script development spec): a dotted circle
+// goes after the first `before` + 1 characters of the sequence. By script (ISO 15924).
+struct VowelConstraint {
+    char script[5];
+    std::uint8_t length;
+    std::uint8_t before;
+    char32_t sequence[4];
+};
+inline constexpr VowelConstraint kVowelConstraints[100] = {
+    {"Beng", 2, 0, {0x0985, 0x09BE}}, {"Beng", 2, 0, {0x098B, 0x09C3}},
+    {"Beng", 2, 0, {0x098C, 0x09E2}}, {"Brah", 2, 0, {0x11005, 0x11038}},
+    {"Brah", 2, 0, {0x1100B, 0x1103E}}, {"Brah", 2, 0, {0x1100F, 0x11042}},
+    {"Deva", 2, 0, {0x0905, 0x093A}}, {"Deva", 2, 0, {0x0905, 0x093B}},
+    {"Deva", 2, 0, {0x0905, 0x093E}}, {"Deva", 2, 0, {0x0905, 0x0945}},
+    {"Deva", 2, 0, {0x0905, 0x0946}}, {"Deva", 2, 0, {0x0905, 0x0949}},
+    {"Deva", 2, 0, {0x0905, 0x094A}}, {"Deva", 2, 0, {0x0905, 0x094B}},
+    {"Deva", 2, 0, {0x0905, 0x094C}}, {"Deva", 2, 0, {0x0905, 0x094F}},
+    {"Deva", 2, 0, {0x0905, 0x0956}}, {"Deva", 2, 0, {0x0905, 0x0957}},
+    {"Deva", 2, 0, {0x0906, 0x093A}}, {"Deva", 2, 0, {0x0906, 0x0945}},
+    {"Deva", 2, 0, {0x0906, 0x0946}}, {"Deva", 2, 0, {0x0906, 0x0947}},
+    {"Deva", 2, 0, {0x0906, 0x0948}}, {"Deva", 2, 0, {0x0909, 0x0941}},
+    {"Deva", 2, 0, {0x090F, 0x0945}}, {"Deva", 2, 0, {0x090F, 0x0946}},
+    {"Deva", 2, 0, {0x090F, 0x0947}}, {"Deva", 3, 1, {0x0930, 0x094D, 0x0907}},
+    {"Gujr", 2, 0, {0x0A85, 0x0ABE}}, {"Gujr", 2, 0, {0x0A85, 0x0AC5}},
+    {"Gujr", 2, 0, {0x0A85, 0x0AC7}}, {"Gujr", 2, 0, {0x0A85, 0x0AC8}},
+    {"Gujr", 2, 0, {0x0A85, 0x0AC9}}, {"Gujr", 2, 0, {0x0A85, 0x0ACB}},
+    {"Gujr", 2, 0, {0x0A85, 0x0ACC}}, {"Gujr", 2, 0, {0x0AC5, 0x0ABE}},
+    {"Guru", 2, 0, {0x0A05, 0x0A3E}}, {"Guru", 2, 0, {0x0A05, 0x0A48}},
+    {"Guru", 2, 0, {0x0A05, 0x0A4C}}, {"Guru", 2, 0, {0x0A72, 0x0A3F}},
+    {"Guru", 2, 0, {0x0A72, 0x0A40}}, {"Guru", 2, 0, {0x0A72, 0x0A47}},
+    {"Guru", 2, 0, {0x0A73, 0x0A41}}, {"Guru", 2, 0, {0x0A73, 0x0A42}},
+    {"Guru", 2, 0, {0x0A73, 0x0A4B}}, {"Khoj", 2, 0, {0x11200, 0x1122C}},
+    {"Khoj", 2, 0, {0x11200, 0x11231}}, {"Khoj", 2, 0, {0x11200, 0x11233}},
+    {"Khoj", 2, 0, {0x11206, 0x1122C}}, {"Khoj", 2, 0, {0x1122C, 0x11230}},
+    {"Khoj", 2, 0, {0x1122C, 0x11231}}, {"Khoj", 2, 0, {0x11240, 0x1122E}},
+    {"Knda", 2, 0, {0x0C89, 0x0CBE}}, {"Knda", 2, 0, {0x0C8B, 0x0CBE}},
+    {"Knda", 2, 0, {0x0C92, 0x0CCC}}, {"Mlym", 2, 0, {0x0D07, 0x0D57}},
+    {"Mlym", 2, 0, {0x0D09, 0x0D57}}, {"Mlym", 2, 0, {0x0D0E, 0x0D46}},
+    {"Mlym", 2, 0, {0x0D12, 0x0D3E}}, {"Mlym", 2, 0, {0x0D12, 0x0D57}},
+    {"Modi", 2, 0, {0x11600, 0x11639}}, {"Modi", 2, 0, {0x11600, 0x1163A}},
+    {"Modi", 2, 0, {0x11601, 0x11639}}, {"Modi", 2, 0, {0x11601, 0x1163A}},
+    {"Orya", 2, 0, {0x0B05, 0x0B3E}}, {"Orya", 2, 0, {0x0B0F, 0x0B57}},
+    {"Orya", 2, 0, {0x0B13, 0x0B57}}, {"Sind", 2, 0, {0x112B0, 0x112E0}},
+    {"Sind", 2, 0, {0x112B0, 0x112E5}}, {"Sind", 2, 0, {0x112B0, 0x112E6}},
+    {"Sind", 2, 0, {0x112B0, 0x112E7}}, {"Sind", 2, 0, {0x112B0, 0x112E8}},
+    {"Sinh", 2, 0, {0x0D85, 0x0DCF}}, {"Sinh", 2, 0, {0x0D85, 0x0DD0}},
+    {"Sinh", 2, 0, {0x0D85, 0x0DD1}}, {"Sinh", 2, 0, {0x0D8B, 0x0DDF}},
+    {"Sinh", 2, 0, {0x0D8D, 0x0DD8}}, {"Sinh", 2, 0, {0x0D8F, 0x0DDF}},
+    {"Sinh", 2, 0, {0x0D91, 0x0DCA}}, {"Sinh", 2, 0, {0x0D91, 0x0DD9}},
+    {"Sinh", 2, 0, {0x0D91, 0x0DDA}}, {"Sinh", 2, 0, {0x0D91, 0x0DDC}},
+    {"Sinh", 2, 0, {0x0D91, 0x0DDD}}, {"Sinh", 2, 0, {0x0D91, 0x0DDE}},
+    {"Sinh", 2, 0, {0x0D94, 0x0DDF}}, {"Takr", 2, 0, {0x11680, 0x116AD}},
+    {"Takr", 2, 0, {0x11680, 0x116B4}}, {"Takr", 2, 0, {0x11680, 0x116B5}},
+    {"Takr", 2, 0, {0x11686, 0x116B2}}, {"Taml", 2, 0, {0x0B85, 0x0BC2}},
+    {"Telu", 2, 0, {0x0C12, 0x0C4C}}, {"Telu", 2, 0, {0x0C12, 0x0C55}},
+    {"Telu", 2, 0, {0x0C3F, 0x0C55}}, {"Telu", 2, 0, {0x0C46, 0x0C55}},
+    {"Telu", 2, 0, {0x0C4A, 0x0C55}}, {"Tirh", 2, 0, {0x11481, 0x114B0}},
+    {"Tirh", 2, 0, {0x1148B, 0x114BA}}, {"Tirh", 2, 0, {0x1148D, 0x114BA}},
+    {"Tirh", 2, 0, {0x114AA, 0x114B5}}, {"Tirh", 2, 0, {0x114AA, 0x114B6}},
+};
+
 } // namespace data
 
 } // namespace cfw::syllabic

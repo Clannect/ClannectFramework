@@ -5,10 +5,10 @@ HarfBuzz's output for each test font, made by `testing/text-oracle/shape.py` (uh
 
 | File | Font | Cases |
 |---|---|---:|
-| `DejaVuSans.json.z` | `DejaVuSans.ttf` | 2,117 |
+| `DejaVuSans.json.z` | `DejaVuSans.ttf` | 2,123 |
 | `CfwTestLayout.json.z` | `CfwTestLayout.ttf` | 3,079 |
-| `CfwTestPlain.ttf.json.z` | `CfwTestPlain.ttf` | 1,617 |
-| `CfwTestPlain.otf.json.z` | `CfwTestPlain.otf` | 1,117 |
+| `CfwTestPlain.ttf.json.z` | `CfwTestPlain.ttf` | 1,623 |
+| `CfwTestPlain.otf.json.z` | `CfwTestPlain.otf` | 1,123 |
 
 Each case is a string (fixed corpus, feature settings, forced directions and languages, and random strings
 from per-script character pools) with the script and direction HarfBuzz resolved, and the glyphs as

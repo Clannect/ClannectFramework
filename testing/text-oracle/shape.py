@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Shaping results from HarfBuzz (the outside reference for cfw-text's Shaper).
 
-    python3 shape.py font.ttf out.json[.z] [--random N] [--seed S] [--layout]
+    python3 shape.py font.ttf out.json[.z] [--random N] [--seed S] [--layout] [--pools Java,Bali,...]
 
 Shapes a fixed corpus (and optionally N random strings drawn from per-script
 character pools) with uharfbuzz at font-unit scale, default language, and
@@ -59,6 +59,11 @@ CORPUS = [
     "\U0001f600\U0001f3fb", "\u270c\ufe0f\u270c\ufe0e", "\u845b\U000e0100\u845b\U000e0101",
     "\u0e01\u0e33\u0e14\u0e4b\u0e33 \u0e1b\u0e34\u0e48 \u0e0d\u0e38 \u0e0e\u0e39\u0e48",
     "\u0eab\u0ecd\u0eb2 \u0e81\u0eb3",
+    # Universal Shaping Engine: N'Ko and Mongolian join, Tifinagh, Javanese, Sinhala and Balinese
+    # syllables (broken ones take a dotted circle; some vowel sequences are prohibited).
+    "\u07ca\u07cb\u07cc\u07eb\u07cd \u07d3\u07f2\u07ca\u07fd", "\u1824\u1821\u180b\u1822 \u182d\u180e\u1820",
+    "\u2d30\u2d31\u2d7f\u2d32 \u2d4e", "\ua98f\ua9c0\ua9a4\ua9ba\ua9b4 \ua9b4 \ua984\ua9b4",
+    "\u0d85\u0dcf \u0d9a\u0dca\u200d\u0dbb \u0dd9\u0d9a \u0dca", "\u1b13\u1b44\u1b13\u1b36 \u1b05\u1b35 \u1b3e\u1b35",
 ]
 
 POOLS = {
@@ -68,9 +73,30 @@ POOLS = {
     "Arab": "\u0627\u0628\u062a\u062c\u062d\u062f\u0631\u0633\u0639\u0644\u0645\u0646\u0647\u0648\u064a\u0623\u0622\u0640\u06cc\u06a9 \u200c\u200d"
     + "\u064b\u064c\u064d\u064e\u064f\u0650\u0651\u0652\u0653\u0654\u0655\u0670",
     "Hang": "\uac00\uac01\ud55c\uae00\ub9d0 \u1100\u1101\u1112\u1161\u1162\u1175\u11a8\u11ab\u11c2\ua960\ud7b0\ud7cb\u302e\u302f\u1160\u115f",
+    "Nkoo": "\u07ca\u07cb\u07cc\u07cd\u07d3\u07d8\u07e0 \u07eb\u07ec\u07f2\u07f3\u07fa\u200d\u25cc",
+    "Sinh": "\u0d85\u0d86\u0d9a\u0dbb\u0dba\u0dca\u0dcf\u0dd0\u0dd9\u0dda\u0ddf\u0d82 \u200d\u200c\u25cc",
+    "Tfng": "\u2d30\u2d31\u2d32\u2d4e\u2d6f\u2d7f \u25cc",
     "Hebr": "\u05d0\u05d1\u05d3\u05d4\u05d5\u05d9\u05db\u05dc\u05de\u05e9\u05ea\u05e4 "
     + "\u05b0\u05b1\u05b4\u05b5\u05b7\u05b8\u05b9\u05bb\u05bc\u05bf\u05c1\u05c2",
 }
+
+# Complex scripts: every assigned character of the script's main block, with
+# the joiners, a dotted circle and a space.
+COMPLEX_BLOCKS = {
+    "Bali": (0x1B00, 0x1B7F), "Beng": (0x0980, 0x09FF), "Bugi": (0x1A00, 0x1A1F), "Cakm": (0x11100, 0x1114F),
+    "Deva": (0x0900, 0x097F), "Hano": (0x1720, 0x173F), "Java": (0xA980, 0xA9DF), "Khmr": (0x1780, 0x17FF),
+    "Lana": (0x1A20, 0x1AAF), "Mlym": (0x0D00, 0x0D7F), "Mong": (0x1800, 0x18AF), "Mymr": (0x1000, 0x109F),
+    "Nkoo": (0x07C0, 0x07FF), "Sinh": (0x0D80, 0x0DFF), "Taml": (0x0B80, 0x0BFF), "Tale": (0x1950, 0x197F),
+    "Tfng": (0x2D30, 0x2D7F),
+}
+
+
+def complex_pool(script):
+    import unicodedata
+    lo, hi = COMPLEX_BLOCKS[script]
+    chars = "".join(chr(u) for u in range(lo, hi + 1) if unicodedata.category(chr(u)) != "Cn")
+    return chars + " \u200c\u200d\u25cc\u034f"
+
 
 FEATURES = [
     ("office", [["liga", 0, 0, 0xFFFFFFFF]]),
@@ -168,6 +194,8 @@ def main():
     cases.append(shape(font, "(a[b]c) \u00ab\u2264\u00bb", direction="rtl"))
     cases.append(shape(font, "\u0633\u0644\u0627\u0645", direction="ltr"))
     cases += [shape(font, t, f) for t, f in features_list]
+    if "--pools" in sys.argv:  # complex scripts only
+        pools = {sc: complex_pool(sc) for sc in sys.argv[sys.argv.index("--pools") + 1].split(",")}
     rng = random.Random(seed)
     scripts = sorted(pools)
     for _ in range(n_random):

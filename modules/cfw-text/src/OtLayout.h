@@ -47,6 +47,9 @@ struct GlyphInfo {
     std::uint8_t ligProps = 0;       // lig id << 5 | is-ligature-base 0x10 | component or count
     std::uint8_t shaperAction = 0;   // per-shaper use (Arabic joining form)
     std::uint8_t spaceFallback = 0;  // for a space without its own glyph
+    std::uint8_t syllable = 0;       // syllabic shapers: serial << 4 | syllable type (0: none)
+    std::uint8_t category = 0;       // syllabic shapers: the character's category
+    std::uint8_t position = 0;       // Indic shapers: the character's position
 };
 
 struct GlyphPosition {
@@ -117,6 +120,7 @@ struct PlannedLookup {
     bool autoZwnj;
     bool autoZwj;
     bool random = false; // the 'rand' feature: alternate 255 picks at random
+    bool perSyllable = false; // GSUB: matches stay within the current glyph's syllable
 };
 
 // A GSUB or GPOS table with lookups selected for a script and language.
