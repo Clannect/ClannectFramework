@@ -5,6 +5,8 @@
 cfw_add_module(cfw-image
     SOURCES
         src/Image.cpp
+        src/JpegDecoder.cpp
+        src/JpegEncoder.cpp
         src/Png.cpp
     DEPENDS
         cfw-core
@@ -13,3 +15,7 @@ cfw_add_module(cfw-image
 cfw_add_test(cfw-image PngTest)
 target_compile_definitions(PngTest PRIVATE CFW_IMAGE_TESTDATA="${CMAKE_CURRENT_SOURCE_DIR}/testdata")
 target_link_libraries(PngTest PRIVATE cfw-io)
+
+cfw_add_test(cfw-image JpegTest)
+target_compile_definitions(JpegTest PRIVATE CFW_IMAGE_TESTDATA="${CMAKE_CURRENT_SOURCE_DIR}/testdata")
+target_link_libraries(JpegTest PRIVATE cfw-io)
