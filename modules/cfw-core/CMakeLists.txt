@@ -16,7 +16,7 @@ cfw_add_module(cfw-core
         src/Logger.cpp
         src/Mat3.cpp
         src/Mat4.cpp
-        src/Path.cpp
+        src/PainterPath.cpp
         src/PropertyBag.cpp
         src/Quat.cpp
         src/Sha1.cpp

@@ -1,6 +1,7 @@
 // cfw-bench: the §7 benchmarks that exist so far (cfw-core and cfw-io).
 //
 //   cfw-bench                       run everything, print a table
+//   cfw-bench --quick               allocation budgets only (few runs; what CTest runs)
 //   cfw-bench --repeat N            run the suite N times, keep each best median
 //   cfw-bench --json out.json       also write machine-readable results
 //   cfw-bench --baseline b.json     fail (exit 3) if any median regressed > 5%
@@ -12,11 +13,13 @@
 // a baseline recorded on the same machine.
 
 #include <algorithm>
+#include <array>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <map>
 #include <random>
+#include <vector>
 
 #include "cfw/bench/Bench.h"
 #include "cfw/core/Arena.h"
@@ -27,6 +30,9 @@
 #include "cfw/core/Signal.h"
 #include "cfw/core/Transform2D.h"
 #include "cfw/core/Utf8.h"
+#include "cfw/gfx/Painter.h"
+#include "cfw/gfx/RasterPaintBackend.h"
+#include "cfw/image/Image.h"
 #include "cfw/io/FileSystem.h"
 #include "cfw/io/JsonReader.h"
 #include "cfw/io/JsonWriter.h"
@@ -162,6 +168,70 @@ std::vector<Entry> runAll(const String &sceneText) {
                            }
                        }), {0.0}});
 
+    // --- 2D painting on the CPU backend (spec §7: 10,000 anti-aliased rounded
+    // rectangles at 1440p within 1.2x Qt; 0 allocations per repainted frame).
+    {
+        static Image screen = std::move(Image::create(2560, 1440, AlphaMode::Premultiplied).value());
+        static RasterPaintBackend backend(screen);
+        std::mt19937 rng(42);
+        std::uniform_real_distribution<float> px(0, 2460);
+        std::uniform_real_distribution<float> py(0, 1340);
+        std::uniform_real_distribution<float> size(10, 100);
+        struct Shape {
+            PainterPath path;
+            Brush brush;
+        };
+        static std::vector<Shape> shapes;
+        for (int i = 0; i < 10000; ++i) {
+            PainterPath path;
+            path.addRoundedRect({px(rng), py(rng), size(rng), size(rng)}, 6, 6);
+            shapes.push_back({std::move(path),
+                              Color::fromRgba8(static_cast<std::uint8_t>(rng()), static_cast<std::uint8_t>(rng()),
+                                               static_cast<std::uint8_t>(rng()),
+                                               static_cast<std::uint8_t>(128 + rng() % 128))});
+        }
+        results.push_back({measure("gfx.fill.10000roundrects.1440p", 5, 1, [&] {
+                               Painter painter(backend);
+                               for (const Shape &s : shapes) {
+                                   painter.fillPath(s.path, s.brush);
+                               }
+                           }), {-1.0}});
+
+        // A UI-like frame: panels, text-field outlines, a dashed selection, a
+        // gradient, clipped content, an icon. Built once; repainted per op.
+        static Image icon = std::move(Image::create(32, 32).value());
+        std::fill(icon.pixels().begin(), icon.pixels().end(), std::uint8_t{200});
+        static Image frame = std::move(Image::create(800, 600, AlphaMode::Premultiplied).value());
+        static RasterPaintBackend frameBackend(frame);
+        static Painter painter(frameBackend);
+        static PainterPath panel;
+        panel.addRoundedRect({10, 10, 300, 580}, 8, 8);
+        static PainterPath circle;
+        circle.addEllipse({400, 100, 200, 200});
+        const std::array<GradientStop, 2> stops{GradientStop{0, Color{0.2f, 0.3f, 0.9f, 1}},
+                                                GradientStop{1, Color{0.9f, 0.9f, 1, 1}}};
+        static const Brush gradient = Brush::linearGradient({0, 0}, {0, 600}, stops);
+        static Pen outline(Color{0.3f, 0.3f, 0.3f, 1}, 1);
+        static Pen dashed(Color{0.1f, 0.5f, 1, 1}, 2);
+        dashed.dashes = {4, 2};
+        results.push_back({measure("gfx.frame.ui.800x600", 21, 1, [&] {
+                               painter.fillRect({0, 0, 800, 600}, gradient);
+                               painter.fillPath(panel, Color{1, 1, 1, 0.9f});
+                               for (int i = 0; i < 40; ++i) {
+                                   const float y = 20.0f + static_cast<float>(i) * 14.0f;
+                                   painter.fillRect({20, y, 280, 12}, Color{0.95f, 0.95f, 0.95f, 1});
+                                   painter.strokeRect({20.5f, y + 0.5f, 279, 11}, outline);
+                               }
+                               painter.save();
+                               painter.clipPath(circle);
+                               painter.translate(500, 200);
+                               painter.rotate(15);
+                               painter.drawImage({-80, -80, 160, 160}, icon);
+                               painter.restore();
+                               painter.strokeRect({395.5f, 95.5f, 209, 209}, dashed);
+                           }), {0.0}});
+    }
+
     // --- Hashing and text throughput (1 MB inputs; per-op = whole buffer).
     String megabyte(1 << 20, 'a');
     for (std::size_t i = 0; i < megabyte.size(); i += 97) {
@@ -230,6 +300,11 @@ int main(int argc, char **argv) {
     const char *baseline = nullptr;
     const char *qtReference = nullptr;
     int repeat = 1;
+    for (int i = 1; i < argc; ++i) {
+        if (std::strcmp(argv[i], "--quick") == 0) {
+            cfw::bench::quickMode() = true;
+        }
+    }
     for (int i = 1; i + 1 < argc; ++i) {
         if (std::strcmp(argv[i], "--repeat") == 0) {
             repeat = std::max(1, std::atoi(argv[++i]));

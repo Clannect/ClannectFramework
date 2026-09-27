@@ -1,0 +1,26 @@
+{
+  "size": [160, 120], "background": [240, 240, 240, 255],
+  "tolerance": {"max": 24, "fraction": 0.004},
+  "ops": [
+    {"op": "save"},
+    {"op": "translate", "d": [40, 35]},
+    {"op": "rotate", "deg": 25},
+    {"op": "fillRect", "r": [-25, -12, 50, 24], "brush": {"color": [200, 40, 40, 255]}},
+    {"op": "restore"},
+    {"op": "save"},
+    {"op": "transform", "m": [1, 0.6, 80, 0.2, 1, 10]},
+    {"op": "fill", "path": [["rrect", 0, 0, 40, 30, 6, 6]], "brush": {"color": [40, 120, 200, 255]}},
+    {"op": "restore"},
+    {"op": "save"},
+    {"op": "quad", "from": [[0, 0], [100, 0], [100, 100], [0, 100]], "to": [[20, 65], [90, 60], [110, 115], [5, 112]]},
+    {"op": "fillRect", "r": [0, 0, 100, 100], "brush": {"color": [255, 200, 60, 255]}},
+    {"op": "fill", "path": [["ellipse", 20, 20, 60, 60]], "brush": {"color": [30, 30, 30, 255]}},
+    {"op": "fillRect", "r": [0, 0, 100, 100], "brush": {"linear": [0, 0, 100, 0], "stops": [[0, 255, 255, 255, 0], [1, 0, 0, 255, 120]]}},
+    {"op": "restore"},
+    {"op": "save"},
+    {"op": "translate", "d": [140, 85]},
+    {"op": "scale", "s": [-1, 2]},
+    {"op": "fill", "path": [["poly", 0, -15, 12, 10, -12, 10]], "brush": {"color": [0, 150, 90, 255]}},
+    {"op": "restore"}
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "size": [160, 120], "background": [0, 0, 0, 0],
+  "tolerance": {"max": 20, "fraction": 0.003},
+  "ops": [
+    {"op": "fillRect", "r": [0, 0, 160, 60], "brush": {"linear": [0, 0, 160, 0], "stops": [[0, 255, 0, 0, 255], [1, 0, 0, 255, 128]]}},
+    {"op": "blend", "mode": "multiply"},
+    {"op": "fill", "path": [["ellipse", 5, 5, 40, 40]], "brush": {"color": [255, 255, 0, 200]}},
+    {"op": "blend", "mode": "screen"},
+    {"op": "fill", "path": [["ellipse", 45, 5, 40, 40]], "brush": {"color": [0, 255, 0, 200]}},
+    {"op": "blend", "mode": "plus"},
+    {"op": "fill", "path": [["ellipse", 85, 5, 40, 40]], "brush": {"color": [0, 128, 128, 128]}},
+    {"op": "blend", "mode": "destination-in"},
+    {"op": "fillRect", "r": [125.5, 5, 30, 40], "brush": {"color": [0, 0, 0, 100]}},
+    {"op": "blend", "mode": "destination-out"},
+    {"op": "fill", "path": [["ellipse", 60, 40, 40, 30]], "brush": {"color": [0, 0, 0, 200]}},
+    {"op": "blend", "mode": "source"},
+    {"op": "fill", "path": [["rrect", 5, 70, 60, 40, 8, 8]], "brush": {"color": [20, 200, 200, 120]}},
+    {"op": "blend", "mode": "source-over"},
+    {"op": "opacity", "v": 0.5},
+    {"op": "fill", "path": [["ellipse", 70, 70, 50, 45]], "brush": {"color": [200, 0, 200, 255]}},
+    {"op": "opacity", "v": 0.3},
+    {"op": "blend", "mode": "multiply"},
+    {"op": "fillRect", "r": [100, 75, 55, 40], "brush": {"color": [0, 0, 255, 255]}}
+  ]
+}

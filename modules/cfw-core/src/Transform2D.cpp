@@ -84,6 +84,24 @@ std::optional<Transform2D> Transform2D::quadToQuad(const std::array<Vec2, 4> &fr
     return *toQuad * *toSquare;
 }
 
+double Transform2D::maxStretch(const RectF &region) const noexcept {
+    double s = 0.0;
+    if (isAffine()) {
+        s = std::sqrt(std::max(m[0] * m[0] + m[3] * m[3], m[1] * m[1] + m[4] * m[4]));
+    } else {
+        const float e = std::max(std::abs(region.width), std::abs(region.height)) * 1e-3f + 1e-3f;
+        for (const Vec2 p : {Vec2{region.x, region.y}, Vec2{region.right(), region.y}, Vec2{region.x, region.bottom()},
+                             Vec2{region.right(), region.bottom()}}) {
+            const Vec2 o = map(p);
+            const Vec2 dx = map({p.x + e, p.y});
+            const Vec2 dy = map({p.x, p.y + e});
+            s = std::max({s, static_cast<double>(std::hypot(dx.x - o.x, dx.y - o.y)) / e,
+                          static_cast<double>(std::hypot(dy.x - o.x, dy.y - o.y)) / e});
+        }
+    }
+    return s > 1e-9 && std::isfinite(s) ? s : 1.0;
+}
+
 std::optional<Transform2D> Transform2D::inverse() const noexcept {
     const double det = determinant();
     if (nearlyZero(det)) {

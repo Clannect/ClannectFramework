@@ -12,7 +12,8 @@ covers only what is built here and how to work on it.
 | M0 — seams in Clannect | **Not started.** Everything it needs from CFW (`String`, `Variant`, property system, JSON) exists. |
 | M1 — cfw-core + cfw-io | **Both modules done, benchmarked.** Exit still needs the Runtime building without Qt (engine-side work). |
 | M2 — cfw-net + cfw-image | **CFW side done.** cfw-net: event loop, TCP, WebSocket client and server, HTTP client, and **TLS** through the OS (Schannel; system OpenSSL on Linux) for `https://` and `wss://`. It is on par with Qt and interoperates with it. cfw-image: own PNG, JPEG and WebP codecs, pixel-exact against the reference decoders. `Locale` for number formatting. The exit criteria need the engine port. |
-| M3 – M6 | Not started. |
+| M3 — cfw-gfx + cfw-text | **In progress.** `PainterPath` and the anti-aliased `Rasterizer` are done. cfw-gfx has `Painter`, `Pen`, `Brush`, the `Stroker` and the CPU backend, checked against Qt with golden images. It runs 10,000 rounded rects in 0.38× Qt's time with 0 allocations per frame. Next: cfw-text; the GPU backend comes with M4's GL context. |
+| M4 – M6 | Not started. |
 
 **cfw-core contents:**
 
@@ -51,6 +52,18 @@ CRC-32/Adler-32. Real zlib decodes everything it writes, at zlib's speed and rat
 - **WebP:** decodes lossy, lossless, alpha and the first frame of animations, to exactly libwebp's pixels.
 - **`decodeImage`** detects the format from the content. **`resizeImage`** offers box, bilinear and Lanczos-3
   filters and works in premultiplied alpha. **`RectPacker`** is a skyline packer for atlases.
+
+**cfw-gfx contents** ([0014](docs/decisions/0014-m3-paths-and-scan-conversion.md)):
+
+- **Geometry:** `PainterPath` (cfw-core; QPainterPath's model) and `Rasterizer` (cfw-image; exact-area
+  anti-aliasing, non-zero and even-odd rules). Both are shared with cfw-text.
+- **`Painter`:** a save/restore state stack with transforms (perspective included), opacity, blend modes
+  (source-over, source, multiply, screen, plus, destination-in/out) and nested rectangle and path clips.
+  It fills and strokes paths, and draws images with smooth or nearest sampling, tiling and tint.
+- **`Pen`/`Stroker`:** Qt's caps, joins, miter limits and dashes, verified against `QPainterPathStroker`.
+- **`Brush`:** solid colours, and linear and radial (focal) gradients with pad, repeat and reflect.
+- **`RasterPaintBackend`:** the CPU backend behind the `PaintBackend` seam. It uses Qt's raster arithmetic
+  and allocates nothing per frame.
 
 **cfw-net contents:**
 
@@ -154,8 +167,8 @@ framework in its own right: compression, image codecs, and later fonts, rasteris
 layer are all written here. CFW links only the C++ standard library and the OS: Win32
 `shell32`/`ole32` for known folders, `ws2_32` for sockets, and POSIX elsewhere.
 
-Reference implementations (zlib, libjpeg-turbo, libwebp, Pillow) are run outside the repository to produce
-the expected outputs that tests compare against. They are never built or linked. The only third-party
+Reference implementations (zlib, libjpeg-turbo, libwebp, Pillow, and Qt 6.11 for 2D rendering via
+`testing/qt-oracle`) are run outside the build to produce the expected outputs that tests compare against. They are never built or linked. The only third-party
 *data* in the repository is PngSuite (`modules/cfw-image/testdata/pngsuite`, free for any use), used as test
 input.
 
@@ -185,3 +198,6 @@ input.
 - [0013](docs/decisions/0013-tls-through-the-os-and-windows-ci.md) — TLS through the OS (Schannel; system
   OpenSSL via `dlopen`), `https://`/`wss://`, a Windows cross build tested under Wine, and a use-after-free it
   caught.
+- [0014](docs/decisions/0014-m3-paths-and-scan-conversion.md) — M3: `PainterPath` (renamed from the spec's
+  `Path`, which is cfw-io's file path), the rasteriser and the CPU painter. It records Qt behaviour measured
+  with an outside oracle and CFW's deliberate differences, along with golden images, budgets and fuzzing.

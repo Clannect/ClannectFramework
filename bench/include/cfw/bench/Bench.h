@@ -33,10 +33,22 @@ struct Measurement {
     std::uint64_t opsPerSample = 0;
 };
 
+// Quick mode (--quick) checks allocation budgets only: one warm-up run (so
+// caches reach their steady state) and at most two samples, which keeps
+// sanitizer and emulator runs short. Timings from it mean nothing.
+inline bool &quickMode() noexcept {
+    static bool quick = false;
+    return quick;
+}
+
 // Runs `body` (which performs `opsPerSample` operations) `samples` times after
 // `warmup` untimed runs, and reports per-operation figures.
 inline Measurement measure(std::string name, int samples, std::uint64_t opsPerSample,
                            const std::function<void()> &body, int warmup = 3) {
+    if (quickMode()) {
+        samples = std::min(samples, 2);
+        warmup = std::min(warmup, 1);
+    }
     for (int i = 0; i < warmup; ++i) {
         body();
     }

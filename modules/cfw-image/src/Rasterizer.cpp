@@ -236,8 +236,10 @@ void Rasterizer::addClipped(double x0, double y0, double x1, double y1) {
             }
         }
     }
+    if (n == 3 && ts[2] < ts[1]) {
+        std::swap(ts[1], ts[2]); // at most two split points: order them along the edge
+    }
     ts[n++] = 1;
-    std::sort(ts + 1, ts + n - 1);
     const auto fixed = [](double v) { return static_cast<std::int64_t>(std::llround(v * kOne)); };
     for (int i = 0; i + 1 < n; ++i) {
         const double ta = ts[i];
@@ -270,25 +272,33 @@ void Rasterizer::addPolygon(Span<const Vec2> points) {
     }
 }
 
-void Rasterizer::addPath(const Path &path, const Transform2D &transform, float tolerance) {
-    if (transform.isAffine()) {
-        const Path mapped = transform.isIdentity() ? Path() : path.transformed(transform);
-        for (const Path::Polyline &poly : (transform.isIdentity() ? path : mapped).flatten(tolerance)) {
-            addPolygon(poly.points);
+void Rasterizer::addPath(const PainterPath &path, const Transform2D &transform, float tolerance) {
+    // Flatten in the path's own space, streaming each point through the
+    // transform into edges: no allocation. The tolerance is divided by the
+    // transform's largest stretch so it holds in target pixels.
+    const bool identity = transform.isIdentity();
+    const double scale = identity ? 1.0 : transform.maxStretch(path.controlBounds());
+    struct Edges final : PainterPath::FlattenSink {
+        Rasterizer &r;
+        const Transform2D &t;
+        bool identity;
+        Vec2 first{};
+        Vec2 last{};
+        Edges(Rasterizer &rasterizer, const Transform2D &transform, bool isIdentity)
+            : r(rasterizer), t(transform), identity(isIdentity) {}
+        Vec2 map(Vec2 p) const { return identity ? p : t.map(p); }
+        void begin(Vec2 p) override { first = last = map(p); }
+        void point(Vec2 p) override {
+            const Vec2 q = map(p);
+            r.addClipped(last.x, last.y, q.x, q.y);
+            last = q;
         }
-        return;
-    }
-    // Perspective: flatten in source space finely enough that the mapped
-    // chords stay within tolerance for moderate foreshortening, then map.
-    for (Path::Polyline &poly : path.flatten(tolerance * 0.25f)) {
-        for (Vec2 &p : poly.points) {
-            p = transform.map(p);
-        }
-        addPolygon(poly.points);
-    }
+        void end(bool) override { r.addClipped(last.x, last.y, first.x, first.y); } // fills close every sub-path
+    } edges(*this, transform, identity);
+    path.flatten(static_cast<float>(tolerance / scale), edges);
 }
 
-void Rasterizer::sweep(FillRule rule, const RowCallback &row) {
+void Rasterizer::sweepRows(FillRule rule, RowFunction row, void *context) {
     flushCell();
     if (m_cells.empty() || m_width == 0) {
         return;
@@ -376,7 +386,7 @@ void Rasterizer::sweep(FillRule rule, const RowCallback &row) {
             endX = m_width;
         }
         if (startX >= 0 && endX > startX) {
-            row(static_cast<int>(y), startX,
+            row(context, static_cast<int>(y), startX,
                 Span<const std::uint8_t>(m_row.data() + startX, static_cast<std::size_t>(endX - startX)));
         }
     }

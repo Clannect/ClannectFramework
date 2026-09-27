@@ -1,0 +1,21 @@
+{
+  "size": [160, 120], "background": [255, 255, 255, 255],
+  "tolerance": {"max": 96, "fraction": 0.01},
+  "ops": [
+    {"op": "stroke", "path": [["M", 10, 40], ["L", 30, 10], ["L", 45, 40], ["L", 60, 12]], "pen": {"width": 6, "color": [180, 0, 0, 255], "join": "miter", "cap": "flat"}},
+    {"op": "stroke", "path": [["M", 70, 40], ["L", 90, 10], ["L", 105, 40], ["L", 120, 12]], "pen": {"width": 6, "color": [0, 120, 0, 255], "join": "round", "cap": "round"}},
+    {"op": "stroke", "path": [["M", 128, 40], ["L", 138, 10], ["L", 152, 40]], "pen": {"width": 5, "color": [0, 0, 160, 255]}},
+    {"op": "stroke", "path": [["rect", 10.5, 55.5, 50, 30]], "pen": {"width": 1, "color": [0, 0, 0, 255]}},
+    {"op": "stroke", "path": [["rect", 14.5, 59.5, 42, 22]], "pen": {"width": 2, "color": [200, 90, 0, 255], "dashes": [3, 1], "cap": "flat", "join": "miter"}},
+    {"op": "stroke", "path": [["M", 70, 60], ["L", 150, 60]], "pen": {"width": 3, "color": [60, 60, 60, 255], "dashes": [4, 2]}},
+    {"op": "stroke", "path": [["M", 70, 70], ["L", 150, 70]], "pen": {"width": 3, "color": [60, 60, 60, 160], "dashes": [1, 1, 4, 1], "offset": 0.5, "cap": "flat"}},
+    {"op": "stroke", "path": [["M", 70.5, 80.5], ["L", 150.5, 82.5]], "pen": {"width": 0, "color": [0, 0, 0, 255]}},
+    {"op": "save"},
+    {"op": "translate", "d": [10, 92]},
+    {"op": "scale", "s": [4, 1]},
+    {"op": "stroke", "path": [["M", 0, 5], ["L", 30, 5]], "pen": {"width": 0, "color": [120, 0, 120, 255]}},
+    {"op": "stroke", "path": [["M", 0, 15], ["L", 30, 20]], "pen": {"width": 2, "color": [0, 100, 120, 255]}},
+    {"op": "restore"},
+    {"op": "stroke", "path": [["M", 135, 90], ["L", 150, 115], ["L", 120, 115], ["Z"]], "pen": {"width": 4, "color": [0, 0, 0, 200], "join": "miter"}}
+  ]
+}

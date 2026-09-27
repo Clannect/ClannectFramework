@@ -1,0 +1,23 @@
+{
+  "size": [160, 120], "background": [255, 255, 255, 255],
+  "tolerance": {"max": 4, "fraction": 0.0},
+  "ops": [
+    {"op": "image", "image": "photo", "target": [4, 4, 64, 48]},
+    {"op": "image", "image": "photo", "target": [72, 4, 32, 24], "smooth": false},
+    {"op": "image", "image": "photo", "target": [72, 30, 40, 20], "source": [8, 4, 16, 12]},
+    {"op": "image", "image": "alpha", "target": [116, 4, 40, 40]},
+    {"op": "image", "image": "checker", "target": [4, 58, 50, 30], "tile": true},
+    {"op": "save"},
+    {"op": "translate", "d": [85, 85]},
+    {"op": "rotate", "deg": -30},
+    {"op": "opacity", "v": 0.75},
+    {"op": "image", "image": "photo", "target": [-24, -18, 48, 36]},
+    {"op": "restore"},
+    {"op": "save"},
+    {"op": "quad", "from": [[0, 0], [32, 0], [32, 24], [0, 24]], "to": [[115, 60], [155, 55], [150, 115], [120, 105]]},
+    {"op": "image", "image": "photo", "target": [0, 0, 32, 24]},
+    {"op": "restore"},
+    {"op": "image", "image": "alpha", "target": [4, 92, 24, 24], "tint": [80, 160, 255, 255]},
+    {"op": "image", "image": "photo", "target": [32, 92, 32, 24], "tint": [255, 128, 0, 160]}
+  ]
+}

@@ -1,0 +1,31 @@
+{
+  "size": [160, 120], "background": [255, 255, 255, 255],
+  "tolerance": {"max": 24, "fraction": 0.004},
+  "ops": [
+    {"op": "save"},
+    {"op": "clipRect", "r": [10.5, 8.3, 50.25, 40.6]},
+    {"op": "fill", "path": [["ellipse", 0, 0, 70, 60]], "brush": {"color": [200, 30, 30, 255]}},
+    {"op": "restore"},
+    {"op": "save"},
+    {"op": "clipPath", "path": [["ellipse", 75, 5, 70, 55]]},
+    {"op": "clipRect", "r": [70, 20, 90, 25]},
+    {"op": "fillRect", "r": [0, 0, 160, 120], "brush": {"linear": [75, 0, 145, 0], "stops": [[0, 0, 100, 255, 255], [1, 0, 200, 100, 255]]}},
+    {"op": "restore"},
+    {"op": "save"},
+    {"op": "clipPath", "path": [["poly", 30, 62, 38, 88, 65, 88, 43, 104, 51, 118, 30, 108, 9, 118, 17, 104, -5, 88, 22, 88]], "rule": "evenodd"},
+    {"op": "save"},
+    {"op": "clipPath", "path": [["ellipse", 10, 70, 45, 45]]},
+    {"op": "fillRect", "r": [0, 60, 70, 60], "brush": {"color": [40, 40, 160, 255]}},
+    {"op": "restore"},
+    {"op": "fillRect", "r": [0, 60, 20, 60], "brush": {"color": [0, 160, 0, 255]}},
+    {"op": "restore"},
+    {"op": "save"},
+    {"op": "translate", "d": [115, 90]},
+    {"op": "rotate", "deg": 20},
+    {"op": "clipRect", "r": [-25, -18, 50, 36]},
+    {"op": "rotate", "deg": -20},
+    {"op": "fill", "path": [["ellipse", -35, -35, 70, 70]], "brush": {"color": [230, 150, 0, 255]}},
+    {"op": "restore"},
+    {"op": "fillRect", "r": [70, 110, 20, 8], "brush": {"color": [0, 0, 0, 255]}}
+  ]
+}

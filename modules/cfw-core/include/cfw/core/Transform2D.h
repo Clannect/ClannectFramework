@@ -70,6 +70,12 @@ public:
     // Nothing if singular.
     [[nodiscard]] std::optional<Transform2D> inverse() const noexcept;
 
+    // The most this map stretches lengths within `region`: exact for affine
+    // maps (the larger column norm), sampled at the region's corners for
+    // perspective ones. Curve flattening divides its tolerance by it. 1 if
+    // the result would not be positive and finite.
+    [[nodiscard]] double maxStretch(const RectF &region) const noexcept;
+
     // "This, then `next`".
     [[nodiscard]] constexpr Transform2D then(const Transform2D &next) const noexcept { return next * *this; }
 

@@ -21,10 +21,10 @@
 // reset() calls (steady-state rendering allocates nothing).
 
 #include <cstdint>
-#include <functional>
+#include <type_traits>
 #include <vector>
 
-#include "cfw/core/Path.h"
+#include "cfw/core/PainterPath.h"
 #include "cfw/core/Span.h"
 
 namespace cfw {
@@ -35,28 +35,41 @@ public:
     // [0, height)). Keeps the allocated storage.
     void reset(int width, int height);
 
-    // Adds a path's outline. Curves are flattened to `tolerance` pixels in
-    // target space (0.1 keeps a circle's area within 0.5%, closer than Qt's
-    // raster engine): for an affine transform the path is transformed first,
-    // for a perspective one it is flattened finely, then mapped.
-    void addPath(const Path &path, const Transform2D &transform = {}, float tolerance = 0.1f);
+    // Adds a path's outline, mapped by `transform`. Curves are flattened to
+    // `tolerance` pixels in target space (0.1 keeps a circle's area within
+    // 0.5%, closer than Qt's raster engine); nothing is allocated beyond the
+    // cell storage.
+    void addPath(const PainterPath &path, const Transform2D &transform = {}, float tolerance = 0.1f);
     // A closed polygon in target coordinates.
     void addPolygon(Span<const Vec2> points);
     // One edge in target coordinates. Fills treat every added edge as part of
     // closed outlines; callers close their polygons.
     void addEdge(Vec2 from, Vec2 to);
 
-    // Row callback: coverage for pixels [x, x + coverage.size()) of row y,
-    // 0 (outside) to 255 (fully inside). Rows without coverage are skipped;
-    // rows come in increasing y. The span is valid during the call only.
-    using RowCallback = std::function<void(int y, int x, Span<const std::uint8_t> coverage)>;
-    void sweep(FillRule rule, const RowCallback &row);
+    // Calls row(int y, int x, Span<const std::uint8_t> coverage) with the
+    // coverage of pixels [x, x + coverage.size()) of row y, 0 (outside) to
+    // 255 (fully inside). Rows without coverage are skipped; rows come in
+    // increasing y. The span is valid during the call only. (A template, not
+    // std::function, so painting allocates nothing.)
+    template <class Row>
+    void sweep(FillRule rule, Row &&row) {
+        using R = std::remove_reference_t<Row>;
+        sweepRows(
+            rule,
+            [](void *context, int y, int x, Span<const std::uint8_t> coverage) {
+                (*static_cast<R *>(context))(y, x, coverage);
+            },
+            const_cast<void *>(static_cast<const void *>(&row)));
+    }
 
     // Bounding box of the covered pixels after the edges added so far
     // (empty if none).
     [[nodiscard]] bool empty() const noexcept { return m_cells.empty() && !m_haveCell; }
 
 private:
+    using RowFunction = void (*)(void *context, int y, int x, Span<const std::uint8_t> coverage);
+    void sweepRows(FillRule rule, RowFunction row, void *context);
+
     struct Cell {
         int x;
         int y;

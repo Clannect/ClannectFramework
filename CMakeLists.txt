@@ -25,7 +25,8 @@ if(CFW_BUILD_TESTS)
     add_test(NAME NoQt COMMAND ${CMAKE_COMMAND}
         -DROOT=${CMAKE_SOURCE_DIR} -DBINARY_DIR=${CMAKE_BINARY_DIR} -DOBJDUMP=${CFW_OBJDUMP}
         -P ${CMAKE_SOURCE_DIR}/cmake/CheckNoQt.cmake)
-    set_tests_properties(NoQt PROPERTIES LABELS policy)
+    # Its own timeout, so the CI's global --timeout for Wine runs does not apply.
+    set_tests_properties(NoQt PROPERTIES LABELS policy TIMEOUT 600)
 endif()
 
 # Lower layers first. A module may only link modules listed above it.
@@ -33,6 +34,7 @@ add_subdirectory(modules/cfw-core)
 add_subdirectory(modules/cfw-io)
 add_subdirectory(modules/cfw-net)
 add_subdirectory(modules/cfw-image)
+add_subdirectory(modules/cfw-gfx)
 
 add_subdirectory(fuzz)
 if(CFW_BUILD_TESTS)
