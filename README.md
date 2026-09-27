@@ -11,7 +11,7 @@ covers only what is built here and how to work on it.
 |---|---|
 | M0 — seams in Clannect | **Not started.** Everything it needs from CFW (`String`, `Variant`, property system, JSON) exists. |
 | M1 — cfw-core + cfw-io | **Both modules done, benchmarked.** Exit still needs the Runtime building without Qt (engine-side work). |
-| M2 — cfw-net + cfw-image | **cfw-net done** (event loop, TCP, WebSocket client and server), on par with Qt and interoperating with it. cfw-image not started; no TLS yet. |
+| M2 — cfw-net + cfw-image | **cfw-net done** (event loop, TCP, WebSocket client and server, HTTP client), on par with Qt and interoperating with it; TLS started (Schannel, not yet built). **cfw-image done:** own PNG, JPEG and WebP codecs, pixel-exact against the reference decoders. |
 | M3 – M6 | Not started. |
 
 **cfw-core contents:**
@@ -36,6 +36,21 @@ covers only what is built here and how to work on it.
   (temp + flush + rename), directory operations, `MappedFile`, `TemporaryDirectory`.
 - **Per-user locations and settings:** `StandardPaths` (Qt's folder layout), `Settings` (JSON, atomic),
   `FileWatcher` (polling for now).
+
+**cfw-core also has** its own DEFLATE/zlib codec (`inflate`/`deflate`, `zlibDecompress`/`zlibCompress`) and
+CRC-32/Adler-32. Real zlib decodes everything it writes, at zlib's speed and ratio.
+
+**cfw-image contents** ([0012](docs/decisions/0012-cfw-is-independent-own-codecs.md)):
+
+- **`Image`:** 8-bit RGBA, straight or premultiplied alpha. It never throws, and `ImageLimits` (input bytes,
+  dimensions, decoded bytes, aspect ratio) is checked before anything is allocated.
+- **PNG:** decodes every colour type, bit depth, palette/tRNS and Adam7 interlacing; all of PngSuite is
+  pixel-exact. Encodes RGBA or RGB with adaptive filters.
+- **JPEG:** decodes baseline and progressive, any integer subsampling, restart markers, gray, YCbCr, RGB,
+  CMYK and YCCK, to exactly libjpeg-turbo's pixels. Encodes baseline JPEG, matching `cjpeg`'s size and quality.
+- **WebP:** decodes lossy, lossless, alpha and the first frame of animations, to exactly libwebp's pixels.
+- **`decodeImage`** detects the format from the content. **`resizeImage`** offers box, bilinear and Lanczos-3
+  filters and works in premultiplied alpha. **`RectPacker`** is a skyline packer for atlases.
 
 **cfw-net contents:**
 
@@ -63,13 +78,24 @@ every build.
 **Linux CI** ([0011](docs/decisions/0011-linux-ci-and-fuzzing.md)): GCC and Clang builds, ASan+UBSan+LSan over
 every test, TSan over cfw-net, and five libFuzzer targets (JSON, binary reader, URL/UTF-8, WebSocket frames,
 HTTP) fuzzed on every push. The committed corpus (`fuzz/corpus/`) replays as CTest tests on every toolchain,
-MinGW included. The first run found three bugs, all fixed with regression tests: a send stall on Linux, a
-JSON round-trip inequality, and code that did not compile with Clang.
+MinGW included. Nine targets now cover every parser, including inflate, PNG, JPEG and WebP. The first runs found five
+bugs, all fixed with regression inputs:
 
-**Still open for M1:**
+- a send stall on Linux;
+- a JSON round-trip inequality;
+- code that did not compile with Clang;
+- an out-of-bounds write in the JPEG Huffman table builder;
+- integer overflow on hostile VP8 coefficients.
 
-- **No Qt in the Runtime:** building the headless Runtime without Qt (this is the M0/M1 engine work: moving
-  `clannect_core` onto CFW).
+UBSan is fatal in every sanitizer build.
+
+**Still open for M1/M2 (engine side):**
+
+- **No Qt in the Runtime and non-GUI targets:** this is the M0/M1/M2 engine work (moving `clannect_core`, the
+  Runtime and the asset cache onto CFW).
+- **Blocked:** the engine repository on GitHub holds only a July snapshot (13,800 lines, no Runtime and no
+  `clannect_core`). The engine this spec was measured against exists only on the development machine, so
+  it has to be pushed before it can be ported.
 
 **No Qt:** the `NoQt` CTest test fails the build if a Qt header, macro, CMake package or linked Qt library
 appears anywhere in CFW's sources, build files or binaries. Where CFW must behave exactly like Qt (Euler angles,
@@ -118,9 +144,15 @@ calls.
 
 ## Third-party dependencies
 
-**None.** CFW uses only the C++ standard library and the OS: Win32 `shell32`/`ole32` for known folders,
-`ws2_32` for sockets, and POSIX elsewhere. When one is added, it goes into the register in the Clannect Engine `README.md` in the same
-commit, pinned to an exact version with its licence file vendored (spec §2.1, §11).
+**None, by design** ([0012](docs/decisions/0012-cfw-is-independent-own-codecs.md)). Clannect Framework is a
+framework in its own right: compression, image codecs, and later fonts, rasterisation and the platform
+layer are all written here. CFW links only the C++ standard library and the OS: Win32
+`shell32`/`ole32` for known folders, `ws2_32` for sockets, and POSIX elsewhere.
+
+Reference implementations (zlib, libjpeg-turbo, libwebp, Pillow) are run outside the repository to produce
+the expected outputs that tests compare against. They are never built or linked. The only third-party
+*data* in the repository is PngSuite (`modules/cfw-image/testdata/pngsuite`, free for any use), used as test
+input.
 
 ## Decisions so far
 
@@ -143,3 +175,5 @@ commit, pinned to an exact version with its licence file vendored (spec §2.1, �
   `-text` in git, registry-to-JSON settings migration, polling file watcher.
 - [0011](docs/decisions/0011-linux-ci-and-fuzzing.md) — Linux CI (GCC, Clang, ASan/LSan, TSan), libFuzzer
   targets with a committed corpus, and the three bugs they found on the first run.
+- [0012](docs/decisions/0012-cfw-is-independent-own-codecs.md) — CFW ships no third-party code (**amends §2.1,
+  §4.4, §11**): own DEFLATE and PNG/JPEG/WebP codecs, reference-exact tests, fuzzing, performance.
