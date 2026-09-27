@@ -602,8 +602,11 @@ bool Decoder::parseResiduals(MacroblockInfo &mb, std::size_t mbX, BoolDecoder &t
 
 constexpr std::size_t kBps = 32; // work-buffer stride
 
-int mul1(int a) noexcept { return ((a * 20091) >> 16) + a; }
-int mul2(int a) noexcept { return (a * 35468) >> 16; }
+// In 64 bits: identical to libwebp's 32-bit arithmetic for every valid
+// stream, and no overflow when a hostile one supplies huge coefficients
+// (found by FuzzWebP).
+int mul1(int a) noexcept { return static_cast<int>((std::int64_t{a} * 20091) >> 16) + a; }
+int mul2(int a) noexcept { return static_cast<int>((std::int64_t{a} * 35468) >> 16); }
 
 void transform(const std::int16_t *in, std::uint8_t *dst) noexcept {
     std::array<int, 16> c{};
@@ -682,13 +685,13 @@ void predictBlock(std::uint8_t *dst, std::size_t size, int mode) noexcept {
         break;
     case kBHe:
         for (std::size_t j = 0; j < size; ++j) {
-            std::memset(dst + j * kBps, dst[j * kBps - 1], size);
+            std::memset(dst + j * kBps, (dst + j * kBps)[-1], size);
         }
         break;
     case kDcNoTop: {
         int dc = static_cast<int>(size / 2);
         for (std::size_t j = 0; j < size; ++j) {
-            dc += dst[j * kBps - 1];
+            dc += (dst + j * kBps)[-1];
         }
         fill(dst, size, static_cast<std::uint8_t>(dc >> (shift - 1)));
         break;
@@ -696,7 +699,7 @@ void predictBlock(std::uint8_t *dst, std::size_t size, int mode) noexcept {
     case kDcNoLeft: {
         int dc = static_cast<int>(size / 2);
         for (std::size_t i = 0; i < size; ++i) {
-            dc += dst[i - kBps];
+            dc += (dst - kBps)[i];
         }
         fill(dst, size, static_cast<std::uint8_t>(dc >> (shift - 1)));
         break;
@@ -705,7 +708,7 @@ void predictBlock(std::uint8_t *dst, std::size_t size, int mode) noexcept {
     default: { // DC
         int dc = static_cast<int>(size);
         for (std::size_t j = 0; j < size; ++j) {
-            dc += dst[j * kBps - 1] + dst[j - kBps];
+            dc += (dst + j * kBps)[-1] + (dst - kBps)[j];
         }
         fill(dst, size, static_cast<std::uint8_t>(dc >> shift));
         break;
@@ -840,11 +843,11 @@ void Decoder::reconstruct(const MacroblockInfo &mb, std::size_t mbX, std::size_t
     // Left samples: 129 at the frame edge, else the reconstructed (not yet
     // filtered) column to the left.
     for (std::size_t j = 0; j < 16; ++j) {
-        yDst[j * kBps - 1] = mbX == 0 ? 129 : m_y[(y0 + j) * m_yStride + x0 - 1];
+        (yDst + j * kBps)[-1] = mbX == 0 ? 129 : m_y[(y0 + j) * m_yStride + x0 - 1];
     }
     for (std::size_t j = 0; j < 8; ++j) {
-        uDst[j * kBps - 1] = mbX == 0 ? 129 : m_u[(cy0 + j) * m_uvStride + cx0 - 1];
-        vDst[j * kBps - 1] = mbX == 0 ? 129 : m_v[(cy0 + j) * m_uvStride + cx0 - 1];
+        (uDst + j * kBps)[-1] = mbX == 0 ? 129 : m_u[(cy0 + j) * m_uvStride + cx0 - 1];
+        (vDst + j * kBps)[-1] = mbX == 0 ? 129 : m_v[(cy0 + j) * m_uvStride + cx0 - 1];
     }
     // Top samples (and top-left, and luma top-right): 127 above the frame.
     if (mbY == 0) {

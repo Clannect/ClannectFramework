@@ -49,6 +49,11 @@ function(cfw_configure_target target)
         else()
             target_compile_options(${target} PRIVATE -fsanitize=${sanitizer} -fno-omit-frame-pointer)
             target_link_options(${target} PRIVATE -fsanitize=${sanitizer})
+            if(sanitizer STREQUAL "undefined")
+                # Any UB report fails the test or fuzz run, instead of printing
+                # and carrying on where nobody reads it.
+                target_compile_options(${target} PRIVATE -fno-sanitize-recover=undefined)
+            endif()
         endif()
     endforeach()
 endfunction()

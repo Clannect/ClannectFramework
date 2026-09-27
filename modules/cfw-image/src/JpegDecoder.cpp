@@ -55,6 +55,11 @@ struct HuffmanTable {
             const unsigned n = counts[len - 1];
             valueOffset[len] = static_cast<std::int32_t>(k) - code;
             for (unsigned i = 0; i < n; ++i, ++k, ++code) {
+                // A code that does not fit its length is a bogus table; check
+                // before it indexes the fast table (found by FuzzJpeg).
+                if (code >= (1 << len)) {
+                    return false;
+                }
                 if (len <= kFastBits) {
                     const unsigned shift = kFastBits - len;
                     const auto first = static_cast<unsigned>(code) << shift;
@@ -64,9 +69,6 @@ struct HuffmanTable {
                 }
             }
             maxCode[len] = n != 0 ? code - 1 : -1;
-            if (code > (1 << len)) {
-                return false;
-            }
             code <<= 1;
         }
         maxCode[17] = 0x7FFFFFFF; // sentinel

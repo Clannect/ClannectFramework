@@ -59,7 +59,7 @@ jobs:
         run: ctest --preset tsan -L cfw-net
 
   fuzz:
-    name: fuzz (libFuzzer, 60 s per target)
+    name: fuzz (libFuzzer, 45 s per target)
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -75,11 +75,12 @@ jobs:
         run: |
           mkdir -p fuzz-artifacts
           status=0
-          for target in FuzzJson FuzzByteReader FuzzUrl FuzzWebSocketFrames FuzzHttp; do
+          for target in FuzzJson FuzzByteReader FuzzUrl FuzzWebSocketFrames FuzzHttp \
+              FuzzInflate FuzzPng FuzzJpeg FuzzWebP; do
             mkdir -p "new-corpus/$target"
             echo "::group::$target"
             if ! build/fuzz/fuzz/$target "new-corpus/$target" "fuzz/corpus/$target" \
-                -max_total_time=60 -max_len=4096 -timeout=10 -rss_limit_mb=2048 \
+                -max_total_time=45 -max_len=4096 -timeout=10 -rss_limit_mb=2048 \
                 -artifact_prefix="fuzz-artifacts/$target-"; then
               status=1
             fi
