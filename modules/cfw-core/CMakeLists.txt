@@ -12,6 +12,7 @@ cfw_add_module(cfw-core
         src/Contract.cpp
         src/Deflate.cpp
         src/Error.cpp
+        src/Locale.cpp
         src/Logger.cpp
         src/Mat3.cpp
         src/Mat4.cpp
@@ -29,6 +30,7 @@ cfw_add_module(cfw-core
 
 cfw_add_test(cfw-core ResultTest)
 cfw_add_test(cfw-core DeflateTest)
+cfw_add_test(cfw-core LocaleTest)
 cfw_add_test(cfw-core Utf8Test)
 cfw_add_test(cfw-core StringsTest)
 cfw_add_test(cfw-core NameTest)
