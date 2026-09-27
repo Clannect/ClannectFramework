@@ -8,6 +8,9 @@ cfw_add_module(cfw-image
         src/JpegDecoder.cpp
         src/JpegEncoder.cpp
         src/Png.cpp
+        src/WebP.cpp
+        src/WebPLossless.cpp
+        src/WebPLossy.cpp
     DEPENDS
         cfw-core
 )
@@ -19,3 +22,7 @@ target_link_libraries(PngTest PRIVATE cfw-io)
 cfw_add_test(cfw-image JpegTest)
 target_compile_definitions(JpegTest PRIVATE CFW_IMAGE_TESTDATA="${CMAKE_CURRENT_SOURCE_DIR}/testdata")
 target_link_libraries(JpegTest PRIVATE cfw-io)
+
+cfw_add_test(cfw-image WebPTest)
+target_compile_definitions(WebPTest PRIVATE CFW_IMAGE_TESTDATA="${CMAKE_CURRENT_SOURCE_DIR}/testdata")
+target_link_libraries(WebPTest PRIVATE cfw-io)
