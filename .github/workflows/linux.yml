@@ -111,7 +111,7 @@ jobs:
           mkdir -p fuzz-artifacts
           status=0
           for target in FuzzJson FuzzByteReader FuzzUrl FuzzWebSocketFrames FuzzHttp \
-              FuzzInflate FuzzPng FuzzJpeg FuzzWebP FuzzPaint FuzzText FuzzFont; do
+              FuzzInflate FuzzPng FuzzJpeg FuzzWebP FuzzPaint FuzzText FuzzFont FuzzShape; do
             mkdir -p "new-corpus/$target"
             echo "::group::$target"
             if ! build/fuzz/fuzz/$target "new-corpus/$target" "fuzz/corpus/$target" \

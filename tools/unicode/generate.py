@@ -40,7 +40,8 @@ def camel(name):
 def main():
     source = sys.argv[1]
     digest = hashlib.sha256(open(source, 'rb').read()).hexdigest()
-    props = ['gc', 'sc', 'bc', 'lb', 'GCB', 'InCB', 'jt', 'ea', 'ExtPict', 'DI', 'EPres', 'bpt', 'bpb', 'bmg', 'ccc']
+    props = ['gc', 'sc', 'bc', 'lb', 'GCB', 'InCB', 'jt', 'ea', 'ExtPict', 'DI', 'EPres', 'bpt', 'bpb', 'bmg', 'ccc',
+             'dm', 'dt', 'Comp_Ex']
     v, version = ppucd.load(source, props)
 
     # Value lists that come from the data: line break classes and scripts.
@@ -88,6 +89,19 @@ def main():
     for cp in range(ppucd.N):
         if v['bpt'][cp] in ('o', 'c'):
             brackets.append((cp, int(v['bpb'][cp], 16)))
+    # Canonical decompositions (one step) and the primary composites made from them.
+    decompositions = []
+    compositions = []
+    for cp in range(ppucd.N):
+        dm = v['dm'][cp]
+        if v['dt'][cp] != 'Can' or not dm or dm.startswith('<'):
+            continue
+        parts = [int(x, 16) for x in dm.split()]
+        assert 1 <= len(parts) <= 2, (hex(cp), dm)
+        decompositions.append((cp, parts[0], parts[1] if len(parts) == 2 else 0))
+        if len(parts) == 2 and not v['Comp_Ex'][cp]:
+            compositions.append((parts[0], parts[1], cp))
+    compositions.sort()
     mirrors = [(cp, int(v['bmg'][cp], 16)) for cp in range(ppucd.N)
                if v['bmg'][cp] and v['bmg'][cp] != '<code point>' and v['bmg'][cp] != '<none>']
 
@@ -180,6 +194,16 @@ inline constexpr Pair kMirrors[{len(mirrors)}] = {{
 {rows(["{0x%04X, 0x%04X}" % m for m in mirrors], 6)}
 }};
 
+// Canonical decompositions, one step: code point, first, second (0 for a singleton). Sorted.
+inline constexpr Triple kDecompositions[{len(decompositions)}] = {{
+{rows(["{0x%04X, 0x%04X, 0x%04X}" % d for d in decompositions], 4)}
+}};
+
+// Primary composites: first, second, composite. Sorted by (first, second).
+inline constexpr Triple kCompositions[{len(compositions)}] = {{
+{rows(["{0x%04X, 0x%04X, 0x%04X}" % c for c in compositions], 4)}
+}};
+
 // ISO 15924 codes, in Script order.
 inline constexpr const char kScriptCodes[{len(scripts)}][5] = {{
 {rows(['"%s"' % s for s, _ in scripts], 12)}
@@ -189,8 +213,107 @@ inline constexpr const char kScriptCodes[{len(scripts)}][5] = {{
 '''
     with open(os.path.join(ROOT, 'modules/cfw-text/src/UnicodeTables.inc'), 'w') as out:
         out.write(inc)
+    write_arabic_fallback(v, stamp)
     print(f'{stamp}: {len(records)} records, {len(blocks)} blocks, {len(brackets)} brackets, {len(mirrors)} mirrors, '
-          f'{len(scripts)} scripts, {len(lb_values)} line break classes')
+          f'{len(scripts)} scripts, {len(lb_values)} line break classes, {len(decompositions)} decompositions, '
+          f'{len(compositions)} compositions')
+
+
+# The Arabic presentation-form ligatures that fonts without Arabic GSUB
+# commonly have (the ones HarfBuzz's fallback shaping forms), plus three
+# Private Use ones some fonts use.
+ARABIC_LIGATURES = {
+    0xF2EE, 0xFC08, 0xFC0E, 0xFC12, 0xFC32, 0xFC3F, 0xFC40, 0xFC41, 0xFC42, 0xFC43, 0xFC44, 0xFC4E, 0xFC5E, 0xFC60,
+    0xFC61, 0xFC62, 0xFC6A, 0xFC6D, 0xFC6F, 0xFC70, 0xFC73, 0xFC75, 0xFC86, 0xFC8F, 0xFC91, 0xFC94, 0xFC9C, 0xFC9D,
+    0xFC9E, 0xFC9F, 0xFCA1, 0xFCA2, 0xFCA3, 0xFCA4, 0xFCA8, 0xFCAA, 0xFCAC, 0xFCB0, 0xFCC9, 0xFCCA, 0xFCCB, 0xFCCC,
+    0xFCCD, 0xFCCE, 0xFCCF, 0xFCD0, 0xFCD1, 0xFCD2, 0xFCD3, 0xFCD5, 0xFCDA, 0xFCDB, 0xFCDC, 0xFCDD, 0xFD30, 0xFD88,
+    0xFEF5, 0xFEF6, 0xFEF7, 0xFEF8, 0xFEF9, 0xFEFA, 0xFEFB, 0xFEFC, 0xF201, 0xF211,
+}
+PUA_LIGATURES = [(0xF201, 'Iso', '0644 0644 0647'), (0xF211, 'Init', '0644 0645 062C'), (0xF2EE, 'Iso', '0020 064B 0651')]
+
+
+def write_arabic_fallback(v, stamp):
+    """Arabic presentation forms for fonts without Arabic GSUB: per letter its
+    initial, medial, final and isolated form, and ligatures of those forms."""
+    forms = {'Init': 0, 'Med': 1, 'Fin': 2, 'Iso': 3}
+    shapes = {}
+    ligatures = {}  # components -> {form or None: ligature}
+    entries = [(cp, v['dt'][cp], v['dm'][cp]) for cp in range(ppucd.N) if v['dt'][cp] in forms and v['dm'][cp]]
+    entries += PUA_LIGATURES
+    for cp, dt, dm in entries:
+        items = tuple(int(x, 16) for x in dm.split())
+        form = forms[dt]
+        if len(items) == 1:
+            shapes.setdefault(items[0], {})[form] = cp
+            continue
+        if items[0] == 0x20:  # mark ligatures: a space, then the marks in visual order
+            items = items[:0:-1]
+            form = None
+        if cp in ARABIC_LIGATURES:
+            ligatures.setdefault(items, {})[form] = cp
+    first, last = min(shapes), max(shapes)
+    table = [[shapes.get(u, {}).get(f, 0) for f in range(4)] for u in range(first, last + 1)]
+    lig2, lig3, mark2 = {}, {}, {}
+    for key, by_form in ligatures.items():
+        for form, cp in by_form.items():
+            if form is None:
+                mark2.setdefault(key[0], []).append((key[1], cp))
+                continue
+            shape = lambda i, f: shapes[key[i]][forms[f]]
+            if len(key) == 3:
+                seq = {3: ('Init', 'Med', 'Fin'), 2: ('Med', 'Med', 'Fin'), 0: ('Init', 'Med', 'Med')}[form]
+                liga = tuple(shape(i, f) for i, f in enumerate(seq))
+                lig3.setdefault(liga[0], []).append((liga[1], liga[2], cp))
+            else:
+                seq = {3: ('Init', 'Fin'), 2: ('Med', 'Fin'), 0: ('Init', 'Med')}[form]
+                liga = tuple(shape(i, f) for i, f in enumerate(seq))
+                lig2.setdefault(liga[0], []).append((liga[1], cp))
+
+    def rows(items, per_line):
+        return '\n'.join('    ' + ', '.join(items[i:i + per_line]) + ',' for i in range(0, len(items), per_line))
+
+    out = f'''// Generated by tools/unicode/generate.py from {stamp}. Do not edit.
+// Arabic fallback shaping (Shaper.cpp): presentation forms per letter and
+// ligatures of presentation forms, for fonts without Arabic GSUB.
+
+namespace cfw::arabic_fallback {{
+
+inline constexpr char32_t kFirst = 0x{first:04X};
+inline constexpr char32_t kLast = 0x{last:04X};
+// Initial, medial, final, isolated form of each letter kFirst..kLast (0: none).
+inline constexpr std::uint16_t kForms[{len(table)}][4] = {{
+{rows(["{0x%04X, 0x%04X, 0x%04X, 0x%04X}" % tuple(r) for r in table], 3)}
+}};
+
+struct Ligature2 {{
+    std::uint16_t first;
+    std::uint16_t second;
+    std::uint16_t ligature;
+}};
+struct Ligature3 {{
+    std::uint16_t first;
+    std::uint16_t second;
+    std::uint16_t third;
+    std::uint16_t ligature;
+}};
+// Letter ligatures (of presentation forms), by first form; within a first
+// form in the order to try.
+inline constexpr Ligature2 kLigatures[] = {{
+{rows(["{0x%04X, 0x%04X, 0x%04X}" % (f, a, l) for f in sorted(lig2) for a, l in lig2[f]], 3)}
+}};
+// Three-letter ligatures.
+inline constexpr Ligature3 kLigatures3[] = {{
+{rows(["{0x%04X, 0x%04X, 0x%04X, 0x%04X}" % (f, a, b, l) for f in sorted(lig3) for a, b, l in lig3[f]], 2)}
+}};
+// Mark ligatures (shadda with a vowel mark), isolated forms.
+inline constexpr Ligature2 kMarkLigatures[] = {{
+{rows(["{0x%04X, 0x%04X, 0x%04X}" % (f, a, l) for f in sorted(mark2) for a, l in mark2[f]], 3)}
+}};
+
+}} // namespace cfw::arabic_fallback
+'''
+    with open(os.path.join(ROOT, 'modules/cfw-text/src/ArabicFallback.inc'), 'w') as f:
+        f.write(out)
 
 
 if __name__ == '__main__':

@@ -1,6 +1,7 @@
 #include "cfw/text/FontFace.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <cstring>
 
@@ -729,7 +730,9 @@ Result<std::shared_ptr<const FontFace>> FontFace::load(Data data, std::uint32_t 
         return malformed("no data");
     }
     std::shared_ptr<FontFace> face(new FontFace());
+    static std::atomic<std::uint64_t> nextId{1};
     face->m_data = std::move(data);
+    face->m_uniqueId = nextId.fetch_add(1, std::memory_order_relaxed);
     if (Result<void> parsed = face->parse(index); !parsed) {
         return parsed.error();
     }
@@ -1107,8 +1110,12 @@ GlyphId FontFace::glyphIndex(char32_t c) const noexcept {
 }
 
 GlyphId FontFace::glyphIndex(char32_t c, char32_t selector) const noexcept {
+    return variationGlyph(c, selector).value_or(glyphIndex(c));
+}
+
+std::optional<GlyphId> FontFace::variationGlyph(char32_t c, char32_t selector) const noexcept {
     if (m_cmapVariations == 0) {
-        return glyphIndex(c);
+        return std::nullopt;
     }
     Reader r(Span<const std::byte>(m_data->data(), m_cmapVariationsEnd));
     const std::uint32_t o = m_cmapVariations;
@@ -1118,20 +1125,31 @@ GlyphId FontFace::glyphIndex(char32_t c, char32_t selector) const noexcept {
         if (r.u24(rec) != selector) {
             continue;
         }
-        const std::uint32_t nonDefault = r.u32(rec + 7);
-        if (nonDefault != 0) {
+        if (const std::uint32_t def = r.u32(rec + 3); def != 0) {
+            const std::uint32_t at = o + def;
+            const std::uint32_t ranges = r.u32(at);
+            for (std::uint32_t k = 0; k < ranges && r.has(at + 4 + k * 4, 4); ++k) {
+                const std::uint32_t start = r.u24(at + 4 + k * 4);
+                const std::uint32_t count = r.u8(at + 4 + k * 4 + 3);
+                if (c >= start && c <= start + count) {
+                    const GlyphId g = glyphIndex(c);
+                    return g != 0 ? std::optional<GlyphId>(g) : std::nullopt;
+                }
+            }
+        }
+        if (const std::uint32_t nonDefault = r.u32(rec + 7); nonDefault != 0) {
             const std::uint32_t at = o + nonDefault;
             const std::uint32_t mappings = r.u32(at);
             for (std::uint32_t k = 0; k < mappings && r.has(at + 4 + k * 5, 5); ++k) {
                 if (r.u24(at + 4 + k * 5) == c) {
                     const std::uint16_t g = r.u16(at + 4 + k * 5 + 3);
-                    return g < m_glyphCount ? g : 0;
+                    return g < m_glyphCount && g != 0 ? std::optional<GlyphId>(g) : std::nullopt;
                 }
             }
         }
-        break; // default sequences (and unknown ones) use the plain mapping
+        return std::nullopt;
     }
-    return glyphIndex(c);
+    return std::nullopt;
 }
 
 // ---- Metrics ----
@@ -1151,6 +1169,96 @@ int FontFace::leftSideBearing(GlyphId glyph) const noexcept {
 }
 
 // ---- Outlines ----
+
+bool FontFace::glyphExtents(GlyphId glyph, GlyphExtents &out) const {
+    out = {};
+    if (glyph >= m_glyphCount) {
+        return false;
+    }
+    if (m_cff) {
+        thread_local PainterPath path;
+        if (!glyphOutline(glyph, path)) {
+            return false;
+        }
+        // The bounds of every point that is part of a segment, control
+        // points included (a move that starts nothing does not count).
+        float minX = 0;
+        float minY = 0;
+        float maxX = 0;
+        float maxY = 0;
+        bool any = false;
+        const auto add = [&](Vec2 p) {
+            if (!any) {
+                minX = maxX = p.x;
+                minY = maxY = p.y;
+                any = true;
+            }
+            minX = std::min(minX, p.x);
+            maxX = std::max(maxX, p.x);
+            minY = std::min(minY, p.y);
+            maxY = std::max(maxY, p.y);
+        };
+        const Span<const Vec2> pts = path.points();
+        std::size_t k = 0;
+        Vec2 start{};
+        bool open = false;
+        for (const PainterPath::Verb verb : path.verbs()) {
+            switch (verb) {
+            case PainterPath::Verb::Move:
+                start = pts[k++];
+                open = false;
+                break;
+            case PainterPath::Verb::Line:
+            case PainterPath::Verb::Quad:
+            case PainterPath::Verb::Cubic: {
+                if (!open) {
+                    add(start);
+                    open = true;
+                }
+                const std::size_t n = verb == PainterPath::Verb::Line ? 1 : verb == PainterPath::Verb::Quad ? 2 : 3;
+                for (std::size_t i = 0; i < n; ++i) {
+                    add(pts[k++]);
+                }
+                break;
+            }
+            case PainterPath::Verb::Close: open = false; break;
+            }
+        }
+        if (any && minX < maxX) {
+            out.xBearing = static_cast<int>(std::lround(minX));
+            out.width = static_cast<int>(std::lround(maxX)) - out.xBearing;
+        }
+        if (any && minY < maxY) {
+            out.yBearing = static_cast<int>(std::lround(maxY));
+            out.height = static_cast<int>(std::lround(minY)) - out.yBearing;
+        }
+        return true;
+    }
+    if (m_glyf == 0) {
+        return false;
+    }
+    Reader r(*m_data);
+    const std::uint32_t start = m_longLoca ? r.u32(m_loca + glyph * 4u) : r.u16(m_loca + glyph * 2u) * 2u;
+    const std::uint32_t next = m_longLoca ? r.u32(m_loca + glyph * 4u + 4) : r.u16(m_loca + glyph * 2u + 2) * 2u;
+    if (!r.ok || m_loca + (glyph + 2u) * (m_longLoca ? 4u : 2u) > m_locaEnd) {
+        return false;
+    }
+    if (next <= start) {
+        return next == start;
+    }
+    if (static_cast<std::uint64_t>(m_glyf) + start + 10 > m_glyfEnd) {
+        return false;
+    }
+    const int xMin = r.i16(m_glyf + start + 2);
+    const int yMin = r.i16(m_glyf + start + 4);
+    const int xMax = r.i16(m_glyf + start + 6);
+    const int yMax = r.i16(m_glyf + start + 8);
+    out.xBearing = leftSideBearing(glyph);
+    out.yBearing = std::max(yMin, yMax);
+    out.width = std::max(xMin, xMax) - std::min(xMin, xMax);
+    out.height = std::min(yMin, yMax) - std::max(yMin, yMax);
+    return r.ok;
+}
 
 bool FontFace::glyphOutline(GlyphId glyph, PainterPath &out) const {
     out.clear();

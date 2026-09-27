@@ -12,7 +12,7 @@ covers only what is built here and how to work on it.
 | M0 — seams in Clannect | **Not started.** Everything it needs from CFW (`String`, `Variant`, property system, JSON) exists. |
 | M1 — cfw-core + cfw-io | **Both modules done, benchmarked.** Exit still needs the Runtime building without Qt (engine-side work). |
 | M2 — cfw-net + cfw-image | **CFW side done.** cfw-net: event loop, TCP, WebSocket client and server, HTTP client, and **TLS** through the OS (Schannel; system OpenSSL on Linux) for `https://` and `wss://`. It is on par with Qt and interoperates with it. cfw-image: own PNG, JPEG and WebP codecs, pixel-exact against the reference decoders. `Locale` for number formatting. The exit criteria need the engine port. |
-| M3 — cfw-gfx + cfw-text | **In progress.** `PainterPath` and the anti-aliased `Rasterizer` are done. cfw-gfx has `Painter`, `Pen`, `Brush`, the `Stroker` and the CPU backend, checked against Qt with golden images. It runs 10,000 rounded rects in 0.38× Qt's time with 0 allocations per frame. cfw-text has started, with Unicode 18 properties, grapheme clusters, line breaking and bidi; every Unicode conformance case passes. Next: fonts, shaping and layout. The GPU backend comes with M4's GL context. |
+| M3 — cfw-gfx + cfw-text | **In progress.** `PainterPath` and the anti-aliased `Rasterizer` are done. cfw-gfx has `Painter`, `Pen`, `Brush`, the `Stroker` and the CPU backend, checked against Qt with golden images. It runs 10,000 rounded rects in 0.38× Qt's time with 0 allocations per frame. cfw-text has Unicode 18 properties, grapheme clusters, line breaking and bidi, passing every Unicode conformance case. It also has `FontFace` (TrueType, CFF and collections) and the OpenType `Shaper`, which matches HarfBuzz exactly on every test font. Next: text layout, the glyph atlas and `drawTextRun`. The GPU backend comes with M4's GL context. |
 | M4 – M6 | Not started. |
 
 **cfw-core contents:**
@@ -69,8 +69,12 @@ CRC-32/Adler-32. Real zlib decodes everything it writes, at zlib's speed and rat
 character properties, generated from the UCD into about 110 KB of tables. It has grapheme clusters (UAX #29),
 line breaking (UAX #14) and the bidi algorithm (UAX #9, with isolates, brackets and reordering), and passes
 all 882,000 cases of the Unicode conformance tests. `FontFace` reads TrueType, CFF (name-keyed and CID) and
-collections, and matches fontTools and FreeType glyph for glyph on about 250,000 glyphs. OpenType shaping and
-layout come next, all CFW's own.
+collections, and matches fontTools and FreeType glyph for glyph on about 250,000 glyphs. `Shaper` does
+OpenType shaping: GSUB and GPOS with every lookup type, and the Arabic, Hebrew and Thai engines. It also covers
+fonts without layout tables (marks placed by glyph boxes, Arabic presentation forms, the `kern` table). It
+matches HarfBuzz glyph for glyph on 7,930 committed cases over four test fonts, and on every font in the
+build container. The complex-script engines (Indic, Khmer, Myanmar, Hangul, USE) and text layout come next,
+all CFW's own.
 
 **cfw-net contents:**
 

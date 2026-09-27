@@ -23,6 +23,12 @@ struct Pair {
     char32_t to;
 };
 
+struct Triple {
+    char32_t a;
+    char32_t b;
+    char32_t c;
+};
+
 } // namespace data
 
 } // namespace cfw::unicode
@@ -77,6 +83,65 @@ char32_t pairedBracket(char32_t c) noexcept {
 }
 
 char32_t mirrored(char32_t c) noexcept { return lookup(std::begin(data::kMirrors), std::end(data::kMirrors), c); }
+
+namespace {
+
+// Hangul syllables decompose and compose algorithmically (Unicode 3.12).
+constexpr char32_t kSBase = 0xAC00;
+constexpr char32_t kLBase = 0x1100;
+constexpr char32_t kVBase = 0x1161;
+constexpr char32_t kTBase = 0x11A7;
+constexpr char32_t kLCount = 19;
+constexpr char32_t kVCount = 21;
+constexpr char32_t kTCount = 28;
+constexpr char32_t kNCount = kVCount * kTCount;
+constexpr char32_t kSCount = kLCount * kNCount;
+
+} // namespace
+
+bool decompose(char32_t c, char32_t &a, char32_t &b) noexcept {
+    if (c >= kSBase && c < kSBase + kSCount) {
+        const char32_t s = c - kSBase;
+        if (s % kTCount != 0) {
+            a = kSBase + s / kTCount * kTCount; // LV
+            b = kTBase + s % kTCount;
+        } else {
+            a = kLBase + s / kNCount;
+            b = kVBase + s % kNCount / kTCount;
+        }
+        return true;
+    }
+    const data::Triple *end = std::end(data::kDecompositions);
+    const data::Triple *it = std::lower_bound(std::begin(data::kDecompositions), end, c,
+                                              [](const data::Triple &t, char32_t v) { return t.a < v; });
+    if (it == end || it->a != c) {
+        return false;
+    }
+    a = it->b;
+    b = it->c;
+    return true;
+}
+
+bool compose(char32_t a, char32_t b, char32_t &composite) noexcept {
+    if (a >= kLBase && a < kLBase + kLCount && b >= kVBase && b < kVBase + kVCount) {
+        composite = kSBase + ((a - kLBase) * kVCount + (b - kVBase)) * kTCount;
+        return true;
+    }
+    if (a >= kSBase && a < kSBase + kSCount && (a - kSBase) % kTCount == 0 && b > kTBase && b < kTBase + kTCount) {
+        composite = a + (b - kTBase);
+        return true;
+    }
+    const data::Triple *end = std::end(data::kCompositions);
+    const data::Triple *it = std::lower_bound(std::begin(data::kCompositions), end, std::make_pair(a, b),
+                                              [](const data::Triple &t, const std::pair<char32_t, char32_t> &v) {
+                                                  return t.a < v.first || (t.a == v.first && t.b < v.second);
+                                              });
+    if (it == end || it->a != a || it->b != b) {
+        return false;
+    }
+    composite = it->c;
+    return true;
+}
 
 const char *iso15924(Script script) noexcept {
     const auto i = static_cast<std::size_t>(script);

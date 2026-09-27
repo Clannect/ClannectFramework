@@ -7,6 +7,8 @@ cfw_add_module(cfw-text
     SOURCES
         src/Bidi.cpp
         src/FontFace.cpp
+        src/OtLayout.cpp
+        src/Shaper.cpp
         src/TextBreaks.cpp
         src/Unicode.cpp
     DEPENDS
@@ -39,3 +41,6 @@ endforeach()
 
 cfw_add_test(cfw-text FontFaceTest)
 target_compile_definitions(FontFaceTest PRIVATE CFW_TEXT_TESTDATA="${CMAKE_CURRENT_SOURCE_DIR}/testdata")
+
+cfw_add_test(cfw-text ShaperTest)
+target_compile_definitions(ShaperTest PRIVATE CFW_TEXT_TESTDATA="${CMAKE_CURRENT_SOURCE_DIR}/testdata")

@@ -12,6 +12,14 @@
   | `CfwTestComposite.ttf` | TrueType composites: offsets, uniform, x/y and 2×2 scales, point matching, nesting (and `SCALED_COMPONENT_OFFSET`, which is ignored as FreeType ignores it) |
   | `CfwTestCollection.ttc` | A collection of two faces |
 
+- The shaping test fonts are made by `testing/text-oracle/make_layout_font.py`:
+
+  | Font | Covers |
+  |---|---|
+  | `CfwTestLayout.ttf` | Box outlines with GSUB, GPOS, GDEF and `kern` tables that use every lookup type and subtable format: single, multiple, alternate (with `rand`), ligature, contextual and chained contextual (formats 1–3), extension and reverse chaining substitution; single and pair (formats 1–2), cursive, mark-to-base, mark-to-ligature, mark-to-mark, contextual and chained contextual (formats 1–3) and extension positioning; anchors of all three formats, mark attachment classes, mark filtering sets, a required feature, a language system, and `kern` subtables of formats 0 and 2. The script checks that each type and format really is in the compiled font. |
+  | `CfwTestPlain.ttf` | DejaVu Sans (Latin, marks, Greek, Hebrew, Arabic and presentation forms) without GSUB, GPOS and GDEF but with its `kern` table: marks placed by glyph boxes, Arabic forms from presentation forms, Hebrew presentation forms, legacy kerning |
+  | `CfwTestPlain.otf` | A smaller CFF version, for glyph boxes computed from CFF outlines |
+
 - `expected.json` holds, for each font, what the references report: names, metrics, a hash of the whole character
   map, and hashes of every glyph's outline in blocks of 64. fontTools is the reference, and FreeType is used where
   fontTools cannot interpret a glyph (Type 2 arithmetic, point-matched components). `FontFaceTest` compares

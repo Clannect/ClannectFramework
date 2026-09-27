@@ -20,6 +20,7 @@
 #include <array>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <vector>
 
 #include "cfw/core/PainterPath.h"
@@ -48,6 +49,10 @@ public:
                static_cast<std::uint32_t>(static_cast<unsigned char>(t[2])) << 8 |
                static_cast<std::uint32_t>(static_cast<unsigned char>(t[3]));
     }
+    // Identifies this face for caches: unique among all faces loaded in the
+    // process, never reused (unlike the address).
+    [[nodiscard]] std::uint64_t uniqueId() const noexcept { return m_uniqueId; }
+
     // A table's bytes (empty if the face has none).
     [[nodiscard]] Span<const std::byte> table(std::uint32_t tag) const noexcept;
 
@@ -86,9 +91,24 @@ public:
     // With a variation selector (cmap format 14): the variant glyph, or
     // glyphIndex(c) if the sequence is default or unknown.
     [[nodiscard]] GlyphId glyphIndex(char32_t c, char32_t selector) const noexcept;
+    // The glyph for a variation sequence the font lists (its default glyph
+    // for a default sequence), or nothing if the font does not list it.
+    [[nodiscard]] std::optional<GlyphId> variationGlyph(char32_t c, char32_t selector) const noexcept;
 
     [[nodiscard]] int advanceWidth(GlyphId glyph) const noexcept;
     [[nodiscard]] int leftSideBearing(GlyphId glyph) const noexcept;
+
+    // A glyph's ink box in font units, y up: left edge, top, width, and
+    // height (negative: downwards), as HarfBuzz reports it (TrueType: the glyf
+    // header box placed at the hmtx side bearing; CFF: the outline's control
+    // points). All zero for an empty glyph; false if the glyph is missing.
+    struct GlyphExtents {
+        int xBearing = 0;
+        int yBearing = 0;
+        int width = 0;
+        int height = 0;
+    };
+    [[nodiscard]] bool glyphExtents(GlyphId glyph, GlyphExtents &out) const;
 
     // The glyph's outline, replacing `out`. False (and an empty path) for a
     // glyph that does not exist or whose data is broken; true and an empty
@@ -116,6 +136,7 @@ private:
     };
 
     Data m_data;
+    std::uint64_t m_uniqueId = 0;
     std::vector<TableEntry> m_tables;
     String m_family;
     String m_style;

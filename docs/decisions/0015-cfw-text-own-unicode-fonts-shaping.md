@@ -13,7 +13,7 @@ parts, each checked against an outside reference:
 |---|---|---|
 | Unicode | Property tables; grapheme clusters (UAX #29); line breaking (UAX #14); bidi (UAX #9) | The Unicode conformance tests, all of them |
 | Fonts | sfnt/TTC, `cmap`, metrics, TrueType (`glyf`) and CFF outlines, all bounds-checked and fuzzed | fontTools (outlines); FreeType, unhinted (glyph masks) |
-| Shaping | GSUB/GPOS lookups; script and feature selection; Arabic joining; marks | HarfBuzz (glyphs, clusters, advances, offsets) |
+| Shaping | GSUB/GPOS lookups; script and feature selection; Arabic joining; marks (done except the complex-script engines) | HarfBuzz (glyphs, clusters, advances, offsets) |
 | Layout | Itemising (bidi, script, font fallback); cached shaping; wrapping, ellipsis, carets, hit-testing; glyph atlas; `Painter::drawTextRun` | Property tests and golden images |
 
 The references run outside the build: pip's fontTools, freetype-py and uharfbuzz produce expected
@@ -101,9 +101,100 @@ findings; the `hostileData` test adds every truncation and random corruption of 
 **Not supported yet:** variable fonts (`fvar`, `gvar`, CFF2), vertical metrics, colour and bitmap glyphs,
 WOFF/WOFF2, and the deprecated `seac` accent form of `endchar`.
 
+## Shaping (done for the default, Arabic, Hebrew and Thai engines)
+
+`Shaper::shape(face, text, options, out)` turns a run of one script and direction into glyph ids, clusters,
+advances and offsets. It is modelled on HarfBuzz 13 and matches it exactly (every glyph, cluster and
+position) on everything tested. HarfBuzz's source is used to read how it behaves, not copied, compiled or
+linked. The pipeline:
+
+1. **Characters:**
+   - Unicode properties: general category, HarfBuzz's default-ignorable set, and modified combining classes
+     (Hebrew and Arabic points in font order).
+   - Clusters are graphemes, as HarfBuzz approximates them.
+   - Text asked for against its script's native direction is reversed grapheme by grapheme, and back at the
+     end. Digit-only runs in right-to-left scripts count as left-to-right.
+   - Thai and Lao SARA AM decomposes. Thai without Thai GSUB moves to the fonts' Private Use Area forms.
+   - Right-to-left runs mirror brackets, or mark them for `rtlm`.
+2. **Normalisation, guided by the font:**
+   - Characters the font lacks are decomposed; next to marks, they are decomposed fully.
+   - Marks are reordered by modified class, with the Arabic modifier-mark and Hebrew fixes.
+   - Pairs are recomposed where the font has the composite. Without GPOS marks, this includes Hebrew
+     presentation forms.
+   - Variation sequences use cmap format 14.
+   - Spaces and U+2011 the font lacks fall back to the space and hyphen glyphs.
+3. **The plan**, cached per face, script, direction, language and features, is built as HarfBuzz's map
+   builder builds it:
+   - Script and language system selection, with Indic v2 tags and the DFLT, dflt and latn fallbacks.
+   - Features in HarfBuzz's order and GSUB stages, including the Arabic pauses. Duplicates merge.
+   - Mask bits: a shared global bit, plus bits for non-boolean and ranged features.
+   - Per-stage lookups, sorted and merged, and the required feature.
+   - The engine: default, Arabic, which also serves Syriac in fonts made for it, Hebrew, or Thai/Lao.
+4. **Masks:** automatic fractions (`frac`, `numr`, `dnom` around U+2044), Arabic joining (HarfBuzz's
+   state machine, with Syriac Alaph and Dalath-Rish), and ranged user features.
+5. **GSUB:**
+   - Single, multiple, alternate (`rand` uses HarfBuzz's minstd sequence), ligature, contextual and
+     chained contextual (formats 1 to 3), extension, and reverse chaining lookups.
+   - HarfBuzz's skipping iterator and ligature component bookkeeping.
+   - Arabic fonts without joining forms get lookups synthesised from the presentation forms they map. The
+     tables are generated from the UCD by `tools/unicode/generate.py`, and are identical to HarfBuzz's.
+6. **Positioning:**
+   - `hmtx` advances, and fallback space widths.
+   - GPOS: single, pair, cursive, mark-to-base, -ligature and -mark, contextual, and extension lookups.
+     Marks share a base-search cache and accept rules, and resolve cross-stream offsets.
+   - Otherwise the legacy `kern` table: formats 0 and 2, in visual order, with cross-stream chains.
+   - Marks are zeroed by GDEF class, then attachments are propagated.
+   - Without GPOS, marks are placed by glyph boxes: TrueType from the `glyf` header at the `hmtx` bearing,
+     CFF from the outline's points.
+7. **Output:** the reversal for right-to-left runs, and default ignorables become the space glyph with no
+   advance.
+
+**Checked against HarfBuzz (`ShaperTest`, committed):**
+
+| Font | Covers | Cases |
+|---|---|---:|
+| DejaVu Sans | Real GSUB/GPOS for Latin, Greek, Cyrillic, Arabic, Hebrew and more | 2,117 |
+| `CfwTestLayout.ttf` | Built with fontTools to use every lookup type and subtable format, the required feature, a language system and `kern` formats 0 and 2 | 3,079 |
+| `CfwTestPlain.ttf` / `.otf` | DejaVu without layout tables: box-placed marks (glyf and CFF), Arabic fallback forms, Hebrew presentation forms, legacy kerning | 1,617 / 1,117 |
+
+The cases are a fixed corpus plus random strings from per-script pools. The corpus covers:
+
+- ligatures and kerning, and marks in every order;
+- spaces, ignorables, joiners and variation sequences;
+- emoji sequences and fractions;
+- Arabic joining and lam-alef;
+- Hebrew points, Thai and Lao;
+- features on, off and ranged;
+- forced directions and a language system.
+
+In development, every font in the container was also compared with 3,118 cases each: 61 files, among them
+FreeSerif, Liberation, IPA Gothic, WenQuanYi, Loma (Thai) and Unifont (Arabic without GSUB). All of them
+match, except NKo in a font without GSUB, because that goes to the Universal Shaping Engine (below).
+
+**Fuzzing:** `FuzzShape` shapes arbitrary text in the test fonts and in `CfwTestLayout` with patched table
+bytes. It ran 245,000 inputs with no findings, and 1,726 of them are the committed corpus. `ShaperTest`
+also shapes 400 corrupted and truncated copies of the layout font.
+
+**Not yet:**
+
+- The complex-script engines: Indic, Khmer, Myanmar, Hangul and the Universal Shaping Engine. Those
+  scripts shape with the default engine, which differs from HarfBuzz once a font has their script tags.
+- Arabic `stch` stretching, and Windows-1256 legacy Arabic fonts.
+- Vertical text, variable fonts, AAT (`morx`, `kerx`, `trak`), and `kern` state machines (formats 1 and 3).
+
 ## Found on the way
 
 - **ppucd semantics:** `unassigned` ranges start from the file's defaults, not from their block. Reading
   them the other way gave U+1F8FF the block's `gc=So` instead of `Cn`, and LB30b failed.
+- **HarfBuzz details that matter for exact results:**
+  - A ranged feature that turns a default feature off keeps it on elsewhere (the default value stays in
+    the global mask).
+  - Decomposition next to marks is full, not shortest.
+  - In GPOS, and in the legacy `kern` table, hidden ignorables (CGJ, tags) are skipped; GSUB does not skip
+    them.
+  - The Hebrew engine ignores a GPOS table without Hebrew in it.
+  - Thai never uses the `kern` table.
+  - `kern` format 2 kerns only glyphs inside both class arrays.
+  - A CFF glyph's box ignores a final lone `moveto`.
 - **Bidi:** sos and eos come from the explicit embedding levels (X1–X8), not from levels already raised
   while resolving an earlier sequence. Using the resolved levels failed 148 conformance cases.

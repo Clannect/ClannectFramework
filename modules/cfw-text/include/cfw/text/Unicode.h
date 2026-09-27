@@ -51,6 +51,14 @@ struct Properties {
 // or `c` itself.
 [[nodiscard]] char32_t mirrored(char32_t c) noexcept;
 
+// Canonical decomposition, one step: `c` becomes `a` followed by `b` (b is 0
+// for a singleton). False if `c` does not decompose. Hangul syllables
+// decompose algorithmically.
+bool decompose(char32_t c, char32_t &a, char32_t &b) noexcept;
+// Canonical composition of a pair into a primary composite (composition
+// exclusions never form). False if the pair does not compose.
+bool compose(char32_t a, char32_t b, char32_t &composite) noexcept;
+
 // ISO 15924 code ("Latn", "Arab", "Zyyy" for Common).
 [[nodiscard]] const char *iso15924(Script script) noexcept;
 [[nodiscard]] std::optional<Script> scriptFromIso15924(StringView code) noexcept;
