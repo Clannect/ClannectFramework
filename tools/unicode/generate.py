@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
 """Generates cfw-text's Unicode property tables from ICU's preparsed UCD.
 
-    python3 tools/unicode/generate.py path/to/ppucd.txt
+    python3 tools/unicode/generate.py path/to/ppucd.txt path/to/ms-use
+
+ms-use is the directory holding Microsoft's Universal Shaping Engine additions to the UCD,
+IndicSyllabicCategory-Additional.txt and IndicPositionalCategory-Additional.txt
+(https://github.com/microsoft/font-tools, MIT). They are not committed either.
 
 ppucd.txt is https://raw.githubusercontent.com/unicode-org/icu/main/icu4c/source/data/unidata/ppucd.txt
 (Unicode data, Unicode License v3). It is not committed; the version and SHA-256 of the input go into the
@@ -10,6 +14,8 @@ generated files, so a regeneration is reproducible. Writes:
     modules/cfw-text/include/cfw/text/UnicodeEnums.h   the property value enums
     modules/cfw-text/src/UnicodeTables.inc              a two-stage trie of 8-byte records, bracket pairs,
                                                         mirroring pairs
+    modules/cfw-text/src/ArabicFallback.inc             presentation forms for fonts without Arabic GSUB
+    modules/cfw-text/src/SyllabicTables.inc             the syllabic shapers' character categories
 """
 import hashlib
 import os
@@ -17,6 +23,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(__file__))
 import ppucd  # noqa: E402
+import syllabic  # noqa: E402
 
 ROOT = os.path.normpath(os.path.join(os.path.dirname(__file__), '..', '..'))
 SHIFT = 7
@@ -214,6 +221,7 @@ inline constexpr const char kScriptCodes[{len(scripts)}][5] = {{
     with open(os.path.join(ROOT, 'modules/cfw-text/src/UnicodeTables.inc'), 'w') as out:
         out.write(inc)
     write_arabic_fallback(v, stamp)
+    syllabic.write(source, sys.argv[2], stamp, ROOT, SHIFT)
     print(f'{stamp}: {len(records)} records, {len(blocks)} blocks, {len(brackets)} brackets, {len(mirrors)} mirrors, '
           f'{len(scripts)} scripts, {len(lb_values)} line break classes, {len(decompositions)} decompositions, '
           f'{len(compositions)} compositions')
