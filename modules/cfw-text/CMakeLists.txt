@@ -6,6 +6,7 @@
 cfw_add_module(cfw-text
     SOURCES
         src/Bidi.cpp
+        src/FontFace.cpp
         src/TextBreaks.cpp
         src/Unicode.cpp
     DEPENDS
@@ -35,3 +36,6 @@ foreach(part classes characters)
     endif()
     cfw_set_test_environment(BidiTest-${part})
 endforeach()
+
+cfw_add_test(cfw-text FontFaceTest)
+target_compile_definitions(FontFaceTest PRIVATE CFW_TEXT_TESTDATA="${CMAKE_CURRENT_SOURCE_DIR}/testdata")

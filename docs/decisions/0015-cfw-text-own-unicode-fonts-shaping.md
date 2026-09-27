@@ -52,6 +52,55 @@ values, which are committed.
   that levels stay at most 126 and that the visual order is a permutation. It found nothing in 100,000
   inputs.
 
+## Fonts (done)
+
+`FontFace` reads one face of an OpenType file: a `.ttf`, an `.otf`, or one face of a `.ttc`/`.otc`
+collection. It covers:
+
+- **Tables:** the directory, `head`, `maxp`, `hhea`, `hmtx`, `OS/2` (with `USE_TYPO_METRICS`), `post` and
+  `name`.
+- **`cmap`:** formats 0, 4, 6, 10, 12 and 13; format 14 variation sequences; symbol fonts.
+- **TrueType outlines:** simple glyphs with implied on-curve points, and composites with offsets, all
+  scale forms, point matching and nesting (depth ≤ 16).
+- **CFF outlines:** name-keyed and CID-keyed (FDSelect formats 0 and 3), with the complete Type 2
+  charstring interpreter: hints and masks, every curve and flex operator, local and global subroutines
+  (depth ≤ 10), arithmetic and storage, and a 200,000-operator budget.
+
+Every read is bounds-checked, so a hostile file fails to load or yields empty glyphs.
+
+**Checked against references, glyph for glyph:**
+
+| Font | Glyphs | Result |
+|---|---:|---|
+| DejaVu Sans, DejaVu Sans Mono, Liberation, IPA Gothic, FreeSerif, FreeMono | about 45,000 | equal to fontTools, within 1/64 unit on float-scaled composites |
+| Loma (CFF) | 368 | equal |
+| Unifont (CID-keyed CFF) | 57,088 | equal |
+| Both faces of WenQuanYi Zen Hei (TTC) | 2 × 44,960 | equal |
+
+The character maps of five fonts are equal to fontTools' best cmap for every code point. Ours reads all
+of Unifont's outlines in 1.2 s; fontTools takes 13.6 s.
+
+**Committed and tested (`FontFaceTest`):** DejaVu Sans, plus four fonts derived from it, which cover CFF
+with every operator, CID, composites and a collection. Each font's names, metrics, whole character map
+and every outline, hashed, must equal the reference.
+
+**FreeType's behaviour, followed where the references disagree:**
+
+- **Phantom points:** a TrueType glyph whose `glyf` xMin differs from its `hmtx` left side bearing is
+  shifted so its left edge is at the bearing. fontTools does this for simple glyphs only; FreeType also
+  does it for composites.
+- **`SCALED_COMPONENT_OFFSET`:** ignored, as FreeType and fontTools do.
+
+**Where FreeType is wrong:** its `roll` operator moves the bottom of the stack when N is smaller than the
+stack; the Type 2 specification rolls the top N elements, and CFW follows the specification. HarfBuzz
+does not run the arithmetic operators at all.
+
+**Fuzzing:** `FuzzFont` ran 2.4 million inputs, seeded with tiny fonts in every format, with no
+findings; the `hostileData` test adds every truncation and random corruption of the test fonts.
+
+**Not supported yet:** variable fonts (`fvar`, `gvar`, CFF2), vertical metrics, colour and bitmap glyphs,
+WOFF/WOFF2, and the deprecated `seac` accent form of `endchar`.
+
 ## Found on the way
 
 - **ppucd semantics:** `unassigned` ranges start from the file's defaults, not from their block. Reading

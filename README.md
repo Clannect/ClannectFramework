@@ -68,8 +68,9 @@ CRC-32/Adler-32. Real zlib decodes everything it writes, at zlib's speed and rat
 **cfw-text contents so far** ([0015](docs/decisions/0015-cfw-text-own-unicode-fonts-shaping.md)): Unicode 18
 character properties, generated from the UCD into about 110 KB of tables. It has grapheme clusters (UAX #29),
 line breaking (UAX #14) and the bidi algorithm (UAX #9, with isolates, brackets and reordering), and passes
-all 882,000 cases of the Unicode conformance tests. Font parsing, OpenType shaping and layout come next,
-all CFW's own.
+all 882,000 cases of the Unicode conformance tests. `FontFace` reads TrueType, CFF (name-keyed and CID) and
+collections, and matches fontTools and FreeType glyph for glyph on about 250,000 glyphs. OpenType shaping and
+layout come next, all CFW's own.
 
 **cfw-net contents:**
 
