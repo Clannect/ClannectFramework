@@ -30,9 +30,12 @@ cfw_add_module(cfw-io
 )
 target_link_libraries(cfw-io PRIVATE ${CFW_IO_PLATFORM_LIBS})
 
-cfw_add_test(cfw-io JsonTest)
-cfw_add_test(cfw-io ByteBufferTest)
-cfw_add_test(cfw-io FileSystemTest)
-target_compile_definitions(JsonTest PRIVATE CFW_IO_TESTDATA="${CMAKE_CURRENT_SOURCE_DIR}/testdata")
-cfw_add_test(cfw-io FuzzSmokeTest)
-target_compile_definitions(FuzzSmokeTest PRIVATE CFW_IO_TESTDATA="${CMAKE_CURRENT_SOURCE_DIR}/testdata")
+# Tests (only when CFW builds them: not as a subproject).
+if(CFW_BUILD_TESTS)
+    cfw_add_test(cfw-io JsonTest)
+    cfw_add_test(cfw-io ByteBufferTest)
+    cfw_add_test(cfw-io FileSystemTest)
+    target_compile_definitions(JsonTest PRIVATE CFW_IO_TESTDATA="${CMAKE_CURRENT_SOURCE_DIR}/testdata")
+    cfw_add_test(cfw-io FuzzSmokeTest)
+    target_compile_definitions(FuzzSmokeTest PRIVATE CFW_IO_TESTDATA="${CMAKE_CURRENT_SOURCE_DIR}/testdata")
+endif()

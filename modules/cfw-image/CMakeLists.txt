@@ -19,18 +19,21 @@ cfw_add_module(cfw-image
         cfw-core
 )
 
-cfw_add_test(cfw-image PngTest)
-target_compile_definitions(PngTest PRIVATE CFW_IMAGE_TESTDATA="${CMAKE_CURRENT_SOURCE_DIR}/testdata")
-target_link_libraries(PngTest PRIVATE cfw-io)
+# Tests (only when CFW builds them: not as a subproject).
+if(CFW_BUILD_TESTS)
+    cfw_add_test(cfw-image PngTest)
+    target_compile_definitions(PngTest PRIVATE CFW_IMAGE_TESTDATA="${CMAKE_CURRENT_SOURCE_DIR}/testdata")
+    target_link_libraries(PngTest PRIVATE cfw-io)
 
-cfw_add_test(cfw-image JpegTest)
-target_compile_definitions(JpegTest PRIVATE CFW_IMAGE_TESTDATA="${CMAKE_CURRENT_SOURCE_DIR}/testdata")
-target_link_libraries(JpegTest PRIVATE cfw-io)
+    cfw_add_test(cfw-image JpegTest)
+    target_compile_definitions(JpegTest PRIVATE CFW_IMAGE_TESTDATA="${CMAKE_CURRENT_SOURCE_DIR}/testdata")
+    target_link_libraries(JpegTest PRIVATE cfw-io)
 
-cfw_add_test(cfw-image WebPTest)
-target_compile_definitions(WebPTest PRIVATE CFW_IMAGE_TESTDATA="${CMAKE_CURRENT_SOURCE_DIR}/testdata")
-target_link_libraries(WebPTest PRIVATE cfw-io)
+    cfw_add_test(cfw-image WebPTest)
+    target_compile_definitions(WebPTest PRIVATE CFW_IMAGE_TESTDATA="${CMAKE_CURRENT_SOURCE_DIR}/testdata")
+    target_link_libraries(WebPTest PRIVATE cfw-io)
 
-cfw_add_test(cfw-image ImageToolsTest)
+    cfw_add_test(cfw-image ImageToolsTest)
 
-cfw_add_test(cfw-image RasterizerTest)
+    cfw_add_test(cfw-image RasterizerTest)
+endif()

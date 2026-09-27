@@ -31,9 +31,12 @@ cfw_add_module(cfw-net
 )
 target_link_libraries(cfw-net PRIVATE ${CFW_NET_PLATFORM_LIBS} Threads::Threads)
 
-cfw_add_test(cfw-net WebSocketProtocolTest)
-cfw_add_test(cfw-net EventLoopTest)
-cfw_add_test(cfw-net WebSocketTest)
-cfw_add_test(cfw-net HttpTest)
-cfw_add_test(cfw-net TlsTest)
-target_link_libraries(TlsTest PRIVATE cfw-io)
+# Tests (only when CFW builds them: not as a subproject).
+if(CFW_BUILD_TESTS)
+    cfw_add_test(cfw-net WebSocketProtocolTest)
+    cfw_add_test(cfw-net EventLoopTest)
+    cfw_add_test(cfw-net WebSocketTest)
+    cfw_add_test(cfw-net HttpTest)
+    cfw_add_test(cfw-net TlsTest)
+    target_link_libraries(TlsTest PRIVATE cfw-io)
+endif()

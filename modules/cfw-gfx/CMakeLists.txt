@@ -15,19 +15,22 @@ cfw_add_module(cfw-gfx
         cfw-text
 )
 
-cfw_add_test(cfw-gfx StrokerTest)
+# Tests (only when CFW builds them: not as a subproject).
+if(CFW_BUILD_TESTS)
+    cfw_add_test(cfw-gfx StrokerTest)
 
-cfw_add_test(cfw-gfx PainterTest)
+    cfw_add_test(cfw-gfx PainterTest)
 
-cfw_add_test(cfw-gfx PainterGoldenTest)
-target_compile_definitions(PainterGoldenTest PRIVATE CFW_GFX_TESTDATA="${CMAKE_CURRENT_SOURCE_DIR}/testdata"
-                                                     CFW_GFX_OUTPUT="${CMAKE_CURRENT_BINARY_DIR}")
-target_link_libraries(PainterGoldenTest PRIVATE cfw-io)
+    cfw_add_test(cfw-gfx PainterGoldenTest)
+    target_compile_definitions(PainterGoldenTest PRIVATE CFW_GFX_TESTDATA="${CMAKE_CURRENT_SOURCE_DIR}/testdata"
+                                                         CFW_GFX_OUTPUT="${CMAKE_CURRENT_BINARY_DIR}")
+    target_link_libraries(PainterGoldenTest PRIVATE cfw-io)
 
-cfw_add_test(cfw-gfx TextPaintTest)
-target_compile_definitions(TextPaintTest PRIVATE CFW_TEXT_FONTS="${PROJECT_SOURCE_DIR}/modules/cfw-text/testdata/fonts")
-target_link_libraries(TextPaintTest PRIVATE cfw-io)
+    cfw_add_test(cfw-gfx TextPaintTest)
+    target_compile_definitions(TextPaintTest PRIVATE CFW_TEXT_FONTS="${PROJECT_SOURCE_DIR}/modules/cfw-text/testdata/fonts")
+    target_link_libraries(TextPaintTest PRIVATE cfw-io)
 
-cfw_add_test(cfw-gfx SvgImageTest)
-target_compile_definitions(SvgImageTest PRIVATE CFW_GFX_TESTDATA="${CMAKE_CURRENT_SOURCE_DIR}/testdata")
-target_link_libraries(SvgImageTest PRIVATE cfw-io)
+    cfw_add_test(cfw-gfx SvgImageTest)
+    target_compile_definitions(SvgImageTest PRIVATE CFW_GFX_TESTDATA="${CMAKE_CURRENT_SOURCE_DIR}/testdata")
+    target_link_libraries(SvgImageTest PRIVATE cfw-io)
+endif()

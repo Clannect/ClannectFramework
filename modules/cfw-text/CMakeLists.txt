@@ -20,37 +20,40 @@ cfw_add_module(cfw-text
         cfw-io
 )
 
-cfw_add_test(cfw-text TextBreaksTest)
-target_compile_definitions(TextBreaksTest PRIVATE CFW_TEXT_TESTDATA="${CMAKE_CURRENT_SOURCE_DIR}/testdata")
-
-# One executable, two tests (one per conformance file), so each stays within
-# the time budget.
+# Tests (only when CFW builds them: not as a subproject).
 if(CFW_BUILD_TESTS)
-    add_executable(BidiTest tests/BidiTest.cpp)
-    target_link_libraries(BidiTest PRIVATE cfw-text cfw-test-support)
-    target_compile_definitions(BidiTest PRIVATE CFW_TEXT_TESTDATA="${CMAKE_CURRENT_SOURCE_DIR}/testdata")
-    cfw_configure_target(BidiTest)
+    cfw_add_test(cfw-text TextBreaksTest)
+    target_compile_definitions(TextBreaksTest PRIVATE CFW_TEXT_TESTDATA="${CMAKE_CURRENT_SOURCE_DIR}/testdata")
+
+    # One executable, two tests (one per conformance file), so each stays within
+    # the time budget.
+    if(CFW_BUILD_TESTS)
+        add_executable(BidiTest tests/BidiTest.cpp)
+        target_link_libraries(BidiTest PRIVATE cfw-text cfw-test-support)
+        target_compile_definitions(BidiTest PRIVATE CFW_TEXT_TESTDATA="${CMAKE_CURRENT_SOURCE_DIR}/testdata")
+        cfw_configure_target(BidiTest)
+    endif()
+    foreach(part classes characters)
+        if(NOT CFW_BUILD_TESTS)
+            break()
+        endif()
+        add_test(NAME BidiTest-${part} COMMAND BidiTest ${part})
+        set_tests_properties(BidiTest-${part} PROPERTIES LABELS cfw-text TIMEOUT 10)
+        if(CFW_SANITIZE)
+            set_tests_properties(BidiTest-${part} PROPERTIES TIMEOUT 120)
+        endif()
+        cfw_set_test_environment(BidiTest-${part})
+    endforeach()
+
+    cfw_add_test(cfw-text FontFaceTest)
+    target_compile_definitions(FontFaceTest PRIVATE CFW_TEXT_TESTDATA="${CMAKE_CURRENT_SOURCE_DIR}/testdata")
+
+    cfw_add_test(cfw-text ShaperTest)
+    target_compile_definitions(ShaperTest PRIVATE CFW_TEXT_TESTDATA="${CMAKE_CURRENT_SOURCE_DIR}/testdata")
+
+    cfw_add_test(cfw-text GlyphCacheTest)
+    target_compile_definitions(GlyphCacheTest PRIVATE CFW_TEXT_TESTDATA="${CMAKE_CURRENT_SOURCE_DIR}/testdata")
+
+    cfw_add_test(cfw-text TextLayoutTest)
+    target_compile_definitions(TextLayoutTest PRIVATE CFW_TEXT_TESTDATA="${CMAKE_CURRENT_SOURCE_DIR}/testdata")
 endif()
-foreach(part classes characters)
-    if(NOT CFW_BUILD_TESTS)
-        break()
-    endif()
-    add_test(NAME BidiTest-${part} COMMAND BidiTest ${part})
-    set_tests_properties(BidiTest-${part} PROPERTIES LABELS cfw-text TIMEOUT 10)
-    if(CFW_SANITIZE)
-        set_tests_properties(BidiTest-${part} PROPERTIES TIMEOUT 120)
-    endif()
-    cfw_set_test_environment(BidiTest-${part})
-endforeach()
-
-cfw_add_test(cfw-text FontFaceTest)
-target_compile_definitions(FontFaceTest PRIVATE CFW_TEXT_TESTDATA="${CMAKE_CURRENT_SOURCE_DIR}/testdata")
-
-cfw_add_test(cfw-text ShaperTest)
-target_compile_definitions(ShaperTest PRIVATE CFW_TEXT_TESTDATA="${CMAKE_CURRENT_SOURCE_DIR}/testdata")
-
-cfw_add_test(cfw-text GlyphCacheTest)
-target_compile_definitions(GlyphCacheTest PRIVATE CFW_TEXT_TESTDATA="${CMAKE_CURRENT_SOURCE_DIR}/testdata")
-
-cfw_add_test(cfw-text TextLayoutTest)
-target_compile_definitions(TextLayoutTest PRIVATE CFW_TEXT_TESTDATA="${CMAKE_CURRENT_SOURCE_DIR}/testdata")
