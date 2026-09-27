@@ -1,0 +1,11 @@
+{
+    "note": "Qt 6.8.3 (MinGW 13.1, release) on i5-12450H; measured by an out-of-tree oracle",
+    "results": {
+        "json.parse.scene5mb": {
+            "medianNs": 21407300
+        },
+        "json.write.scene5mb": {
+            "medianNs": 21791500
+        }
+    }
+}

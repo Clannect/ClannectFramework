@@ -1,0 +1,177 @@
+{
+    "formatVersion": 1,
+    "root": {
+        "children": [
+            {
+                "children": [
+                    {
+                        "class": "Part",
+                        "name": "Starterground",
+                        "properties": {
+                            "Anchored": {
+                                "type": "Bool",
+                                "value": true
+                            },
+                            "Color": {
+                                "type": "Color",
+                                "value": [
+                                    125,
+                                    125,
+                                    125,
+                                    255
+                                ]
+                            },
+                            "Material": {
+                                "type": "String",
+                                "value": "Plastic"
+                            },
+                            "Position": {
+                                "type": "Vector3",
+                                "value": [
+                                    0,
+                                    -8,
+                                    0
+                                ]
+                            },
+                            "Size": {
+                                "type": "Vector3",
+                                "value": [
+                                    512,
+                                    16,
+                                    512
+                                ]
+                            }
+                        }
+                    },
+                    {
+                        "class": "Part",
+                        "name": "Block",
+                        "properties": {
+                            "Anchored": {
+                                "type": "Bool",
+                                "value": true
+                            },
+                            "Color": {
+                                "type": "Color",
+                                "value": [
+                                    163,
+                                    162,
+                                    165,
+                                    255
+                                ]
+                            },
+                            "Material": {
+                                "type": "String",
+                                "value": "Plastic"
+                            },
+                            "Position": {
+                                "type": "Vector3",
+                                "value": [
+                                    1,
+                                    2,
+                                    3
+                                ]
+                            },
+                            "Rotation": {
+                                "type": "Vector3",
+                                "value": [
+                                    10,
+                                    20,
+                                    30
+                                ]
+                            },
+                            "Shape": {
+                                "type": "String",
+                                "value": "Block"
+                            },
+                            "Size": {
+                                "type": "Vector3",
+                                "value": [
+                                    4,
+                                    4,
+                                    4
+                                ]
+                            }
+                        }
+                    }
+                ],
+                "class": "Workspace",
+                "name": "Workspace"
+            },
+            {
+                "class": "Lighting",
+                "name": "Lighting",
+                "properties": {
+                    "Ambient": {
+                        "type": "Color",
+                        "value": [
+                            100,
+                            120,
+                            145,
+                            255
+                        ]
+                    },
+                    "Brightness": {
+                        "type": "Number",
+                        "value": 2
+                    },
+                    "GlobalShadows": {
+                        "type": "Bool",
+                        "value": true
+                    },
+                    "OutdoorAmbient": {
+                        "type": "Color",
+                        "value": [
+                            168,
+                            200,
+                            232,
+                            255
+                        ]
+                    }
+                }
+            },
+            {
+                "class": "Players",
+                "name": "Players"
+            },
+            {
+                "class": "ReplicatedFirst",
+                "name": "ReplicatedFirst"
+            },
+            {
+                "class": "ReplicatedStorage",
+                "name": "ReplicatedStorage"
+            },
+            {
+                "class": "ServerScriptService",
+                "name": "ServerScriptService"
+            },
+            {
+                "class": "ServerStorage",
+                "name": "ServerStorage"
+            },
+            {
+                "class": "StarterGui",
+                "name": "StarterGui"
+            },
+            {
+                "class": "StarterPlayer",
+                "name": "StarterPlayer"
+            },
+            {
+                "class": "SoundService",
+                "name": "SoundService"
+            },
+            {
+                "class": "Teams",
+                "name": "Teams"
+            },
+            {
+                "class": "TextChatService",
+                "name": "TextChatService"
+            }
+        ],
+        "class": "DataModel",
+        "name": "Game"
+    }
+}

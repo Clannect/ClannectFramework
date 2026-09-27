@@ -1,0 +1,3 @@
+# Byte-exact fixtures: git must never convert their line endings.
+*.cescene -text
+*.json -text

@@ -1,0 +1,71 @@
+{
+    "results": {
+        "arena.frame.2000quads": {
+            "allocationsPerOp": 0,
+            "bytesPerOp": 0,
+            "medianNs": 23400,
+            "minNs": 23300
+        },
+        "json.parse.scene5mb": {
+            "allocationsPerOp": 81472,
+            "bytesPerOp": 10644896,
+            "medianNs": 13180800,
+            "minNs": 12305500
+        },
+        "json.write.scene5mb": {
+            "allocationsPerOp": 32062,
+            "bytesPerOp": 16656526,
+            "medianNs": 7195500,
+            "minNs": 6699700
+        },
+        "property.get.byName": {
+            "allocationsPerOp": 0,
+            "bytesPerOp": 0,
+            "medianNs": 5.392,
+            "minNs": 5.015
+        },
+        "property.indexOf.text": {
+            "allocationsPerOp": 0,
+            "bytesPerOp": 0,
+            "medianNs": 10.637,
+            "minNs": 9.904
+        },
+        "property.set.vec3": {
+            "allocationsPerOp": 0,
+            "bytesPerOp": 0,
+            "medianNs": 14.274,
+            "minNs": 13.614
+        },
+        "quat.fromEuler": {
+            "allocationsPerOp": 0,
+            "bytesPerOp": 0,
+            "medianNs": 116.019,
+            "minNs": 111.741
+        },
+        "sha256.1mb": {
+            "allocationsPerOp": 0,
+            "bytesPerOp": 0,
+            "medianNs": 3220200,
+            "minNs": 3032400
+        },
+        "signal.emit.3slots": {
+            "allocationsPerOp": 0,
+            "bytesPerOp": 0,
+            "medianNs": 12.271,
+            "minNs": 12.224
+        },
+        "transform2d.map.perspective": {
+            "allocationsPerOp": 0,
+            "bytesPerOp": 0,
+            "medianNs": 3.127,
+            "minNs": 3.096
+        },
+        "utf8.validate.1mb": {
+            "allocationsPerOp": 0,
+            "bytesPerOp": 0,
+            "medianNs": 657000,
+            "minNs": 512900
+        }
+    },
+    "sceneBytes": 5243759
+}

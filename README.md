@@ -1,0 +1,135 @@
+# Clannect Framework (CFW)
+
+A permissively licensed C++20 application framework that replaces Qt inside Clannect. The full brief is
+[prompt.md](prompt.md). The project was first named Clannect Engineering (CE); the original brief in the
+Clannect Engine repository (`docs/engineering/CLANNECT_ENGINEERING.md`) still uses that name. This README
+covers only what is built here and how to work on it.
+
+## Status
+
+| Milestone | State |
+|---|---|
+| M0 — seams in Clannect | **Not started.** Everything it needs from CFW (`String`, `Variant`, property system, JSON) exists. |
+| M1 — cfw-core + cfw-io | **Both modules done, benchmarked.** Exit still needs the Runtime building without Qt (engine-side work). |
+| M2 — cfw-net + cfw-image | **cfw-net done** (event loop, TCP, WebSocket client and server), on par with Qt and interoperating with it. cfw-image not started; no TLS yet. |
+| M3 – M6 | Not started. |
+
+**cfw-core contents:**
+
+- **Errors and contracts:** `Result`/`Error`, `require`/`debugCheck`, `ThreadChecker`.
+- **Text:** `String`/`StringView`, UTF-8/UTF-16, string utilities (locale-independent numbers), `Name`.
+- **Containers:** `Span`, `SmallVector`, `StableVector`, `FlatMap`, `FlatSet`.
+- **Math:** `Vec2`/`Vec2i`/`Vec3`/`Vec4`, `Quat`, `Mat3`, `Mat4`, `Transform2D` (with `quadToQuad`),
+  `RectF`/`Recti`, `Color`/`LinearColor`.
+- **Values and properties:** `AssetLink`, `Variant`/`VariantArray`, `PropertyInfo`/`ClassInfo`/`PropertyBag`.
+- **Signals:** `Signal`/`Connection`/`ScopedConnection`/`SignalOwner`.
+- **Identity and encoding:** `Sha256`, `Uuid`, `Url` (with percent- and form-encoding).
+- **Runtime support:** `Clock`/`Stopwatch`/`FrameTimer`, `Logger` (structured; no global instance),
+  `Arena`/`FrameArena`.
+
+**cfw-io contents:**
+
+- **JSON:** `JsonValue`/`JsonObject`, `parseJson` (limits, precise error positions, iterative), and
+  `writeJson`, which is byte-identical to the Qt build's output.
+- **Binary:** `ByteWriter`/`ByteReader`, the engine's wire format with sticky-failure reads.
+- **Files and directories:** `Path` (UTF-8), `readFile`/`readTextFile` with size limits, `writeFileAtomic`
+  (temp + flush + rename), directory operations, `MappedFile`, `TemporaryDirectory`.
+- **Per-user locations and settings:** `StandardPaths` (Qt's folder layout), `Settings` (JSON, atomic),
+  `FileWatcher` (polling for now).
+
+**cfw-net contents:**
+
+- **Loop and threads:** `EventLoop` (timers, cross-thread `post`, zero CPU when idle) and `Executor` (blocking
+  work such as DNS).
+- **TCP:** `TcpConnection` and `TcpListener`, with backpressure and write coalescing.
+- **WebSocket:** `WebSocket` (RFC 6455 client and server end, auto-pong, close handshake, limits) and
+  `WebSocketServer` (handshake timeout, a bounded number of pending handshakes, 400 on bad requests).
+- **Testing:** the frame codec and handshake are pure code, tested against the RFC's own examples and fuzzed.
+
+Against Qt 6.8.3's `QWebSocketServer` on the same workload (200 connections, echoed 48-byte messages), CFW
+handles **205,000 messages/s against Qt's ~200,000**, and opens the connections 3.4× faster. It
+interoperates with Qt's WebSocket stack in both directions
+([0010](docs/decisions/0010-cfw-net-design.md)).
+
+**Benchmarks** ([docs/benchmarks](docs/benchmarks/README.md)): a 5 MB scene parses in **0.62×** and writes in
+**0.33×** Qt's time on the same machine. Property access, signals, arena frames, hashing and math run with
+zero allocations. That allocation budget is a CTest test in every build, and `--baseline` flags >5%
+regressions.
+
+**Scene round-trip:** a real scene saved by the Qt engine, parsed and re-written by CFW, is byte-identical.
+So are two Qt-written edge-case documents. `FuzzSmokeTest` runs 45,000 hostile inputs through the parsers on
+every build.
+
+**Still open for M1:**
+
+- **No Qt in the Runtime:** building the headless Runtime without Qt (this is the M0/M1 engine work: moving
+  `clannect_core` onto CFW).
+- **Linux CI:** a Linux job, for ASan, LSan and libFuzzer.
+
+**No Qt:** the `NoQt` CTest test fails the build if a Qt header, macro, CMake package or linked Qt library
+appears anywhere in CFW's sources, build files or binaries. Where CFW must behave exactly like Qt (Euler angles,
+`quadToQuad`), the tests pin numbers captured from Qt once, outside this repository
+([0007](docs/decisions/0007-qt-behaviour-pinned-by-oracle-values.md)).
+
+## Building
+
+This needs CMake ≥ 3.25, Ninja and a C++20 compiler. The reference toolchain is MinGW-w64 GCC 13.1. On the
+current dev machine, that compiler happens to be the copy Qt's installer put under `C:\Qt\Tools`. It is plain
+GCC with no Qt in it, but uninstalling Qt would remove it, so a standalone MinGW-w64 GCC 13 (e.g. WinLibs)
+should replace it before Qt is removed:
+
+```sh
+export PATH="/c/Qt/Tools/mingw1310_64/bin:$PATH"     # Git Bash; or add it to PATH in your shell
+cmake --preset debug -DCMAKE_CXX_COMPILER=g++
+cmake --build --preset debug
+ctest --preset debug
+```
+
+| Preset | What it is |
+|---|---|
+| `debug` | Contract checks and standard-library bounds checks on. |
+| `release` | `-O3`, checks off. |
+| `ubsan-trap` | Debug + UBSan without a runtime. This is the only sanitizer MinGW can run. |
+| `asan` | Debug + ASan/UBSan/LSan, for Linux or MSVC. See `docs/decisions/0005`. |
+
+Warnings are errors in CFW's own code.
+
+## Layout
+
+```
+cmake/CfwTargets.cmake        cfw_add_module / cfw_add_test and shared compile flags
+modules/<module>/include/cfw/<short>/   public headers, one class per header
+modules/<module>/src/                  implementation
+modules/<module>/tests/                one test executable per behaviour area
+testing/include/cfw/test/Check.h        plain-assertion test helpers (engine style)
+docs/decisions/NNNN-title.md           decision log
+```
+
+Lower modules never depend on higher ones (spec §3). cfw-core has no third-party dependencies and makes no OS
+calls.
+
+## Third-party dependencies
+
+**None.** CFW uses only the C++ standard library and the OS: Win32 `shell32`/`ole32` for known folders,
+`ws2_32` for sockets, and POSIX elsewhere. When one is added, it goes into the register in the Clannect Engine `README.md` in the same
+commit, pinned to an exact version with its licence file vendored (spec §2.1, §11).
+
+## Decisions so far
+
+- [0001](docs/decisions/0001-string-is-std-string.md) — `cfw::String` is `std::string`.
+- [0002](docs/decisions/0002-name-is-hashed-not-interned.md) — `Name` is hashed, not interned (constraint 5
+  forbids a global table).
+- [0003](docs/decisions/0003-bounds-checks-via-stdlib-hardening.md) — debug bounds checks come from
+  standard-library hardening.
+- [0004](docs/decisions/0004-signal-slot-lifetime.md) — why signals use shared ownership.
+- [0005](docs/decisions/0005-sanitizers-and-the-windows-toolchain.md) — MinGW has no sanitizer runtimes, so
+  CI needs Linux from M1 (**amends §8**).
+- [0006](docs/decisions/0006-plain-assertion-tests.md) — plain-assertion tests rather than Catch2/doctest.
+- [0007](docs/decisions/0007-qt-behaviour-pinned-by-oracle-values.md) — Euler/projection behaviour pinned by
+  numbers captured from Qt; the deliberate differences are listed there.
+- [0008](docs/decisions/0008-data-driven-property-schema.md) — properties are a runtime schema plus indexed
+  storage; native accessors are deferred to M5.
+- [0010](docs/decisions/0010-cfw-net-design.md) — cfw-net: started before M1 closed, a poll reactor, write
+  coalescing (a 6× speed-up), no TLS yet.
+- [0009](docs/decisions/0009-cfw-io-compatibility-and-scope.md) — Qt-compatible JSON, `.cescene` must be
+  `-text` in git, registry-to-JSON settings migration, polling file watcher.
