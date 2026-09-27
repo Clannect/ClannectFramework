@@ -8,6 +8,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 option(CFW_BUILD_TESTS "Build the per-module unit tests" ON)
+option(CFW_BUILD_FUZZERS "Build libFuzzer binaries for every parser (Clang only; see fuzz/)" OFF)
 option(CFW_WARNINGS_AS_ERRORS "Treat compiler warnings in CFW's own code as errors" ON)
 set(CFW_SANITIZE "" CACHE STRING
     "Sanitizers: a list of address, undefined, thread, or ubsan-trap (UBSan without a runtime; works on MinGW)")
@@ -31,5 +32,7 @@ endif()
 add_subdirectory(modules/cfw-core)
 add_subdirectory(modules/cfw-io)
 add_subdirectory(modules/cfw-net)
+
+add_subdirectory(fuzz)
 
 add_subdirectory(bench)

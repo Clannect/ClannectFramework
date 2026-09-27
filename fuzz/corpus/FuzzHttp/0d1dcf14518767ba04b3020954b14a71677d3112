@@ -1,0 +1,7 @@
+GET /game?t HTTP/1.1
+Host: 16.0
+Upgrade: websocket
+Connection: Upgrade
+Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQc=
+Sec-WebSocket-Version: 13
+

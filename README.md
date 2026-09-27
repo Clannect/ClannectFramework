@@ -60,11 +60,16 @@ regressions.
 So are two Qt-written edge-case documents. `FuzzSmokeTest` runs 45,000 hostile inputs through the parsers on
 every build.
 
+**Linux CI** ([0011](docs/decisions/0011-linux-ci-and-fuzzing.md)): GCC and Clang builds, ASan+UBSan+LSan over
+every test, TSan over cfw-net, and five libFuzzer targets (JSON, binary reader, URL/UTF-8, WebSocket frames,
+HTTP) fuzzed on every push. The committed corpus (`fuzz/corpus/`) replays as CTest tests on every toolchain,
+MinGW included. The first run found three bugs, all fixed with regression tests: a send stall on Linux, a
+JSON round-trip inequality, and code that did not compile with Clang.
+
 **Still open for M1:**
 
 - **No Qt in the Runtime:** building the headless Runtime without Qt (this is the M0/M1 engine work: moving
   `clannect_core` onto CFW).
-- **Linux CI:** a Linux job, for ASan, LSan and libFuzzer.
 
 **No Qt:** the `NoQt` CTest test fails the build if a Qt header, macro, CMake package or linked Qt library
 appears anywhere in CFW's sources, build files or binaries. Where CFW must behave exactly like Qt (Euler angles,
@@ -91,6 +96,8 @@ ctest --preset debug
 | `release` | `-O3`, checks off. |
 | `ubsan-trap` | Debug + UBSan without a runtime. This is the only sanitizer MinGW can run. |
 | `asan` | Debug + ASan/UBSan/LSan, for Linux or MSVC. See `docs/decisions/0005`. |
+| `tsan` | Debug + TSan (Linux), for cfw-net. |
+| `fuzz` | Clang + libFuzzer + ASan/UBSan: builds `build/fuzz/fuzz/Fuzz*`. See `docs/decisions/0011`. |
 
 Warnings are errors in CFW's own code.
 
@@ -102,6 +109,7 @@ modules/<module>/include/cfw/<short>/   public headers, one class per header
 modules/<module>/src/                  implementation
 modules/<module>/tests/                one test executable per behaviour area
 testing/include/cfw/test/Check.h        plain-assertion test helpers (engine style)
+fuzz/targets/, fuzz/corpus/<Target>/   libFuzzer targets and their committed corpus
 docs/decisions/NNNN-title.md           decision log
 ```
 
@@ -133,3 +141,5 @@ commit, pinned to an exact version with its licence file vendored (spec §2.1, �
   coalescing (a 6× speed-up), no TLS yet.
 - [0009](docs/decisions/0009-cfw-io-compatibility-and-scope.md) — Qt-compatible JSON, `.cescene` must be
   `-text` in git, registry-to-JSON settings migration, polling file watcher.
+- [0011](docs/decisions/0011-linux-ci-and-fuzzing.md) — Linux CI (GCC, Clang, ASan/LSan, TSan), libFuzzer
+  targets with a committed corpus, and the three bugs they found on the first run.

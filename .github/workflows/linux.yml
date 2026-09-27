@@ -1,0 +1,94 @@
+# Linux CI: the sanitizers and fuzzing that MinGW cannot run
+# (docs/decisions/0005, 0011). Every job builds with warnings as errors.
+
+name: linux
+
+on:
+  push:
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: ${{ matrix.preset }} (${{ matrix.compiler }})
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { preset: debug, compiler: g++ }
+          - { preset: release, compiler: g++ }
+          - { preset: debug, compiler: clang++ }
+          # ASan + UBSan + LSan: a single leak or UB report fails the job.
+          - { preset: asan, compiler: g++ }
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install tools
+        run: sudo apt-get update && sudo apt-get install -y ninja-build
+      - name: Configure
+        run: cmake --preset ${{ matrix.preset }} -DCMAKE_CXX_COMPILER=${{ matrix.compiler }}
+      - name: Build
+        run: cmake --build --preset ${{ matrix.preset }}
+      - name: Test
+        env:
+          ASAN_OPTIONS: detect_leaks=1:abort_on_error=1:strict_string_checks=1
+          UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
+        run: ctest --preset ${{ matrix.preset }}
+
+  tsan:
+    name: tsan (cfw-net)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install tools
+        run: sudo apt-get update && sudo apt-get install -y ninja-build
+      # TSan's shadow memory layout does not fit the runner kernel's default
+      # 32-bit mmap randomisation.
+      - name: Reduce ASLR entropy for TSan
+        run: sudo sysctl vm.mmap_rnd_bits=28
+      - name: Configure
+        run: cmake --preset tsan
+      - name: Build
+        run: cmake --build --preset tsan
+      - name: Test
+        env:
+          TSAN_OPTIONS: halt_on_error=1:second_deadlock_stack=1
+        run: ctest --preset tsan -L cfw-net
+
+  fuzz:
+    name: fuzz (libFuzzer, 60 s per target)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install tools
+        run: sudo apt-get update && sudo apt-get install -y ninja-build clang-18 libclang-rt-18-dev
+      - name: Configure
+        run: cmake --preset fuzz -DCMAKE_CXX_COMPILER=clang++-18
+      - name: Build
+        run: cmake --build --preset fuzz
+      - name: Unit tests and corpus replay (Clang + ASan/UBSan)
+        run: ctest --preset fuzz
+      - name: Fuzz
+        run: |
+          mkdir -p fuzz-artifacts
+          status=0
+          for target in FuzzJson FuzzByteReader FuzzUrl FuzzWebSocketFrames FuzzHttp; do
+            mkdir -p "new-corpus/$target"
+            echo "::group::$target"
+            if ! build/fuzz/fuzz/$target "new-corpus/$target" "fuzz/corpus/$target" \
+                -max_total_time=60 -max_len=4096 -timeout=10 -rss_limit_mb=2048 \
+                -artifact_prefix="fuzz-artifacts/$target-"; then
+              status=1
+            fi
+            echo "::endgroup::"
+          done
+          exit $status
+      - name: Upload crashing inputs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-artifacts
+          path: fuzz-artifacts/

@@ -30,18 +30,39 @@
       "inherits": "base",
       "displayName": "Debug + ASan/UBSan (Clang or GCC on Linux/macOS; MSVC)",
       "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug", "CFW_SANITIZE": "address;undefined" }
+    },
+    {
+      "name": "tsan",
+      "inherits": "base",
+      "displayName": "Debug + TSan (Linux; cfw-net, later cfw-app)",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug", "CFW_SANITIZE": "thread" }
+    },
+    {
+      "name": "fuzz",
+      "inherits": "base",
+      "displayName": "libFuzzer + ASan/UBSan (Clang)",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_CXX_COMPILER": "clang++",
+        "CFW_SANITIZE": "address;undefined",
+        "CFW_BUILD_FUZZERS": "ON"
+      }
     }
   ],
   "buildPresets": [
     { "name": "debug", "configurePreset": "debug" },
     { "name": "release", "configurePreset": "release" },
     { "name": "ubsan-trap", "configurePreset": "ubsan-trap" },
-    { "name": "asan", "configurePreset": "asan" }
+    { "name": "asan", "configurePreset": "asan" },
+    { "name": "tsan", "configurePreset": "tsan" },
+    { "name": "fuzz", "configurePreset": "fuzz" }
   ],
   "testPresets": [
     { "name": "debug", "configurePreset": "debug", "output": { "outputOnFailure": true } },
     { "name": "release", "configurePreset": "release", "output": { "outputOnFailure": true } },
     { "name": "ubsan-trap", "configurePreset": "ubsan-trap", "output": { "outputOnFailure": true } },
-    { "name": "asan", "configurePreset": "asan", "output": { "outputOnFailure": true } }
+    { "name": "asan", "configurePreset": "asan", "output": { "outputOnFailure": true } },
+    { "name": "tsan", "configurePreset": "tsan", "output": { "outputOnFailure": true } },
+    { "name": "fuzz", "configurePreset": "fuzz", "output": { "outputOnFailure": true } }
   ]
 }

@@ -1,0 +1,18 @@
+{
+    "B": 3,
+    "Z": 6,
+    "_": 5,
+    "a": 4,
+    "UmptyArr": [
+    ],
+    "emptyObj": {
+    },
+    "nested": [
+        [
+        ],
+        {
+       
+    "str": "quote\" back\\ slashr\r bs\b ff\f ctl\u0001 del eé u2028  emoji😀",
+    "😀": 2,
+    "Ａ": 1
+}

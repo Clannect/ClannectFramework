@@ -1,0 +1,7 @@
+GET /game?ticket=abc HTTP/1.1
+Host: .KKK1
+r:0 0KO
+TŽ.0.1:9020
+Upgrade: websocket
+CnectionsocketSec-Wet-on: 06
+

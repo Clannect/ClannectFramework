@@ -1,0 +1,7 @@
+GET /gasebc HTTP/1.1
+Host: 127.0.0.1:9000
+upgrade: websocket
+Connection: Upgrade
+Sy: dGhlIHNSXub25j==
+Sec-WebSocket-Version: 12
+

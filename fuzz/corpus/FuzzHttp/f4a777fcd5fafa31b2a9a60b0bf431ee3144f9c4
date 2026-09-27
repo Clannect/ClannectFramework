@@ -1,0 +1,8 @@
+GET /gaicket=abc HTTP/1.1
+Host: 1
+Connection:ÿÿÿÿÿ1:9000
+Upgrade: websocket
+Connection: Upgrade
+Sec-WebSocket-Key: dGhlIH-WebSocketb26jZQ==
+Sec-WebSocket-Version: 13
+

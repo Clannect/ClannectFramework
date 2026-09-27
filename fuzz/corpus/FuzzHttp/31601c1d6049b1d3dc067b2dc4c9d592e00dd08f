@@ -1,0 +1,6 @@
+GET  HTTP/1.1
+Host: 1:¿000
+Upgrade: websocket
+Connection:ÿÿÿÿÿÿÿ Upgrade
+Sec-Won:ÿÿÿÿÿÿÿÿ 13
+

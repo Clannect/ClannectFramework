@@ -1,0 +1,11 @@
+GET /game?,icket=abc HTTP/1.1
+Host: 127.0.0.1:ocket
+Connection: Upgrade
+t-Key:9000
+Upgrade: wbsocket
+Connection: Sec-WebSocket-Key:9000
+Upgrade: websocket
+Connection: Upgrade
+Sec-WebSocket-Key: dGhlIHNhbXBsZSBub26jZQ=A
+Sec-WebSocket-Version: 13
+

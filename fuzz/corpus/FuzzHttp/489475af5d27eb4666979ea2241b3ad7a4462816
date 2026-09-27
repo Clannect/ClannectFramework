@@ -1,0 +1,8 @@
+GET /gaicketc HTTP/1.1
+on:ÿÿÿÿÿÿÿ Upgrÿ2¸.0.0.1:9000
+Upgrade: websocket
+Cp: websocket
+Connection: Upgrade
+Sec-WebSocket-Key: ZQ==
+Sec-WebSocket-Version: 13
+

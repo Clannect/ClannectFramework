@@ -1,0 +1,6 @@
+GET /game?ticket=aba HTTP/1.1
+Host: 11:9000
+Upgrade: websocket
+Connection: Upgrade
+SeVesn:io 13
+

@@ -1,0 +1,42 @@
+GET /gamabc HTTP/1.1
+Host:.JSe0.1:9020
+HU1:9020
+U1:c HTTP/1.1
+t: 127.0.
+Se0.1:9020
+U1:9020
+Upgrade:9020TTP/1.1
+t: 127.0.
+Se0.1:9pgrade: HTTP/1.1
+Host: 127.0.
+Se0.1:9020
+U1:9020
+U1:c HTTP/1.1
+t: 127.0.
+Se0.1:9020
+U1:902amabc HTTP/1.1
+Host:.JSe0.1:9020
+HU1:9020
+U1:c HTTP/1.1
+t: 127.0.
+Se0.1:9020
+U1:9020
+Upgrade:9020TTP/1.1
+t: 127.0.
+Se0.1:9pgrade: HTTP/1.1
+Host: 127.0.
+Se0.1:9020
+U1:9020
+U1:c HTTP/1.1
+t: 127.0.
+Se0.1:9020
+U1:9020
+Upgrade:20
+Upgrade: websock: websockett
+Connection:c HTTP/1.1
+t: 127.0
+Upgrade:9020
+Upgrade: websock: websockett
+Connection:c HTTP/1.1
+t: 127.0.on: 13
+

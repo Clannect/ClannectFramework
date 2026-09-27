@@ -1,0 +1,2 @@
+# Fuzz inputs are arbitrary bytes: git must never convert their line endings.
+fuzz/corpus/** -text

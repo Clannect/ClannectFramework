@@ -1,0 +1,7 @@
+GET /game?tket=abc HTTP/1.
+100
+Upgrade: websocket
+Connection: Upgrade
+Sec-WebSocket-Key: dGhlIHNhbXB(ZSBub26jZQ=A
+Sec-WebSocket-Version: 13
+

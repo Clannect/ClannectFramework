@@ -1,0 +1,7 @@
+GET /game?ticket=abc HTTP/1.1
+Host: 127.0000
+Upgrade: websocket
+Connection: Upgrade
+Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25==QjZ
+Sec-WebSocket-Version: 13
+

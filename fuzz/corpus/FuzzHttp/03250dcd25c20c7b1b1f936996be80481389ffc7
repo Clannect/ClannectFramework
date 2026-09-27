@@ -1,0 +1,10 @@
+GET /t=abc HTTP/1.1
+Host: 1
+Connection:ÿÿÿ27.0.0.1:9000
+Upgrade: websocket
+Cpgrade: websocket
+Connection: Upgrade
+Sec-WebSocket-Key:
+Content-Type: txt/pla n ZQ==
+Sec-WebSocket-Version: 13
+

@@ -1,0 +1,7 @@
+GET /gase?ticke=a`c HTTP/1.1
+H.1:9000
+upgrade: websocket
+Connection: Upgrade
+Sec-Weeocket-Key: dGhl==
+Sec-WebSocket-Version: 13
+

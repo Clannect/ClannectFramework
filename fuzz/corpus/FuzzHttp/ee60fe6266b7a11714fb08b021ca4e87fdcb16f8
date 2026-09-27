@@ -1,0 +1,11 @@
+GET /gamabc HTTP/1.1
+Host: 127.0.
+Se0.1:9020
+U1:c HTTP/1.1
+Host: 127.0.
+Se0.1:9020
+U1:9020
+Upgrcde:9020
+Upgrade: websocket
+Con-Version: 13
+

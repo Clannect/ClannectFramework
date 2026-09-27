@@ -1,0 +1,6 @@
+HTTP/1.1 101 Swng Protocols
+Upgrade: websocket
+K: dGhlHNhbket
+Connection: Upgrade
+Sec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=
+
