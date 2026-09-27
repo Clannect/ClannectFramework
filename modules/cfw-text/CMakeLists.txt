@@ -6,11 +6,13 @@
 cfw_add_module(cfw-text
     SOURCES
         src/Bidi.cpp
+        src/FontDatabase.cpp
         src/FontFace.cpp
         src/GlyphCache.cpp
         src/OtLayout.cpp
         src/Shaper.cpp
         src/TextBreaks.cpp
+        src/TextLayout.cpp
         src/Unicode.cpp
     DEPENDS
         cfw-image
@@ -48,3 +50,6 @@ target_compile_definitions(ShaperTest PRIVATE CFW_TEXT_TESTDATA="${CMAKE_CURRENT
 
 cfw_add_test(cfw-text GlyphCacheTest)
 target_compile_definitions(GlyphCacheTest PRIVATE CFW_TEXT_TESTDATA="${CMAKE_CURRENT_SOURCE_DIR}/testdata")
+
+cfw_add_test(cfw-text TextLayoutTest)
+target_compile_definitions(TextLayoutTest PRIVATE CFW_TEXT_TESTDATA="${CMAKE_CURRENT_SOURCE_DIR}/testdata")
