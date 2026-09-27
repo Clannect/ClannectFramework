@@ -7,8 +7,12 @@
 //
 // Threads: a backend is used from one thread at a time.
 
+#include <cstddef>
+#include <cstdint>
+
 #include "cfw/core/PainterPath.h"
 #include "cfw/core/Rect.h"
+#include "cfw/core/Span.h"
 #include "cfw/core/Transform2D.h"
 #include "cfw/gfx/BlendMode.h"
 #include "cfw/gfx/Brush.h"
@@ -40,6 +44,16 @@ public:
     // `transform`.
     virtual void drawImage(const Image &image, const RectF &source, const RectF &target,
                            const Transform2D &transform, const ImageOptions &options,
+                           const CompositeState &state) = 0;
+
+    // Fills 8-bit coverage masks (glyph images) placed at whole pixels with
+    // `brush`: each mask's rows cover its target rectangle.
+    struct MaskBlit {
+        const std::uint8_t *pixels;
+        std::ptrdiff_t stride;
+        Recti target;
+    };
+    virtual void fillMasks(Span<const MaskBlit> masks, const Brush &brush, const Transform2D &brushTransform,
                            const CompositeState &state) = 0;
 
     // Clips later drawing to the intersection with the given area until the

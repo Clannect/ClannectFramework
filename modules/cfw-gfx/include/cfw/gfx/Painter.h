@@ -18,6 +18,8 @@
 
 #include "cfw/core/SmallVector.h"
 #include "cfw/gfx/PaintBackend.h"
+#include "cfw/text/GlyphCache.h"
+#include "cfw/text/TextLayout.h"
 #include "cfw/gfx/Pen.h"
 #include "cfw/gfx/Stroker.h"
 
@@ -66,6 +68,22 @@ public:
     // The whole image.
     void drawImage(const RectF &target, const Image &image, const ImageOptions &options = {});
 
+    // Draws laid-out text with the layout's top-left at `origin`. Under a
+    // plain translation glyphs come from the glyph cache (masks at quarter-
+    // pixel positions); under any other transform, and for glyphs too large
+    // for the atlas, they are filled as outlines.
+    void drawText(const TextLayout &layout, Vec2 origin, const Brush &brush);
+    // Positioned glyphs of one face (positions on the baseline, relative to
+    // `origin`), as drawText() draws them.
+    struct PositionedGlyph {
+        GlyphId glyph;
+        Vec2 position;
+    };
+    void drawGlyphs(const FontFace &face, float pixelSize, Span<const PositionedGlyph> glyphs, Vec2 origin,
+                    const Brush &brush);
+    // The glyph cache to draw from (default: one per thread).
+    void setGlyphCache(GlyphCache *cache) noexcept { m_glyphCache = cache; }
+
 private:
     struct State {
         Transform2D transform;
@@ -81,6 +99,11 @@ private:
     PainterPath m_scratch;
     PainterPath m_stroke;
     PainterPath m_device; // cosmetic strokes: the path in device space
+    PainterPath m_glyph;
+    GlyphCache *m_glyphCache = nullptr;
+    std::vector<PaintBackend::MaskBlit> m_masks;
+    void drawGlyph(const FontFace &face, float pixelSize, GlyphId glyph, Vec2 position, bool masks);
+    void flushGlyphs(const Brush &brush);
 };
 
 } // namespace cfw

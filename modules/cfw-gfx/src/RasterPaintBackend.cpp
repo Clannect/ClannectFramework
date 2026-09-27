@@ -230,14 +230,9 @@ void RasterPaintBackend::buildGradientTable(const Brush &brush) {
     }
 }
 
-void RasterPaintBackend::fillPath(const PainterPath &path, const Transform2D &transform, FillRule rule, const Brush &brush,
-                                  const Transform2D &brushTransform, const CompositeState &state) {
-    if (brush.isNone() || clipBox().isEmpty()) {
-        return;
-    }
-    Source source;
+bool RasterPaintBackend::makeSource(const Brush &brush, const Transform2D &brushTransform, Source &source) {
     switch (brush.kind()) {
-    case Brush::Kind::None: return;
+    case Brush::Kind::None: return false;
     case Brush::Kind::Solid:
         source.kind = SourceKind::Solid;
         source.color = premultiplied(brush.color());
@@ -246,7 +241,7 @@ void RasterPaintBackend::fillPath(const PainterPath &path, const Transform2D &tr
     case Brush::Kind::RadialGradient: {
         const std::optional<Transform2D> inverse = brushTransform.inverse();
         if (!inverse) {
-            return;
+            return false;
         }
         source.inverse = *inverse;
         source.affine = inverse->isAffine();
@@ -273,9 +268,38 @@ void RasterPaintBackend::fillPath(const PainterPath &path, const Transform2D &tr
         break;
     }
     }
+    return true;
+}
+
+void RasterPaintBackend::fillPath(const PainterPath &path, const Transform2D &transform, FillRule rule, const Brush &brush,
+                                  const Transform2D &brushTransform, const CompositeState &state) {
+    Source source;
+    if (brush.isNone() || clipBox().isEmpty() || !makeSource(brush, brushTransform, source)) {
+        return;
+    }
     m_rasterizer.reset(m_width, m_height);
     m_rasterizer.addPath(path, transform);
     paint(source, rule, state);
+}
+
+void RasterPaintBackend::fillMasks(Span<const MaskBlit> masks, const Brush &brush, const Transform2D &brushTransform,
+                                   const CompositeState &state) {
+    Source source;
+    if (masks.empty() || brush.isNone() || clipBox().isEmpty() || !makeSource(brush, brushTransform, source)) {
+        return;
+    }
+    const int opacity = static_cast<int>(std::lround(std::clamp(state.opacity, 0.0f, 1.0f) * 256.0f));
+    if (opacity == 0) {
+        return;
+    }
+    const Recti box = clipBox();
+    for (const MaskBlit &m : masks) {
+        const Recti r = m.target.intersected(box);
+        for (int y = r.y; y < r.bottom(); ++y) {
+            const std::uint8_t *row = m.pixels + static_cast<std::ptrdiff_t>(y - m.target.y) * m.stride + (r.x - m.target.x);
+            paintSpan(source, state, opacity, y, r.x, r.width, row);
+        }
+    }
 }
 
 void RasterPaintBackend::drawImage(const Image &image, const RectF &source, const RectF &target,
@@ -450,42 +474,44 @@ void RasterPaintBackend::paint(const Source &source, FillRule rule, const Compos
         return;
     }
     const Recti box = clipBox();
-    const std::uint8_t *mask = clipMask();
-    const BlendFn blend = blendFor(state.blend);
-    std::uint8_t *pixels = m_target.pixels().data();
-    const std::size_t stride = m_target.stride();
     m_rasterizer.sweep(rule, [&](int y, int x, Span<const std::uint8_t> coverage) {
         if (y < box.y || y >= box.bottom()) {
             return;
         }
         const int begin = std::max(x, box.x);
         const int end = std::min(x + static_cast<int>(coverage.size()), box.right());
-        if (begin >= end) {
-            return;
-        }
-        const int count = end - begin;
-        const std::uint8_t *c = coverage.data() + (begin - x);
-        if (mask != nullptr || opacity != 256) {
-            const std::uint8_t *m = mask != nullptr ? mask + static_cast<std::size_t>(y) * static_cast<std::size_t>(m_width) +
-                                                          static_cast<std::size_t>(begin)
-                                                    : nullptr;
-            for (int i = 0; i < count; ++i) {
-                std::uint32_t v = c[i];
-                if (m != nullptr) {
-                    v = mul255(v, m[i]);
-                }
-                m_coverage[static_cast<std::size_t>(i)] = static_cast<std::uint8_t>((v * static_cast<std::uint32_t>(opacity)) >> 8);
-            }
-            c = m_coverage.data();
-        }
-        std::uint8_t *d = pixels + static_cast<std::size_t>(y) * stride + static_cast<std::size_t>(begin) * 4u;
-        if (source.kind == SourceKind::Solid) {
-            blend(d, source.color.data(), 0, c, count);
-        } else {
-            fetch(source, y, begin, count, m_pixels.data());
-            blend(d, m_pixels.data(), 4, c, count);
+        if (begin < end) {
+            paintSpan(source, state, opacity, y, begin, end - begin, coverage.data() + (begin - x));
         }
     });
+}
+
+// Composites `count` pixels of row y from x with the given coverage (inside
+// the clip box): clip mask and opacity applied, then the source blended.
+void RasterPaintBackend::paintSpan(const Source &source, const CompositeState &state, int opacity, int y, int begin, int count,
+                                   const std::uint8_t *c) {
+    const std::uint8_t *mask = clipMask();
+    const BlendFn blend = blendFor(state.blend);
+    if (mask != nullptr || opacity != 256) {
+        const std::uint8_t *m = mask != nullptr ? mask + static_cast<std::size_t>(y) * static_cast<std::size_t>(m_width) +
+                                                      static_cast<std::size_t>(begin)
+                                                : nullptr;
+        for (int i = 0; i < count; ++i) {
+            std::uint32_t v = c[i];
+            if (m != nullptr) {
+                v = mul255(v, m[i]);
+            }
+            m_coverage[static_cast<std::size_t>(i)] = static_cast<std::uint8_t>((v * static_cast<std::uint32_t>(opacity)) >> 8);
+        }
+        c = m_coverage.data();
+    }
+    std::uint8_t *d = m_target.pixels().data() + static_cast<std::size_t>(y) * m_target.stride() + static_cast<std::size_t>(begin) * 4u;
+    if (source.kind == SourceKind::Solid) {
+        blend(d, source.color.data(), 0, c, count);
+    } else {
+        fetch(source, y, begin, count, m_pixels.data());
+        blend(d, m_pixels.data(), 4, c, count);
+    }
 }
 
 void RasterPaintBackend::pushClipRect(const RectF &rect, const Transform2D &transform) {

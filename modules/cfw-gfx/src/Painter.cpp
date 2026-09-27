@@ -144,4 +144,83 @@ void Painter::drawImage(const RectF &target, const Image &image, const ImageOpti
               RectF{0.0f, 0.0f, static_cast<float>(image.width()), static_cast<float>(image.height())}, options);
 }
 
+// ---- Text ----
+
+namespace {
+
+thread_local GlyphCache t_glyphCache;
+
+bool isTranslation(const Transform2D &t) {
+    return t.isAffine() && t(0, 0) == 1.0 && t(1, 1) == 1.0 && t(0, 1) == 0.0 && t(1, 0) == 0.0;
+}
+
+} // namespace
+
+void Painter::drawGlyph(const FontFace &face, float pixelSize, GlyphId glyph, Vec2 position, bool masks) {
+    if (masks) {
+        GlyphCache &cache = m_glyphCache ? *m_glyphCache : t_glyphCache;
+        const Vec2 p = m_state.transform.map(position);
+        if (std::isfinite(p.x) && std::isfinite(p.y) && std::abs(p.x) < 1e7f && std::abs(p.y) < 1e7f) {
+            const float x = std::floor(p.x);
+            if (const GlyphMask *m = cache.glyph(face, glyph, pixelSize, p.x - x)) {
+                if (m->width > 0) {
+                    const int px = static_cast<int>(x) + m->left;
+                    const int py = static_cast<int>(std::lround(p.y)) + m->top;
+                    const Span<const std::uint8_t> page = cache.page(m->page);
+                    m_masks.push_back({page.data() + static_cast<std::size_t>(m->y) * static_cast<std::size_t>(cache.pageSize()) + m->x,
+                                       cache.pageSize(), Recti{px, py, m->width, m->height}});
+                }
+                return;
+            }
+        }
+    }
+    // As an outline: font units, y up, scaled and placed.
+    if (!face.glyphOutline(glyph, m_glyph) || m_glyph.empty()) {
+        return;
+    }
+    const double scale = static_cast<double>(pixelSize) / face.unitsPerEm();
+    m_glyph.transform(Transform2D::scaling(scale, -scale).then(Transform2D::translation(position.x, position.y)));
+    m_scratch.addPath(m_glyph);
+}
+
+void Painter::flushGlyphs(const Brush &brush) {
+    if (!m_masks.empty()) {
+        m_backend.fillMasks(m_masks, brush, m_state.transform, m_state.composite);
+        m_masks.clear();
+    }
+    if (!m_scratch.empty()) {
+        m_backend.fillPath(m_scratch, m_state.transform, FillRule::NonZero, brush, m_state.transform, m_state.composite);
+        m_scratch.clear();
+    }
+}
+
+void Painter::drawGlyphs(const FontFace &face, float pixelSize, Span<const PositionedGlyph> glyphs, Vec2 origin,
+                         const Brush &brush) {
+    if (brush.isNone() || !(pixelSize > 0.0f) || !std::isfinite(pixelSize)) {
+        return;
+    }
+    const bool masks = isTranslation(m_state.transform);
+    m_scratch.clear();
+    for (const PositionedGlyph &g : glyphs) {
+        drawGlyph(face, pixelSize, g.glyph, {origin.x + g.position.x, origin.y + g.position.y}, masks);
+    }
+    flushGlyphs(brush);
+}
+
+void Painter::drawText(const TextLayout &layout, Vec2 origin, const Brush &brush) {
+    const float size = layout.pixelSize();
+    if (brush.isNone() || !(size > 0.0f)) {
+        return;
+    }
+    const bool masks = isTranslation(m_state.transform);
+    m_scratch.clear();
+    const Span<const std::shared_ptr<const FontFace>> fonts = layout.fonts();
+    for (const TextLayout::Glyph &g : layout.glyphs()) {
+        if (g.font < fonts.size()) {
+            drawGlyph(*fonts[g.font], size, g.glyph, {origin.x + g.x, origin.y + g.y}, masks);
+        }
+    }
+    flushGlyphs(brush);
+}
+
 } // namespace cfw

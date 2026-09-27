@@ -39,6 +39,8 @@ public:
                   const Transform2D &brushTransform, const CompositeState &state) override;
     void drawImage(const Image &image, const RectF &source, const RectF &target, const Transform2D &transform,
                    const ImageOptions &options, const CompositeState &state) override;
+    void fillMasks(Span<const MaskBlit> masks, const Brush &brush, const Transform2D &brushTransform,
+                   const CompositeState &state) override;
     void pushClipRect(const RectF &rect, const Transform2D &transform) override;
     void pushClipPath(const PainterPath &path, const Transform2D &transform, FillRule rule) override;
     void popClip() override;
@@ -54,7 +56,10 @@ private:
     [[nodiscard]] Recti clipBox() const noexcept;
     [[nodiscard]] const std::uint8_t *clipMask() const noexcept;
     void buildGradientTable(const Brush &brush);
+    bool makeSource(const Brush &brush, const Transform2D &brushTransform, Source &source);
     void paint(const Source &source, FillRule rule, const CompositeState &state);
+    void paintSpan(const Source &source, const CompositeState &state, int opacity, int y, int begin, int count,
+                   const std::uint8_t *coverage);
     void fetch(const Source &source, int y, int x, int count, std::uint8_t *out) const;
 
     Image &m_target;
