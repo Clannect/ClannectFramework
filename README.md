@@ -12,7 +12,7 @@ covers only what is built here and how to work on it.
 | M0 — seams in Clannect | **Not started.** Everything it needs from CFW (`String`, `Variant`, property system, JSON) exists. |
 | M1 — cfw-core + cfw-io | **Both modules done, benchmarked.** Exit still needs the Runtime building without Qt (engine-side work). |
 | M2 — cfw-net + cfw-image | **CFW side done.** cfw-net: event loop, TCP, WebSocket client and server, HTTP client, and **TLS** through the OS (Schannel; system OpenSSL on Linux) for `https://` and `wss://`. It is on par with Qt and interoperates with it. cfw-image: own PNG, JPEG and WebP codecs, pixel-exact against the reference decoders. `Locale` for number formatting. The exit criteria need the engine port. |
-| M3 — cfw-gfx + cfw-text | **In progress.** `PainterPath` and the anti-aliased `Rasterizer` are done. cfw-gfx has `Painter`, `Pen`, `Brush`, the `Stroker` and the CPU backend, checked against Qt with golden images. It runs 10,000 rounded rects in 0.38× Qt's time with 0 allocations per frame. Next: cfw-text; the GPU backend comes with M4's GL context. |
+| M3 — cfw-gfx + cfw-text | **In progress.** `PainterPath` and the anti-aliased `Rasterizer` are done. cfw-gfx has `Painter`, `Pen`, `Brush`, the `Stroker` and the CPU backend, checked against Qt with golden images. It runs 10,000 rounded rects in 0.38× Qt's time with 0 allocations per frame. cfw-text has started, with Unicode 18 properties, grapheme clusters, line breaking and bidi; every Unicode conformance case passes. Next: fonts, shaping and layout. The GPU backend comes with M4's GL context. |
 | M4 – M6 | Not started. |
 
 **cfw-core contents:**
@@ -64,6 +64,12 @@ CRC-32/Adler-32. Real zlib decodes everything it writes, at zlib's speed and rat
 - **`Brush`:** solid colours, and linear and radial (focal) gradients with pad, repeat and reflect.
 - **`RasterPaintBackend`:** the CPU backend behind the `PaintBackend` seam. It uses Qt's raster arithmetic
   and allocates nothing per frame.
+
+**cfw-text contents so far** ([0015](docs/decisions/0015-cfw-text-own-unicode-fonts-shaping.md)): Unicode 18
+character properties, generated from the UCD into about 110 KB of tables. It has grapheme clusters (UAX #29),
+line breaking (UAX #14) and the bidi algorithm (UAX #9, with isolates, brackets and reordering), and passes
+all 882,000 cases of the Unicode conformance tests. Font parsing, OpenType shaping and layout come next,
+all CFW's own.
 
 **cfw-net contents:**
 
@@ -198,6 +204,9 @@ input.
 - [0013](docs/decisions/0013-tls-through-the-os-and-windows-ci.md) — TLS through the OS (Schannel; system
   OpenSSL via `dlopen`), `https://`/`wss://`, a Windows cross build tested under Wine, and a use-after-free it
   caught.
+- [0015](docs/decisions/0015-cfw-text-own-unicode-fonts-shaping.md) — cfw-text writes its own Unicode
+  algorithms, font parsing and shaping (**amends §4.5, §11**: HarfBuzz, FreeType and ICU become test
+  references); the Unicode layer and its conformance results.
 - [0014](docs/decisions/0014-m3-paths-and-scan-conversion.md) — M3: `PainterPath` (renamed from the spec's
   `Path`, which is cfw-io's file path), the rasteriser and the CPU painter. It records Qt behaviour measured
   with an outside oracle and CFW's deliberate differences, along with golden images, budgets and fuzzing.
