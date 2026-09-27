@@ -303,10 +303,17 @@ void TcpConnection::flush() {
                 return;
             }
         }
-    } else if (m_queueOffset > 64 * 1024 && m_queueOffset * 2 > m_queue.size()) {
-        // Compact so a long-lived backlog does not grow without bound.
-        m_queue.erase(m_queue.begin(), m_queue.begin() + static_cast<std::ptrdiff_t>(m_queueOffset));
-        m_queueOffset = 0;
+    } else {
+        // The socket buffer is full: ask the loop for writability so the rest
+        // goes out when the peer reads. Without this a deferred flush that
+        // cannot send everything stalls until the next send() (Linux's
+        // loopback buffers are far smaller than Windows' auto-tuned ones).
+        updateInterest();
+        if (m_queueOffset > 64 * 1024 && m_queueOffset * 2 > m_queue.size()) {
+            // Compact so a long-lived backlog does not grow without bound.
+            m_queue.erase(m_queue.begin(), m_queue.begin() + static_cast<std::ptrdiff_t>(m_queueOffset));
+            m_queueOffset = 0;
+        }
     }
 }
 
