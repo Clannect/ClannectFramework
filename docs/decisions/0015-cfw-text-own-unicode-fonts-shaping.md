@@ -14,7 +14,7 @@ parts, each checked against an outside reference:
 | Unicode | Property tables; grapheme clusters (UAX #29); line breaking (UAX #14); bidi (UAX #9) | The Unicode conformance tests, all of them |
 | Fonts | sfnt/TTC, `cmap`, metrics, TrueType (`glyf`) and CFF outlines, all bounds-checked and fuzzed | fontTools (outlines); FreeType, unhinted (glyph masks) |
 | Shaping | GSUB/GPOS lookups; script and feature selection; Arabic joining; marks (done except the complex-script engines) | HarfBuzz (glyphs, clusters, advances, offsets) |
-| Layout | Itemising (bidi, script, font fallback); cached shaping; wrapping, ellipsis, carets, hit-testing; glyph atlas; `Painter::drawTextRun` | Property tests and golden images |
+| Layout | Itemising (bidi, script, font fallback); cached shaping; wrapping, ellipsis, carets, hit-testing; glyph atlas; `Painter::drawText` (done) | Property tests; FreeType glyph masks |
 
 The references run outside the build: pip's fontTools, freetype-py and uharfbuzz produce expected
 values, which are committed.
@@ -181,6 +181,36 @@ also shapes 400 corrupted and truncated copies of the layout font.
   scripts shape with the default engine, which differs from HarfBuzz once a font has their script tags.
 - Arabic `stch` stretching, and Windows-1256 legacy Arabic fonts.
 - Vertical text, variable fonts, AAT (`morx`, `kerx`, `trak`), and `kern` state machines (formats 1 and 3).
+
+## Layout, glyphs and fonts (done)
+
+- **`TextLayout`** lays out text (UTF-32, or UTF-8 with byte offsets for carets):
+  - Hard line breaks split paragraphs. Within one, runs share a bidi level (UAX #9), script (Common and
+    Inherited take their neighbours' script) and font.
+  - Each grapheme uses the primary font, or a `FontDatabase` fallback for characters it lacks.
+  - Runs are shaped through `ShapeCache`: an LRU keyed by text, face, script, direction, language and
+    features. Results are in font units, so every size reuses them.
+  - Lines wrap greedily at UAX #14 opportunities; spaces at a line's end hang. A word wider than the line
+    breaks between graphemes.
+  - It supports an ellipsis ("…", or "..." if the font lacks it), a line limit, and start, end, left,
+    right or centre alignment. Lines are in visual order.
+  - Carets sit at grapheme boundaries, splitting ligature clusters evenly. Hit-testing returns the nearest
+    caret.
+  - Laying out unchanged text, style and options again returns at once, so a static label costs nothing
+    per frame.
+  - **Simplifications:** a line broken inside a shaped run is not reshaped. Trailing whitespace keeps its
+    resolved bidi level (L1 is not applied to glyph order). Neither matters for interface text.
+- **`GlyphCache`** rasterises glyphs once per face, size and quarter-pixel offset with the `Rasterizer`,
+  unhinted, into atlas pages. Page generations tell a GPU backend when to re-upload.
+  - `GlyphCacheTest` compares 1,056 masks with FreeType's unhinted rendering: TrueType within 20/255 per
+    pixel and 0.9% of the ink; CFF within 2%, where FreeType rounds scaled points to 1/64 px.
+  - **Not yet:** hinting options (the spec asks for them) and LCD sub-pixel rendering.
+- **`FontDatabase`** registers files, data, directories and the installed fonts: the Windows and user
+  font folders, the macOS folders, and the XDG directories.
+  - Faces load lazily. Matching is by family, weight and slant, CSS-style.
+  - Fallback per character prefers the same family, then the nearest style, and is cached.
+  - **Not yet:** a persistent scan cache for cold start, and script-aware fallback preference lists (such
+    as CJK locale order).
 
 ## Found on the way
 

@@ -81,9 +81,10 @@ void againstFreeType() {
                 y -= top;
                 return x >= 0 && y >= 0 && x < w && y < h ? px[y * w + x] : 0;
             };
+            const auto nibble = [](char c) { return c <= '9' ? c - '0' : (c | 0x20) - 'a' + 10; };
             std::vector<std::uint8_t> ft(hex.size() / 2);
             for (std::size_t k = 0; k < ft.size(); ++k) {
-                ft[k] = static_cast<std::uint8_t>(std::stoi(String(hex.substr(k * 2, 2)), nullptr, 16));
+                ft[k] = static_cast<std::uint8_t>(nibble(hex[k * 2]) << 4 | nibble(hex[k * 2 + 1]));
             }
             int glyphWorst = 0;
             for (int y = y0; y < y1; ++y) {

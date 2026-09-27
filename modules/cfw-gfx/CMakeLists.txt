@@ -8,6 +8,7 @@ cfw_add_module(cfw-gfx
         src/Brush.cpp
         src/Painter.cpp
         src/RasterPaintBackend.cpp
+        src/SvgImage.cpp
         src/Stroker.cpp
     DEPENDS
         cfw-image
@@ -26,3 +27,7 @@ target_link_libraries(PainterGoldenTest PRIVATE cfw-io)
 cfw_add_test(cfw-gfx TextPaintTest)
 target_compile_definitions(TextPaintTest PRIVATE CFW_TEXT_FONTS="${PROJECT_SOURCE_DIR}/modules/cfw-text/testdata/fonts")
 target_link_libraries(TextPaintTest PRIVATE cfw-io)
+
+cfw_add_test(cfw-gfx SvgImageTest)
+target_compile_definitions(SvgImageTest PRIVATE CFW_GFX_TESTDATA="${CMAKE_CURRENT_SOURCE_DIR}/testdata")
+target_link_libraries(SvgImageTest PRIVATE cfw-io)

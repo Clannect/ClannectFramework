@@ -12,7 +12,7 @@ covers only what is built here and how to work on it.
 | M0 — seams in Clannect | **Not started.** Everything it needs from CFW (`String`, `Variant`, property system, JSON) exists. |
 | M1 — cfw-core + cfw-io | **Both modules done, benchmarked.** Exit still needs the Runtime building without Qt (engine-side work). |
 | M2 — cfw-net + cfw-image | **CFW side done.** cfw-net: event loop, TCP, WebSocket client and server, HTTP client, and **TLS** through the OS (Schannel; system OpenSSL on Linux) for `https://` and `wss://`. It is on par with Qt and interoperates with it. cfw-image: own PNG, JPEG and WebP codecs, pixel-exact against the reference decoders. `Locale` for number formatting. The exit criteria need the engine port. |
-| M3 — cfw-gfx + cfw-text | **In progress.** `PainterPath` and the anti-aliased `Rasterizer` are done. cfw-gfx has `Painter`, `Pen`, `Brush`, the `Stroker` and the CPU backend, checked against Qt with golden images. It runs 10,000 rounded rects in 0.38× Qt's time with 0 allocations per frame. cfw-text has Unicode 18 properties, grapheme clusters, line breaking and bidi, passing every Unicode conformance case. It also has `FontFace` (TrueType, CFF and collections) and the OpenType `Shaper`, which matches HarfBuzz exactly on every test font. Next: text layout, the glyph atlas and `drawTextRun`. The GPU backend comes with M4's GL context. |
+| M3 — cfw-gfx + cfw-text | **In progress; the libraries are done.** The 2D renderer (`Painter`, CPU backend) is checked against Qt, and so are the SVG icons (`SvgImage`, replacing QSvgRenderer). cfw-text covers Unicode (every conformance case passes), fonts, shaping (equal to HarfBuzz on every test font), layout (wrapping, bidi, ellipsis, carets, fallback) and a glyph atlas checked against FreeType. `Painter::drawText` draws text. Every §7 budget measured so far is met: rounded rects 0.2× Qt, cached text about 1.0×, shaping about 1.0×, and 0 allocations per frame. Left: rendering the engine's interfaces through CFW and diffing them against Qt, which needs the ClannectEngine port. The complex-script shaping engines (Indic, Khmer, Myanmar, Hangul, USE) are also outstanding. The GPU backend comes with M4's GL context. |
 | M4 – M6 | Not started. |
 
 **cfw-core contents:**
@@ -73,8 +73,9 @@ collections, and matches fontTools and FreeType glyph for glyph on about 250,000
 OpenType shaping: GSUB and GPOS with every lookup type, and the Arabic, Hebrew and Thai engines. It also covers
 fonts without layout tables (marks placed by glyph boxes, Arabic presentation forms, the `kern` table). It
 matches HarfBuzz glyph for glyph on 7,930 committed cases over four test fonts, and on every font in the
-build container. The complex-script engines (Indic, Khmer, Myanmar, Hangul, USE) and text layout come next,
-all CFW's own.
+build container. `TextLayout` wraps, aligns, elides and hit-tests bidi text with font fallback from a
+`FontDatabase` of installed fonts. `GlyphCache` rasterises glyphs into an atlas, checked against FreeType, and
+`Painter::drawText` draws them. The complex-script engines (Indic, Khmer, Myanmar, Hangul, USE) come later.
 
 **cfw-net contents:**
 

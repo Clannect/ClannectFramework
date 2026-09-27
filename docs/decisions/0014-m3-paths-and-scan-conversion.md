@@ -130,11 +130,16 @@ renders the scenes with QPainter and commits the PNGs. `PainterGoldenTest` rende
 
 Measured on the same machine:
 
-- **10,000 anti-aliased, semi-transparent rounded rectangles at 1440p:** CFW takes 290 ms; Qt 6.11's
-  QPainter takes 770 ms with `drawRoundedRect`. That is 0.38× Qt's time; the budget is ≤ 1.2×.
+- **10,000 anti-aliased, semi-transparent rounded rectangles at 1440p:** CFW takes 150 ms; Qt 6.11's
+  QPainter takes 770 ms with `drawRoundedRect`. That is 0.2× Qt's time; the budget is ≤ 1.2×. (It was
+  290 ms. Solid source-over now blends two channels at a time, with the same rounding.)
+- **2,000 cached Latin text runs at 14 px** (DejaVu Sans): 19 ms. Qt draws the same runs' `QGlyphRun`s in
+  19.9 ms, measured through PySide6, so Qt's figure includes some Python overhead. That is about 1.0×;
+  the budget is ≤ 1.2×.
+- **2,000 uncached runs shaped:** 34 ms. Qt's uncached `QTextLayout` takes 32 ms; the budget is ≤ 1.5×.
 - **Allocations per repainted frame, steady state:** 0. `cfw-bench` gates this on every build with a
-  UI-like frame (panels, outlines, dashes, a gradient, a clipped rotated image), and also checks the fill
-  benchmark.
+  UI-like frame (panels, outlines, dashes, a gradient, a clipped rotated image, 40 text labels), and also
+  checks the fill and cached-text benchmarks.
 
 What made the allocation count zero:
 
@@ -150,9 +155,35 @@ minutes found four places where a non-finite value reached a float-to-int conver
 behaviour): a NaN arc sweep, a NaN clip rectangle, NaN stroke directions from overflowing coordinates, and
 an infinite image source rectangle. All four are fixed, and the target joins the CI fuzz job.
 
+## Text and icons
+
+- **Text:** `Painter::drawText(TextLayout)` and `drawGlyphs` take cfw-text's layout (decision 0015).
+  - Under a plain translation, glyphs are 8-bit masks from `GlyphCache`: unhinted, at quarter-pixel
+    positions, on whole-pixel baselines, in 1024² atlas pages. The backend's `fillMasks` blends them with
+    the same span compositor as fills, so brushes, opacity, blend modes and clips apply as they do to
+    fills.
+  - Under any other transform, and for glyphs too large for the atlas, glyphs are filled as outlines.
+  - `TextPaintTest` requires masks and outlines to agree within 20/255 per pixel at exact positions. The
+    masks themselves are checked against FreeType in `GlyphCacheTest`.
+- **Icons:** `SvgImage` replaces QSvgRenderer for the editor's icons.
+  - It supports the subset icons use:
+    - elements `svg`, `g`, `path`, `rect`, `circle`, `ellipse`, `line`, `polyline` and `polygon`;
+    - all path commands, elliptical arcs included;
+    - fill and stroke, with colours, `currentColor`, widths, caps, joins, miter limit, fill rule and
+      opacities;
+    - transforms and simple `style` attributes.
+
+    Other elements are skipped.
+  - `SvgImageTest` renders ten icons at 16, 20, 24 and 32 px exactly as `EditorIcons.cpp` does, and
+    compares them with QSvgRenderer. Coverage is within 5% of Qt's ink (6% at 16 px, where Qt's coarser
+    flattening of curves shows), and colours away from edges are within 3 levels.
+  - `FuzzSvg` ran 270,000 documents with no findings.
+- **Qt's thin pens, not imitated:** QRasterPaintEngine draws any pen at most 1 px wide after scaling with
+  its cosmetic line stroker (`fast_pen`). That stroker covers less than the pen's true area: a 0.8 px
+  diagonal line has about 20% less ink than exact coverage gives. CFW strokes every pen geometrically, so
+  sub-pixel diagonal strokes are darker than Qt's. The editor's icon pens are wider than 1 px at every
+  size it uses. One-pixel axis-aligned lines, the common UI case, come out the same in both.
+
 ## Next in M3
 
-- cfw-text: it parses TrueType/OpenType itself, rasterises glyphs with this `Rasterizer`, shapes text and
-  builds a glyph atlas. Decision 0012 rules out FreeType and HarfBuzz. `Painter::drawTextRun` follows once
-  it exists.
 - The Qt-oracle A/B of the engine's own interface and diagnostic renders. This needs the engine port.
