@@ -6,7 +6,8 @@
 
 add_executable(cfw-bench src/CoreBench.cpp src/AllocationCounter.cpp)
 target_include_directories(cfw-bench PRIVATE include)
-target_link_libraries(cfw-bench PRIVATE cfw-core cfw-io cfw-gfx)
+target_link_libraries(cfw-bench PRIVATE cfw-core cfw-io cfw-gfx cfw-text)
+target_compile_definitions(cfw-bench PRIVATE CFW_BENCH_FONTS="${PROJECT_SOURCE_DIR}/modules/cfw-text/testdata/fonts")
 cfw_configure_target(cfw-bench)
 if(MINGW)
     target_link_options(cfw-bench PRIVATE -static-libgcc -static-libstdc++)

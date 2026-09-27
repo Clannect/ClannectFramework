@@ -36,6 +36,8 @@
 #include "cfw/io/FileSystem.h"
 #include "cfw/io/JsonReader.h"
 #include "cfw/io/JsonWriter.h"
+#include "cfw/text/Shaper.h"
+#include "cfw/text/TextLayout.h"
 
 using namespace cfw;
 using cfw::bench::keep;
@@ -43,6 +45,18 @@ using cfw::bench::Measurement;
 using cfw::bench::measure;
 
 namespace {
+
+// Interface-like labels: words of varying length, numbers, punctuation.
+String benchLabel(std::size_t i) {
+    static const char *const words[] = {"Workspace", "Part", "Anchored", "Transparency", "Position", "Size", "Script",
+                                        "Explorer", "Properties", "Toolbox", "Collision", "Material", "Brick", "Color"};
+    String s = words[i % 14];
+    s += ' ';
+    s += words[(i * 7 + 3) % 14];
+    s += " #" + std::to_string(i) + ", value " + std::to_string((i * 37) % 1000) + ".5";
+    return s;
+}
+
 
 struct Budget {
     double maxAllocationsPerOp = -1.0; // < 0: no allocation budget
@@ -168,6 +182,25 @@ std::vector<Entry> runAll(const String &sceneText) {
                            }
                        }), {0.0}});
 
+    // A font for the text benchmarks (DejaVu Sans from the test data).
+    static std::shared_ptr<const FontFace> textFont;
+    {
+        Result<std::vector<std::byte>> bytes = readFile(Path(CFW_BENCH_FONTS) / "DejaVuSans.ttf", 64u << 20);
+        if (bytes) {
+            if (Result<std::shared_ptr<const FontFace>> f =
+                    FontFace::load(std::make_shared<const std::vector<std::byte>>(std::move(bytes.value())))) {
+                textFont = f.value();
+            }
+        }
+    }
+    static std::vector<TextLayout> uiLabels(textFont ? 40 : 0);
+    static std::vector<float> uiLabelY;
+    for (std::size_t i = 0; i < uiLabels.size(); ++i) {
+        uiLabels[i].setText(StringView(benchLabel(i)));
+        uiLabels[i].layout({textFont, 11.0f, {}, nullptr}, {.maxWidth = 270, .elide = true});
+        uiLabelY.push_back(19.0f + static_cast<float>(i) * 14.0f);
+    }
+
     // --- 2D painting on the CPU backend (spec §7: 10,000 anti-aliased rounded
     // rectangles at 1440p within 1.2x Qt; 0 allocations per repainted frame).
     {
@@ -229,7 +262,47 @@ std::vector<Entry> runAll(const String &sceneText) {
                                painter.drawImage({-80, -80, 160, 160}, icon);
                                painter.restore();
                                painter.strokeRect({395.5f, 95.5f, 209, 209}, dashed);
+                               for (const TextLayout &label : uiLabels) {
+                                   painter.drawText(label, {24, uiLabelY[static_cast<std::size_t>(&label - uiLabels.data())]},
+                                                    Color{0.1f, 0.1f, 0.1f, 1});
+                               }
                            }), {0.0}});
+    }
+
+    // --- Text (spec §7: 2,000 cached Latin runs at 14 px drawn within 1.2x
+    // Qt, 2,000 uncached runs shaped within 1.5x Qt).
+    if (textFont) {
+        static Image screen = std::move(Image::create(2560, 1440, AlphaMode::Premultiplied).value());
+        static RasterPaintBackend backend(screen);
+        static std::vector<TextLayout> runs(2000);
+        static std::vector<Vec2> at;
+        std::mt19937 rng(7);
+        for (std::size_t i = 0; i < runs.size(); ++i) {
+            runs[i].setText(StringView(benchLabel(i)));
+            runs[i].layout({textFont, 14.0f, {}, nullptr});
+            at.push_back({static_cast<float>(rng() % 2300), static_cast<float>(rng() % 1400)});
+        }
+        static Painter painter(backend);
+        painter.drawText(runs[0], at[0], Color{0, 0, 0, 1}); // warm the glyph cache
+        results.push_back({measure("text.draw.2000runs.cached", 11, 1, [&] {
+                               for (std::size_t i = 0; i < runs.size(); ++i) {
+                                   painter.drawText(runs[i], at[i], Color{0, 0, 0, 1});
+                               }
+                           }), {0.0}});
+        static std::vector<std::u32string> texts;
+        for (std::size_t i = 0; i < 2000; ++i) {
+            const String label = benchLabel(i);
+            texts.emplace_back(label.begin(), label.end());
+        }
+        static Shaper shaper;
+        static std::vector<ShapedGlyph> shaped;
+        ShapeOptions options;
+        options.script = unicode::Script::Latin;
+        results.push_back({measure("text.shape.2000runs.uncached", 11, 1, [&] {
+                               for (const std::u32string &t : texts) {
+                                   shaper.shape(*textFont, Span<const char32_t>(t.data(), t.size()), options, shaped);
+                               }
+                           }), {-1.0}});
     }
 
     // --- Hashing and text throughput (1 MB inputs; per-op = whole buffer).

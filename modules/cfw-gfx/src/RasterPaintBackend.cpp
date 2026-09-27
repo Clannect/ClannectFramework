@@ -54,9 +54,48 @@ inline std::uint32_t op(std::uint32_t s, std::uint32_t d, std::uint32_t sa, std:
     }
 }
 
+// mul255 on the four bytes of a pixel, two at a time (identical results:
+// each 16-bit lane holds at most 255 * 255 + 128 + 254).
+inline std::uint32_t mul255Packed(std::uint32_t x, std::uint32_t a) noexcept {
+    std::uint32_t lo = (x & 0x00FF00FFu) * a + 0x00800080u;
+    lo = ((lo + ((lo >> 8) & 0x00FF00FFu)) >> 8) & 0x00FF00FFu;
+    std::uint32_t hi = ((x >> 8) & 0x00FF00FFu) * a + 0x00800080u;
+    hi = (hi + ((hi >> 8) & 0x00FF00FFu)) & 0xFF00FF00u;
+    return lo | hi;
+}
+
+// Source-over of one solid premultiplied colour (the text and plain-fill
+// case). Premultiplied sums cannot exceed 255, so lanes never carry.
+void blendSolidOver(std::uint8_t *d, const std::uint8_t *s, const std::uint8_t *coverage, int count) {
+    std::uint32_t src;
+    std::memcpy(&src, s, 4);
+    const std::uint32_t srcAlpha = s[3];
+    for (int i = 0; i < count; ++i, d += 4) {
+        const std::uint32_t c = coverage[i];
+        if (c == 0) {
+            continue;
+        }
+        const std::uint32_t sc = c == 255 ? src : mul255Packed(src, c);
+        const std::uint32_t a = c == 255 ? srcAlpha : mul255(srcAlpha, c);
+        std::uint32_t out = sc;
+        if (a != 255) {
+            std::uint32_t dst;
+            std::memcpy(&dst, d, 4);
+            out = sc + mul255Packed(dst, 255u - a);
+        }
+        std::memcpy(d, &out, 4);
+    }
+}
+
 // `step` is 4 for a row of source pixels, 0 for one solid colour.
 template <BlendMode M>
 void blendRow(std::uint8_t *d, const std::uint8_t *s, int step, const std::uint8_t *coverage, int count) {
+    if constexpr (M == BlendMode::SourceOver) {
+        if (step == 0) {
+            blendSolidOver(d, s, coverage, count);
+            return;
+        }
+    }
     for (int i = 0; i < count; ++i, d += 4, s += step) {
         const std::uint32_t c = coverage[i];
         if (c == 0) {
@@ -293,11 +332,22 @@ void RasterPaintBackend::fillMasks(Span<const MaskBlit> masks, const Brush &brus
         return;
     }
     const Recti box = clipBox();
+    // The common case (solid brush, no clip mask, full opacity) blends mask
+    // rows straight into the target.
+    const bool direct = source.kind == SourceKind::Solid && clipMask() == nullptr && opacity == 256;
+    const BlendFn blend = blendFor(state.blend);
+    std::uint8_t *pixels = m_target.pixels().data();
+    const std::size_t stride = m_target.stride();
     for (const MaskBlit &m : masks) {
         const Recti r = m.target.intersected(box);
         for (int y = r.y; y < r.bottom(); ++y) {
             const std::uint8_t *row = m.pixels + static_cast<std::ptrdiff_t>(y - m.target.y) * m.stride + (r.x - m.target.x);
-            paintSpan(source, state, opacity, y, r.x, r.width, row);
+            if (direct) {
+                blend(pixels + static_cast<std::size_t>(y) * stride + static_cast<std::size_t>(r.x) * 4u, source.color.data(), 0,
+                      row, r.width);
+            } else {
+                paintSpan(source, state, opacity, y, r.x, r.width, row);
+            }
         }
     }
 }
