@@ -9,6 +9,7 @@ cfw_add_module(cfw-image
         src/JpegDecoder.cpp
         src/JpegEncoder.cpp
         src/Png.cpp
+        src/Rasterizer.cpp
         src/RectPacker.cpp
         src/Resize.cpp
         src/WebP.cpp
@@ -31,3 +32,5 @@ target_compile_definitions(WebPTest PRIVATE CFW_IMAGE_TESTDATA="${CMAKE_CURRENT_
 target_link_libraries(WebPTest PRIVATE cfw-io)
 
 cfw_add_test(cfw-image ImageToolsTest)
+
+cfw_add_test(cfw-image RasterizerTest)
