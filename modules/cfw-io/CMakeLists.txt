@@ -13,6 +13,7 @@ endif()
 
 cfw_add_module(cfw-io
     SOURCES
+        src/Arguments.cpp
         src/ByteBuffer.cpp
         src/FileSystem.cpp
         src/FileWatcher.cpp

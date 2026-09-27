@@ -4,6 +4,7 @@
 
 #include "cfw/core/Arena.h"
 #include "cfw/core/Clock.h"
+#include "cfw/core/CommandLine.h"
 #include "cfw/core/Logger.h"
 #include "cfw/core/StableVector.h"
 
@@ -171,7 +172,43 @@ void loggerIsThreadSafe() {
 
 } // namespace
 
+void formatsIsoUtc() {
+    checkEqual(formatIsoUtc(0), String("1970-01-01T00:00:00Z"), "epoch");
+    checkEqual(formatIsoUtc(951782400), String("2000-02-29T00:00:00Z"), "leap day");
+    checkEqual(formatIsoUtc(1790537935), String("2026-09-27T19:38:55Z"), "a recent time");
+    checkEqual(formatIsoUtc(-1), String("1969-12-31T23:59:59Z"), "before the epoch");
+    checkEqual(formatIsoUtc(4107542399), String("2100-02-28T23:59:59Z"), "2100 is not a leap year");
+    check(unixTimeSeconds() > 1700000000, "wall clock is plausible");
+}
+
+void parsesCommandLines() {
+    CommandLine cl("Runs one Clannect Game Instance.", "1.0");
+    cl.addOption("port", "Port.", "port", "7777");
+    cl.addOption("scene", "Scene file.", "path");
+    cl.addOption("mint-dev-ticket", "Mint a ticket.");
+    const std::vector<String> args{"runtime", "--scene", "a b.json", "-port=9000", "--mint-dev-ticket", "extra",
+                                   "--", "--port"};
+    check(cl.parse(args).ok(), "parses");
+    checkEqual(cl.value("scene"), String("a b.json"), "separate value");
+    checkEqual(cl.value("port"), String("9000"), "single dash, inline value");
+    check(cl.isSet("mint-dev-ticket") && !cl.helpRequested(), "flag");
+    check(cl.positional() == std::vector<String>{"extra", "--port"}, "positional, and after --");
+
+    check(cl.parse(std::vector<String>{"runtime"}).ok(), "empty parses");
+    checkEqual(cl.value("port"), String("7777"), "default when not given");
+    check(!cl.isSet("scene") && cl.value("scene").empty(), "unset option");
+
+    check(!cl.parse(std::vector<String>{"runtime", "--bogus"}).ok(), "unknown option rejected");
+    check(!cl.parse(std::vector<String>{"runtime", "--port"}).ok(), "missing value rejected");
+    check(!cl.parse(std::vector<String>{"runtime", "--mint-dev-ticket=1"}).ok(), "value on a flag rejected");
+    check(cl.parse(std::vector<String>{"runtime", "-h"}).ok() && cl.helpRequested(), "help");
+    check(cl.helpText().find("--port <port>") != String::npos, "help lists options");
+    check(cl.parse(std::vector<String>{"runtime", "--version"}).ok() && cl.versionRequested(), "version");
+}
+
 int main() {
+    formatsIsoUtc();
+    parsesCommandLines();
     stableVectorNeverMovesElements();
     arenaReusesMemoryAcrossFrames();
     arenaHonoursAlignmentAndLargeRequests();

@@ -237,7 +237,36 @@ void resolvesPerRfc3986() {
 
 } // namespace
 
+void hmacMatchesRfc4231() {
+    const auto hex = [](const Sha256::Digest &d) { return Sha256::toHex(d); };
+    checkEqual(hex(hmacSha256(String(20, '\x0b'), "Hi There")),
+               String("b0344c61d8db38535ca8afceaf0bf12b881dc200c9833da726e9376c2e32cff7"), "RFC 4231 case 1");
+    checkEqual(hex(hmacSha256("Jefe", "what do ya want for nothing?")),
+               String("5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843"), "RFC 4231 case 2");
+    checkEqual(hex(hmacSha256(String(131, '\xaa'), "Test Using Larger Than Block-Size Key - Hash Key First")),
+               String("60e431591ee0b67f0d8a26aacbf5b77f8e0bc6213728c5140546040f0ee37f54"), "RFC 4231 case 6 (long key)");
+}
+
+void decodesQueries() {
+    const auto items = decodeQuery("a=1&b=two%20words&c&&d=x+y&=e");
+    check(items.ok(), "query decodes");
+    if (items.ok()) {
+        const auto &v = items.value();
+        check(v.size() == 5, "empty items skipped");
+        check(v.size() == 5 && v[1].second == "two words" && v[2].first == "c" && v[2].second.empty() &&
+                  v[3].second == "x y" && v[4].first.empty() && v[4].second == "e",
+              "values decoded, '+' is a space");
+    }
+    check(!decodeQuery("a=%zz").ok(), "malformed escape rejected");
+    check(queryValue("node-id=12%3A34&x=1", "node-id") == String("12:34"), "queryValue finds and decodes");
+    check(!queryValue("x=1", "node-id"), "queryValue: missing key");
+    const std::vector<std::pair<String, String>> round{{"k y", "v&=%"}, {"n", ""}};
+    check(decodeQuery(encodeQuery(round)).value() == round, "encodeQuery round-trips");
+}
+
 int main() {
+    hmacMatchesRfc4231();
+    decodesQueries();
     resolvesPerRfc3986();
     sha1MatchesKnownVectors();
     base64MatchesRfc4648();

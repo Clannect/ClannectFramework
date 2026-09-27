@@ -144,4 +144,36 @@ String Sha256::toHex(const Digest &digest) {
     return out;
 }
 
+Sha256::Digest hmacSha256(Span<const std::byte> key, Span<const std::byte> message) noexcept {
+    std::array<std::uint8_t, 64> block{};
+    if (key.size() > block.size()) {
+        const Sha256::Digest hashed = Sha256::hash(key);
+        std::copy(hashed.begin(), hashed.end(), block.begin());
+    } else {
+        for (std::size_t i = 0; i < key.size(); ++i) {
+            block[i] = static_cast<std::uint8_t>(key[i]);
+        }
+    }
+    std::array<std::byte, 64> pad{};
+    for (std::size_t i = 0; i < pad.size(); ++i) {
+        pad[i] = static_cast<std::byte>(block[i] ^ 0x36u);
+    }
+    Sha256 inner;
+    inner.update(Span<const std::byte>(pad.data(), pad.size()));
+    inner.update(message);
+    const Sha256::Digest innerDigest = inner.finish();
+    for (std::size_t i = 0; i < pad.size(); ++i) {
+        pad[i] = static_cast<std::byte>(block[i] ^ 0x5Cu);
+    }
+    Sha256 outer;
+    outer.update(Span<const std::byte>(pad.data(), pad.size()));
+    outer.update(Span<const std::byte>(reinterpret_cast<const std::byte *>(innerDigest.data()), innerDigest.size()));
+    return outer.finish();
+}
+
+Sha256::Digest hmacSha256(StringView key, StringView message) noexcept {
+    return hmacSha256(Span<const std::byte>(reinterpret_cast<const std::byte *>(key.data()), key.size()),
+                      Span<const std::byte>(reinterpret_cast<const std::byte *>(message.data()), message.size()));
+}
+
 } // namespace cfw

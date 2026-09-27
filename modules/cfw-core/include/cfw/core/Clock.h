@@ -4,6 +4,8 @@
 #include <chrono>
 #include <cstdint>
 
+#include "cfw/core/String.h"
+
 namespace cfw {
 
 // Monotonic time for measuring intervals: never jumps when the wall clock is
@@ -24,6 +26,13 @@ using TimePoint = Clock::time_point;
                std::chrono::system_clock::now().time_since_epoch())
         .count();
 }
+
+// Wall-clock seconds since the Unix epoch (UTC).
+[[nodiscard]] inline std::int64_t unixTimeSeconds() noexcept { return unixTimeMilliseconds() / 1000; }
+
+// "2026-09-27T19:38:55Z": a Unix time in UTC, in ISO 8601 as
+// QDateTime::toString(Qt::ISODate) writes UTC times (whole seconds).
+[[nodiscard]] String formatIsoUtc(std::int64_t unixSeconds);
 
 // Measures elapsed monotonic time. Starts running on construction.
 //

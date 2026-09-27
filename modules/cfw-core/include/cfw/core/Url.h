@@ -82,5 +82,11 @@ private:
 
 // application/x-www-form-urlencoded body or query: "a=1&b=two%20words".
 [[nodiscard]] String encodeQuery(const std::vector<std::pair<String, String>> &items);
+// The reverse: "a=1&b=two%20words&c" -> {a, 1}, {b, two words}, {c, ""}, in
+// order. '+' is a space. Fails on a malformed percent escape.
+[[nodiscard]] Result<std::vector<std::pair<String, String>>> decodeQuery(StringView query);
+// The decoded value of the first item named `key`; nothing if there is none
+// or the query is malformed. Replaces QUrlQuery::queryItemValue.
+[[nodiscard]] std::optional<String> queryValue(StringView query, StringView key);
 
 } // namespace cfw

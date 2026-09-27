@@ -1,5 +1,7 @@
 #include "cfw/core/Url.h"
 
+#include <algorithm>
+
 #include "cfw/core/Strings.h"
 
 namespace cfw {
@@ -422,6 +424,47 @@ String encodeQuery(const std::vector<std::pair<String, String>> &items) {
         out += percentEncode(value);
     }
     return out;
+}
+
+Result<std::vector<std::pair<String, String>>> decodeQuery(StringView query) {
+    std::vector<std::pair<String, String>> items;
+    const auto decode = [](StringView part) {
+        String plus(part);
+        std::replace(plus.begin(), plus.end(), '+', ' ');
+        return percentDecode(plus);
+    };
+    while (!query.empty()) {
+        const std::size_t amp = query.find('&');
+        const StringView item = query.substr(0, amp);
+        query = amp == StringView::npos ? StringView() : query.substr(amp + 1);
+        if (item.empty()) {
+            continue;
+        }
+        const std::size_t eq = item.find('=');
+        Result<String> key = decode(item.substr(0, eq));
+        Result<String> value = decode(eq == StringView::npos ? StringView() : item.substr(eq + 1));
+        if (!key) {
+            return key.error();
+        }
+        if (!value) {
+            return value.error();
+        }
+        items.emplace_back(std::move(key).value(), std::move(value).value());
+    }
+    return items;
+}
+
+std::optional<String> queryValue(StringView query, StringView key) {
+    Result<std::vector<std::pair<String, String>>> items = decodeQuery(query);
+    if (!items) {
+        return std::nullopt;
+    }
+    for (auto &[k, v] : items.value()) {
+        if (k == key) {
+            return std::move(v);
+        }
+    }
+    return std::nullopt;
 }
 
 } // namespace cfw

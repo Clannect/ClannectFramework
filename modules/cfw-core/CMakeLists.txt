@@ -7,6 +7,8 @@ cfw_add_module(cfw-core
         src/Arena.cpp
         src/Base64.cpp
         src/Checksum.cpp
+        src/Clock.cpp
+        src/CommandLine.cpp
         src/ClassInfo.cpp
         src/Color.cpp
         src/Contract.cpp

@@ -44,4 +44,9 @@ private:
     bool m_finished = false;
 };
 
+// HMAC-SHA256 (RFC 2104): a message authentication code under `key`.
+// Replaces QMessageAuthenticationCode(QCryptographicHash::Sha256).
+[[nodiscard]] Sha256::Digest hmacSha256(Span<const std::byte> key, Span<const std::byte> message) noexcept;
+[[nodiscard]] Sha256::Digest hmacSha256(StringView key, StringView message) noexcept;
+
 } // namespace cfw
