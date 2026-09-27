@@ -12,6 +12,7 @@
 #include "cfw/core/String.h"
 #include "cfw/core/Url.h"
 #include "cfw/net/TcpConnection.h"
+#include "cfw/net/TlsStream.h"
 
 namespace cfw {
 
@@ -56,6 +57,9 @@ struct HttpOptions {
     // Streaming: if set, body bytes of the final response go here as they
     // arrive instead of into HttpResponse::body. Return false to cancel.
     std::function<bool(Span<const std::byte>)> onBodyData;
+    // For https: certificate pinning and the handshake timeout (capped at
+    // connectTimeout). By default the system trust store decides.
+    TlsOptions tls;
 };
 
 // An HTTP/1.1 client (RFC 9110/9112) on an EventLoop. Each request uses its own
@@ -71,7 +75,8 @@ struct HttpOptions {
 //  - 303, and 301/302 after a POST, continue as GET without a body; 307/308
 //    keep the method and body.
 //
-// https:// currently fails with Unsupported: TLS is not implemented yet.
+// https:// runs over TlsStream (the operating system's TLS); it fails with
+// Unsupported where TlsStream::available() is false.
 //
 // Threads: the loop thread only. Allocates: per request, bounded by the limits.
 class HttpClient {

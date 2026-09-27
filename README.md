@@ -11,7 +11,7 @@ covers only what is built here and how to work on it.
 |---|---|
 | M0 — seams in Clannect | **Not started.** Everything it needs from CFW (`String`, `Variant`, property system, JSON) exists. |
 | M1 — cfw-core + cfw-io | **Both modules done, benchmarked.** Exit still needs the Runtime building without Qt (engine-side work). |
-| M2 — cfw-net + cfw-image | **cfw-net done** (event loop, TCP, WebSocket client and server, HTTP client), on par with Qt and interoperating with it; TLS started (Schannel, not yet built). **cfw-image done:** own PNG, JPEG and WebP codecs, pixel-exact against the reference decoders. |
+| M2 — cfw-net + cfw-image | **CFW side done.** cfw-net: event loop, TCP, WebSocket client and server, HTTP client, and **TLS** through the OS (Schannel; system OpenSSL on Linux) for `https://` and `wss://`. It is on par with Qt and interoperates with it. cfw-image: own PNG, JPEG and WebP codecs, pixel-exact against the reference decoders. `Locale` for number formatting. The exit criteria need the engine port. |
 | M3 – M6 | Not started. |
 
 **cfw-core contents:**
@@ -37,7 +37,7 @@ covers only what is built here and how to work on it.
 - **Per-user locations and settings:** `StandardPaths` (Qt's folder layout), `Settings` (JSON, atomic),
   `FileWatcher` (polling for now).
 
-**cfw-core also has** its own DEFLATE/zlib codec (`inflate`/`deflate`, `zlibDecompress`/`zlibCompress`) and
+**cfw-core also has** `Locale` (CLDR number formatting and parsing for ~30 locales, no global locale) and its own DEFLATE/zlib codec (`inflate`/`deflate`, `zlibDecompress`/`zlibCompress`) and
 CRC-32/Adler-32. Real zlib decodes everything it writes, at zlib's speed and ratio.
 
 **cfw-image contents** ([0012](docs/decisions/0012-cfw-is-independent-own-codecs.md)):
@@ -57,6 +57,10 @@ CRC-32/Adler-32. Real zlib decodes everything it writes, at zlib's speed and rat
 - **Loop and threads:** `EventLoop` (timers, cross-thread `post`, zero CPU when idle) and `Executor` (blocking
   work such as DNS).
 - **TCP:** `TcpConnection` and `TcpListener`, with backpressure and write coalescing.
+- **TLS:** `TlsStream`, TLS 1.2/1.3 through the operating system (Schannel on Windows, the system OpenSSL
+  loaded at runtime on Linux). It verifies against the system trust store or pinned fingerprints; `https://`
+  and `wss://` use it ([0013](docs/decisions/0013-tls-through-the-os-and-windows-ci.md)).
+- **HTTP:** `HttpClient`, an HTTP/1.1 client with a safe redirect policy, streaming, limits and timeouts.
 - **WebSocket:** `WebSocket` (RFC 6455 client and server end, auto-pong, close handshake, limits) and
   `WebSocketServer` (handshake timeout, a bounded number of pending handshakes, 400 on bad requests).
 - **Testing:** the frame codec and handshake are pure code, tested against the RFC's own examples and fuzzed.
@@ -75,8 +79,9 @@ regressions.
 So are two Qt-written edge-case documents. `FuzzSmokeTest` runs 45,000 hostile inputs through the parsers on
 every build.
 
-**Linux CI** ([0011](docs/decisions/0011-linux-ci-and-fuzzing.md)): GCC and Clang builds, ASan+UBSan+LSan over
-every test, TSan over cfw-net, and five libFuzzer targets (JSON, binary reader, URL/UTF-8, WebSocket frames,
+**CI** ([0011](docs/decisions/0011-linux-ci-and-fuzzing.md), [0013](docs/decisions/0013-tls-through-the-os-and-windows-ci.md)): GCC and Clang builds, a Windows (MinGW-w64)
+cross build whose tests run under Wine plus a Schannel↔OpenSSL interop check, ASan+UBSan+LSan over every
+test, TSan over cfw-net, and five libFuzzer targets (JSON, binary reader, URL/UTF-8, WebSocket frames,
 HTTP) fuzzed on every push. The committed corpus (`fuzz/corpus/`) replays as CTest tests on every toolchain,
 MinGW included. Nine targets now cover every parser, including inflate, PNG, JPEG and WebP. The first runs found five
 bugs, all fixed with regression inputs:
@@ -177,3 +182,6 @@ input.
   targets with a committed corpus, and the three bugs they found on the first run.
 - [0012](docs/decisions/0012-cfw-is-independent-own-codecs.md) — CFW ships no third-party code (**amends §2.1,
   §4.4, §11**): own DEFLATE and PNG/JPEG/WebP codecs, reference-exact tests, fuzzing, performance.
+- [0013](docs/decisions/0013-tls-through-the-os-and-windows-ci.md) — TLS through the OS (Schannel; system
+  OpenSSL via `dlopen`), `https://`/`wss://`, a Windows cross build tested under Wine, and a use-after-free it
+  caught.

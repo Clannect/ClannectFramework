@@ -16,6 +16,10 @@
 #include <ncrypt.h>
 #define SECURITY_WIN32
 #include <security.h>
+// SCH_CREDENTIALS (needed for TLS 1.3) is only declared with this switch, as
+// in the Windows SDK; it needs UNICODE_STRING from subauth.h.
+#define SCHANNEL_USE_BLACKLISTS
+#include <subauth.h>
 #include <schannel.h>
 #include <sspi.h>
 
@@ -117,6 +121,7 @@ struct TlsIdentityState {
     NCRYPT_PROV_HANDLE provider = 0;
     NCRYPT_KEY_HANDLE key = 0;
     PCCERT_CONTEXT certificate = nullptr;
+    std::vector<std::byte> der;
     Sha256::Digest fingerprint{};
 
     ~TlsIdentityState() {
@@ -137,6 +142,7 @@ struct TlsIdentityState {
 TlsServerIdentity::TlsServerIdentity(std::unique_ptr<detail::TlsIdentityState> state) : m_state(std::move(state)) {}
 TlsServerIdentity::~TlsServerIdentity() = default;
 const Sha256::Digest &TlsServerIdentity::fingerprint() const noexcept { return m_state->fingerprint; }
+const std::vector<std::byte> &TlsServerIdentity::certificateDer() const noexcept { return m_state->der; }
 
 Result<std::unique_ptr<TlsServerIdentity>> TlsServerIdentity::createSelfSigned(StringView dnsName) {
     auto state = std::make_unique<detail::TlsIdentityState>();
@@ -238,6 +244,8 @@ Result<std::unique_ptr<TlsServerIdentity>> TlsServerIdentity::createSelfSigned(S
         return tlsError("creating the self-signed certificate", static_cast<long>(createError));
     }
     state->fingerprint = fingerprintOf(state->certificate);
+    const auto *encoded = reinterpret_cast<const std::byte *>(state->certificate->pbCertEncoded);
+    state->der.assign(encoded, encoded + state->certificate->cbCertEncoded);
     return std::unique_ptr<TlsServerIdentity>(new TlsServerIdentity(std::move(state)));
 }
 
@@ -398,8 +406,15 @@ struct TlsState {
 
     void onTransportData(Span<const std::byte> data) {
         incoming.insert(incoming.end(), data.begin(), data.end());
+        // A failed handshake reports to the owner, which may destroy this
+        // stream (found by ASan in the OpenSSL backend, which shares this
+        // shape): check before touching state again.
+        const std::shared_ptr<bool> guard = alive;
         if (phase == Phase::Handshake || renegotiating) {
             handshakeStep(false);
+            if (!*guard) {
+                return;
+            }
         }
         if (phase == Phase::Open && !renegotiating) {
             decryptAvailable();

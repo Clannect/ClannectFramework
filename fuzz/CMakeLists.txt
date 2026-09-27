@@ -18,6 +18,7 @@ function(cfw_add_fuzz_target name)
         cfw_configure_target(${name}Replay)
         add_test(NAME ${name}Corpus COMMAND ${name}Replay ${corpus})
         set_tests_properties(${name}Corpus PROPERTIES LABELS fuzz TIMEOUT 60)
+        cfw_set_test_environment(${name}Corpus)
     endif()
 
     if(CFW_BUILD_FUZZERS)

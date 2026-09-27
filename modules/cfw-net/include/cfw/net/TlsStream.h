@@ -47,6 +47,8 @@ public:
     TlsServerIdentity &operator=(const TlsServerIdentity &) = delete;
 
     [[nodiscard]] const Sha256::Digest &fingerprint() const noexcept;
+    // The certificate in DER form (for exporting it as a trust anchor in tests).
+    [[nodiscard]] const std::vector<std::byte> &certificateDer() const noexcept;
     [[nodiscard]] detail::TlsIdentityState &state() noexcept { return *m_state; }
 
 private:
@@ -55,23 +57,27 @@ private:
 };
 
 // TLS 1.2+ over another ByteStream (normally a TcpConnection). Built on the
-// operating system's TLS implementation (Schannel on Windows), so there is no
-// third-party crypto to track; see docs/decisions/0011.
+// operating system's TLS implementation, so CFW ships no crypto: Schannel on
+// Windows, and elsewhere the system's OpenSSL (libssl 3, or 1.1 for clients),
+// loaded at runtime. See docs/decisions/0013.
 //
 // Security properties:
 //  - TLS 1.2 and 1.3 only, strong cipher suites only, SNI always sent;
 //  - the certificate is always verified: by default the chain must lead to a
-//    trusted root and match the server name (CertVerifyCertificateChainPolicy
-//    with the SSL policy); with TlsOptions::pinnedCertificates, the leaf must
-//    match a pinned fingerprint;
-//  - verification runs on the Executor, because building a chain may fetch
-//    intermediates or revocation data over the network.
+//    root the system trusts and match the server name (DNS name or IP
+//    address); with TlsOptions::pinnedCertificates, the leaf must match a
+//    pinned fingerprint instead;
+//  - on Windows verification runs on the Executor, because building a chain
+//    may fetch intermediates or revocation data over the network. OpenSSL
+//    verifies offline, during the handshake. On Linux the trust store is the
+//    distribution's (OpenSSL honours SSL_CERT_FILE and SSL_CERT_DIR).
 //
 // After the handshake it is an ordinary ByteStream: protocols run over it
 // unchanged. close() sends a TLS close_notify before closing the transport.
 //
-// Available on Windows. Elsewhere the handshake fails with Unsupported (a
-// POSIX backend is future work).
+// available() is false when the system has no usable OpenSSL; then every
+// handshake fails with Unsupported, saying why. Server identities need
+// OpenSSL 3 on Linux.
 //
 // Threads: the loop thread only.
 class TlsStream final : public ByteStream {

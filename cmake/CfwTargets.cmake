@@ -74,6 +74,16 @@ function(cfw_add_module name)
     cfw_configure_target(${name})
 endfunction()
 
+# Windows builds run on Linux under Wine (cmake/toolchains/mingw-w64-cross.cmake):
+# Wine needs a UTF-8 locale to map non-ASCII file names, and tests use
+# CFW_UNDER_WINE to report what Wine cannot do instead of failing on it.
+function(cfw_set_test_environment test_name)
+    if(CMAKE_CROSSCOMPILING AND CMAKE_CROSSCOMPILING_EMULATOR MATCHES "wine")
+        set_tests_properties(${test_name} PROPERTIES
+            ENVIRONMENT "CFW_UNDER_WINE=1;LANG=C.UTF-8;LC_ALL=C.UTF-8;WINEDEBUG=-all")
+    endif()
+endfunction()
+
 # cfw_add_test(cfw-core StringTest) builds tests/StringTest.cpp into its own
 # binary and registers it with CTest.
 function(cfw_add_test module test_name)
@@ -91,4 +101,5 @@ function(cfw_add_test module test_name)
         set(timeout 120)
     endif()
     set_tests_properties(${test_name} PROPERTIES LABELS ${module} TIMEOUT ${timeout})
+    cfw_set_test_environment(${test_name})
 endfunction()

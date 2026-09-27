@@ -58,6 +58,41 @@ jobs:
           TSAN_OPTIONS: halt_on_error=1:second_deadlock_stack=1
         run: ctest --preset tsan -L cfw-net
 
+  windows-cross:
+    name: windows (MinGW-w64 GCC 13, tests under Wine)
+    runs-on: ubuntu-24.04
+    env:
+      WINEPREFIX: ${{ github.workspace }}/.wine
+      WINEDEBUG: -all
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install tools
+        run: |
+          sudo dpkg --add-architecture i386
+          sudo apt-get update
+          sudo apt-get install -y ninja-build g++-mingw-w64-x86-64-posix wine64 wine
+      - name: Initialise Wine
+        run: wineboot -i
+      - name: Configure
+        run: >
+          cmake -S . -B build/windows -G Ninja -DCMAKE_BUILD_TYPE=Debug
+          -DCMAKE_TOOLCHAIN_FILE=cmake/toolchains/mingw-w64-cross.cmake
+      - name: Build
+        run: cmake --build build/windows
+      - name: Test (Windows binaries under Wine)
+        run: ctest --test-dir build/windows --output-on-failure --timeout 120
+      # Schannel (Windows build) against the OpenSSL backend (native build):
+      # the only place the Schannel client runs outside a Windows machine.
+      - name: Build the native TLS echo server
+        run: |
+          cmake --preset debug
+          cmake --build --preset debug --target TlsEchoServer
+      - name: TLS interop (Schannel client, OpenSSL server)
+        run: |
+          build/debug/testing/tls-interop/TlsEchoServer info.txt &
+          for i in $(seq 1 20); do [ -s info.txt ] && break; sleep 0.5; done
+          wine build/windows/testing/tls-interop/SchannelClient.exe info.txt
+
   fuzz:
     name: fuzz (libFuzzer, 45 s per target)
     runs-on: ubuntu-24.04

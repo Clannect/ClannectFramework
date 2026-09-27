@@ -6,6 +6,7 @@
 #include "cfw/core/Contract.h"
 #include "cfw/net/EventLoop.h"
 #include "cfw/net/Executor.h"
+#include "cfw/net/TlsStream.h"
 #include "cfw/net/WebSocketHandshake.h"
 #include "cfw/net/WebSocketServer.h"
 
@@ -211,7 +212,8 @@ struct ClientHandshake final : detail::Cancellable, std::enable_shared_from_this
     WebSocket::ConnectCallback callback;
     WebSocket::Options options;
     ConnectRequest tcpRequest;
-    std::unique_ptr<TcpConnection> tcp;
+    ConnectRequest tlsRequest;
+    std::unique_ptr<ByteStream> tcp; // TCP, or TLS over TCP for wss
     String key;
     String received;
     TimerId timer = 0;
@@ -226,6 +228,7 @@ struct ClientHandshake final : detail::Cancellable, std::enable_shared_from_this
         done = true;
         callback = nullptr;
         tcpRequest.cancel();
+        tlsRequest.cancel();
         tcp.reset();
         if (timer != 0) {
             loop->cancelTimer(timer);
@@ -254,10 +257,9 @@ ConnectRequest WebSocket::connect(EventLoop &loop, Executor &resolver, const Url
     state->callback = std::move(callback);
     state->options = options.socket;
 
-    if (url.scheme() != "ws") {
-        const Error error = url.scheme() == "wss"
-                                ? Error(ErrorCode::Unsupported, "wss:// needs TLS, which cfw-net does not provide yet")
-                                : Error(ErrorCode::InvalidArgument, "not a ws:// URL").with("url", url.toString());
+    const bool secure = url.scheme() == "wss";
+    if (!secure && url.scheme() != "ws") {
+        const Error error = Error(ErrorCode::InvalidArgument, "not a ws:// or wss:// URL").with("url", url.toString());
         std::weak_ptr<ClientHandshake> weak = state;
         loop.post([weak, error] {
             if (auto s = weak.lock()) {
@@ -274,7 +276,7 @@ ConnectRequest WebSocket::connect(EventLoop &loop, Executor &resolver, const Url
     }
     state->key = base64Encode(nonce);
     const String host = url.host();
-    const std::uint16_t port = url.effectivePort().value_or(80);
+    const std::uint16_t port = url.effectivePort().value_or(secure ? 443 : 80);
     const String target = (url.path().empty() ? String("/") : url.path()) + (url.query().empty() ? "" : "?" + url.query());
 
     std::weak_ptr<ClientHandshake> weak = state;
@@ -285,11 +287,49 @@ ConnectRequest WebSocket::connect(EventLoop &loop, Executor &resolver, const Url
         }
     });
 
+    // The HTTP upgrade, over TCP or over TLS.
+    const auto upgrade = [weak, host, port, target](std::unique_ptr<ByteStream> stream) {
+        auto s = weak.lock();
+        if (!s || s->done) {
+            return;
+        }
+        s->tcp = std::move(stream);
+        s->tcp->setOnClosed([weak](const std::optional<Error> &error) {
+            if (auto st = weak.lock()) {
+                st->complete(error ? *error : Error(ErrorCode::NetworkError, "connection closed during handshake"));
+            }
+        });
+        s->tcp->setOnData([weak](Span<const std::byte> data) {
+            auto st = weak.lock();
+            if (!st || st->done) {
+                return;
+            }
+            st->received.append(textOf(data));
+            Result<std::optional<ParsedHead>> head = parseHttpResponseHead(st->received);
+            if (!head) {
+                st->complete(std::move(head).error());
+                return;
+            }
+            if (!head.value()) {
+                return; // the head is not complete yet
+            }
+            if (Result<void> accepted = wsCheckServerResponse(head.value()->head, st->key); !accepted) {
+                st->complete(std::move(accepted).error());
+                return;
+            }
+            const StringView leftover = StringView(st->received).substr(head.value()->consumed);
+            std::unique_ptr<WebSocket> socket =
+                WebSocket::adopt(*st->loop, std::move(st->tcp), WsRole::Client, st->options, bytesOf(leftover));
+            st->complete(std::move(socket));
+        });
+        s->tcp->send(wsClientRequest(host, port, target, s->key));
+    };
+
     TcpConnection::ConnectOptions tcpOptions;
     tcpOptions.timeout = options.timeout;
     state->tcpRequest = TcpConnection::connect(
         loop, resolver, host, port,
-        [weak, host, port, target](Result<std::unique_ptr<TcpConnection>> connected) {
+        [weak, secure, host, upgrade, &resolver, tls = options.tls](Result<std::unique_ptr<TcpConnection>> connected) {
             auto s = weak.lock();
             if (!s || s->done) {
                 return;
@@ -298,36 +338,22 @@ ConnectRequest WebSocket::connect(EventLoop &loop, Executor &resolver, const Url
                 s->complete(std::move(connected).error());
                 return;
             }
-            s->tcp = std::move(connected).value();
-            s->tcp->setOnClosed([weak](const std::optional<Error> &error) {
-                if (auto st = weak.lock()) {
-                    st->complete(error ? *error : Error(ErrorCode::NetworkError, "connection closed during handshake"));
-                }
-            });
-            s->tcp->setOnData([weak](Span<const std::byte> data) {
-                auto st = weak.lock();
-                if (!st || st->done) {
-                    return;
-                }
-                st->received.append(textOf(data));
-                Result<std::optional<ParsedHead>> head = parseHttpResponseHead(st->received);
-                if (!head) {
-                    st->complete(std::move(head).error());
-                    return;
-                }
-                if (!head.value()) {
-                    return; // the head is not complete yet
-                }
-                if (Result<void> accepted = wsCheckServerResponse(head.value()->head, st->key); !accepted) {
-                    st->complete(std::move(accepted).error());
-                    return;
-                }
-                const StringView leftover = StringView(st->received).substr(head.value()->consumed);
-                std::unique_ptr<WebSocket> socket =
-                    WebSocket::adopt(*st->loop, std::move(st->tcp), WsRole::Client, st->options, bytesOf(leftover));
-                st->complete(std::move(socket));
-            });
-            s->tcp->send(wsClientRequest(host, port, target, s->key));
+            if (!secure) {
+                upgrade(std::move(connected).value());
+                return;
+            }
+            s->tlsRequest = TlsStream::startClient(*s->loop, resolver, std::move(connected).value(), host, tls,
+                                                   [weak, upgrade](Result<std::unique_ptr<ByteStream>> secured) {
+                                                       auto st = weak.lock();
+                                                       if (!st || st->done) {
+                                                           return;
+                                                       }
+                                                       if (!secured) {
+                                                           st->complete(std::move(secured).error());
+                                                           return;
+                                                       }
+                                                       upgrade(std::move(secured).value());
+                                                   });
         },
         tcpOptions);
     return ConnectRequest(std::move(state));

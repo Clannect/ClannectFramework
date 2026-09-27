@@ -4,10 +4,13 @@
 set(CFW_NET_PLATFORM_SOURCES)
 set(CFW_NET_PLATFORM_LIBS)
 if(WIN32)
-    list(APPEND CFW_NET_PLATFORM_SOURCES src/SocketWin32.cpp)
-    list(APPEND CFW_NET_PLATFORM_LIBS ws2_32)
+    list(APPEND CFW_NET_PLATFORM_SOURCES src/SocketWin32.cpp src/TlsSchannel.cpp)
+    list(APPEND CFW_NET_PLATFORM_LIBS ws2_32 secur32 crypt32 ncrypt)
 else()
-    list(APPEND CFW_NET_PLATFORM_SOURCES src/SocketPosix.cpp)
+    # TLS through the system's OpenSSL, loaded at runtime (docs/decisions/0013):
+    # nothing to link but dlopen.
+    list(APPEND CFW_NET_PLATFORM_SOURCES src/SocketPosix.cpp src/TlsOpenSsl.cpp)
+    list(APPEND CFW_NET_PLATFORM_LIBS ${CMAKE_DL_LIBS})
 endif()
 
 find_package(Threads REQUIRED)
@@ -32,3 +35,5 @@ cfw_add_test(cfw-net WebSocketProtocolTest)
 cfw_add_test(cfw-net EventLoopTest)
 cfw_add_test(cfw-net WebSocketTest)
 cfw_add_test(cfw-net HttpTest)
+cfw_add_test(cfw-net TlsTest)
+target_link_libraries(TlsTest PRIVATE cfw-io)

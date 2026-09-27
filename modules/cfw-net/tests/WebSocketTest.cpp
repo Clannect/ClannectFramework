@@ -188,19 +188,11 @@ void hostileClientsAreHandled() {
 
 void clientErrors() {
     Harness h;
-    std::optional<Error> error;
-    ConnectRequest tls = WebSocket::connect(*h.loop, h.resolver, Url::parse("wss://example.com/").value(),
-                                            [&](Result<std::unique_ptr<WebSocket>> r) {
-                                                error = r ? std::nullopt : std::optional<Error>(r.error());
-                                            });
-    check(h.loop->runUntil([&] { return error.has_value(); }, 2s) && error->code() == ErrorCode::Unsupported,
-          "wss:// is reported as Unsupported, not attempted");
-
     const std::uint16_t deadPort = [&] {
         auto temp = TcpListener::listen(*h.loop, "127.0.0.1", 0).value();
         return temp->port();
     }();
-    error.reset();
+    std::optional<Error> error;
     ConnectRequest refused = WebSocket::connect(*h.loop, h.resolver,
                                                 Url::parse("ws://127.0.0.1:" + std::to_string(deadPort) + "/").value(),
                                                 [&](Result<std::unique_ptr<WebSocket>> r) {

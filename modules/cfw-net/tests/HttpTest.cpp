@@ -316,11 +316,6 @@ void rejectsBadRequestsAndCancels() {
     smuggle.headers = {{"Content-Length", "0"}};
     check(!f.run(smuggle).ok(), "framing headers are the client's to set");
 
-    HttpRequest tls;
-    tls.url = Url::parse("https://api.figma.com/v1/files/x").value();
-    const auto https = f.run(tls);
-    check(!https.ok() && https.error().code() == ErrorCode::Unsupported, "https reports Unsupported until TLS exists");
-
     f.server.routes["/silent"] = "";
     bool called = false;
     {

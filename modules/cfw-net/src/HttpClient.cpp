@@ -8,6 +8,7 @@
 #include "cfw/net/EventLoop.h"
 #include "cfw/net/Executor.h"
 #include "cfw/net/HttpBodyDecoder.h"
+#include "cfw/net/TlsStream.h"
 #include "cfw/net/WebSocketHandshake.h"
 
 namespace cfw {
@@ -94,7 +95,8 @@ struct HttpCall final : detail::Cancellable, std::enable_shared_from_this<HttpCa
     int redirects = 0;
 
     ConnectRequest connectRequest;
-    std::unique_ptr<TcpConnection> connection;
+    ConnectRequest tlsRequest;
+    std::unique_ptr<ByteStream> connection; // TCP, or TLS over TCP for https
     String head;
     bool inBody = false;
     bool deliverBody = true; // false while reading the body of a redirect we will follow
@@ -109,6 +111,7 @@ struct HttpCall final : detail::Cancellable, std::enable_shared_from_this<HttpCa
 
     void releaseConnection() {
         connectRequest.cancel();
+        tlsRequest.cancel();
         if (connection) {
             connection->abort();
             connection.reset();
@@ -164,12 +167,9 @@ struct HttpCall final : detail::Cancellable, std::enable_shared_from_this<HttpCa
         response = HttpResponse{};
 
         const Url &url = request.url;
-        if (url.scheme() == "https") {
-            complete(Error(ErrorCode::Unsupported, "https:// needs TLS, which cfw-net does not provide yet"));
-            return;
-        }
-        if (url.scheme() != "http" || url.host().empty()) {
-            complete(Error(ErrorCode::InvalidArgument, "not an http:// URL").with("url", url.toString()));
+        const bool secure = url.scheme() == "https";
+        if ((!secure && url.scheme() != "http") || url.host().empty()) {
+            complete(Error(ErrorCode::InvalidArgument, "not an http:// or https:// URL").with("url", url.toString()));
             return;
         }
         std::weak_ptr<HttpCall> weak = shared_from_this();
@@ -177,16 +177,31 @@ struct HttpCall final : detail::Cancellable, std::enable_shared_from_this<HttpCa
         connectOptions.timeout = options.connectTimeout;
         touch();
         connectRequest = TcpConnection::connect(
-            *loop, *resolver, url.host(), url.effectivePort().value_or(80),
-            [weak](Result<std::unique_ptr<TcpConnection>> connected) {
-                if (auto self = weak.lock()) {
-                    self->onConnected(std::move(connected));
+            *loop, *resolver, url.host(), url.effectivePort().value_or(secure ? 443 : 80),
+            [weak, secure](Result<std::unique_ptr<TcpConnection>> connected) {
+                auto self = weak.lock();
+                if (!self || self->done) {
+                    return;
                 }
+                if (!connected || !secure) {
+                    self->onConnected(connected ? Result<std::unique_ptr<ByteStream>>(std::move(connected).value())
+                                                : Result<std::unique_ptr<ByteStream>>(std::move(connected).error()));
+                    return;
+                }
+                TlsOptions tls = self->options.tls;
+                tls.handshakeTimeout = std::min(tls.handshakeTimeout, self->options.connectTimeout);
+                self->tlsRequest = TlsStream::startClient(*self->loop, *self->resolver, std::move(connected).value(),
+                                                          self->request.url.host(), std::move(tls),
+                                                          [weak](Result<std::unique_ptr<ByteStream>> secured) {
+                                                              if (auto s = weak.lock()) {
+                                                                  s->onConnected(std::move(secured));
+                                                              }
+                                                          });
             },
             connectOptions);
     }
 
-    void onConnected(Result<std::unique_ptr<TcpConnection>> connected) {
+    void onConnected(Result<std::unique_ptr<ByteStream>> connected) {
         if (done) {
             return;
         }

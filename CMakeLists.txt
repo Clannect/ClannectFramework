@@ -35,5 +35,8 @@ add_subdirectory(modules/cfw-net)
 add_subdirectory(modules/cfw-image)
 
 add_subdirectory(fuzz)
+if(CFW_BUILD_TESTS)
+    add_subdirectory(testing/tls-interop)
+endif()
 
 add_subdirectory(bench)

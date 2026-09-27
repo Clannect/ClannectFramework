@@ -11,6 +11,7 @@
 #include "cfw/core/Url.h"
 #include "cfw/net/ByteStream.h"
 #include "cfw/net/TcpConnection.h"
+#include "cfw/net/TlsStream.h"
 #include "cfw/net/WebSocketFrame.h"
 
 namespace cfw {
@@ -48,12 +49,13 @@ public:
     struct ConnectOptions {
         Options socket;
         Duration timeout = std::chrono::seconds(10); // TCP connect + handshake
+        TlsOptions tls;                              // wss:// only
     };
 
     using ConnectCallback = std::function<void(Result<std::unique_ptr<WebSocket>>)>;
 
-    // Connects to a ws:// URL. (wss:// needs TLS, which cfw-net does not have
-    // yet; it fails with Unsupported.)
+    // Connects to a ws:// or wss:// URL. wss:// runs over TlsStream and fails
+    // with Unsupported where TlsStream::available() is false.
     [[nodiscard]] static ConnectRequest connect(EventLoop &loop, Executor &resolver, const Url &url,
                                                 ConnectCallback callback, ConnectOptions options);
     [[nodiscard]] static ConnectRequest connect(EventLoop &loop, Executor &resolver, const Url &url,
