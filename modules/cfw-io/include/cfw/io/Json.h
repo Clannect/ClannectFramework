@@ -39,10 +39,12 @@ public:
     // every mainstream parser.
     [[nodiscard]] static JsonObject fromMembers(std::vector<Member> members);
 
-    [[nodiscard]] std::size_t size() const noexcept { return m_members.size(); }
-    [[nodiscard]] bool empty() const noexcept { return m_members.empty(); }
-    [[nodiscard]] std::vector<Member>::const_iterator begin() const noexcept { return m_members.begin(); }
-    [[nodiscard]] std::vector<Member>::const_iterator end() const noexcept { return m_members.end(); }
+    // Defined after JsonValue: instantiating std::pair<String, JsonValue>
+    // here, while JsonValue is incomplete, breaks the pair's assignment on Clang.
+    [[nodiscard]] std::size_t size() const noexcept;
+    [[nodiscard]] bool empty() const noexcept;
+    [[nodiscard]] std::vector<Member>::const_iterator begin() const noexcept;
+    [[nodiscard]] std::vector<Member>::const_iterator end() const noexcept;
 
     // The value for `key`, or null if absent. Invalidated by set/remove.
     [[nodiscard]] const JsonValue *find(StringView key) const noexcept;
@@ -121,10 +123,17 @@ public:
     // Element lookup; a null value when this is not an array or out of range.
     [[nodiscard]] const JsonValue &operator[](std::size_t index) const noexcept;
 
+    // Deep equality. An Integer and a Double compare as doubles (Integer 5
+    // equals Double 5.0), as in Qt; two Integers compare exactly.
     friend bool operator==(const JsonValue &a, const JsonValue &b);
 
 private:
     std::variant<std::monostate, bool, std::int64_t, double, String, JsonArray, JsonObject> m_value;
 };
+
+inline std::size_t JsonObject::size() const noexcept { return m_members.size(); }
+inline bool JsonObject::empty() const noexcept { return m_members.empty(); }
+inline std::vector<JsonObject::Member>::const_iterator JsonObject::begin() const noexcept { return m_members.begin(); }
+inline std::vector<JsonObject::Member>::const_iterator JsonObject::end() const noexcept { return m_members.end(); }
 
 } // namespace cfw

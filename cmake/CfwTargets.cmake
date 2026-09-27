@@ -17,8 +17,13 @@ function(cfw_configure_target target)
         # which is exactly how PropertyInfo{.name = ..., .type = ...} is meant
         # to be written.
         target_compile_options(${target} PRIVATE
-            -Wall -Wextra -Wpedantic -Wshadow=local -Wconversion -Wsign-conversion
+            -Wall -Wextra -Wpedantic -Wconversion -Wsign-conversion
             -Wnon-virtual-dtor -Wold-style-cast -Woverloaded-virtual -Wno-missing-field-initializers)
+        if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+            target_compile_options(${target} PRIVATE -Wshadow=local)
+        else()
+            target_compile_options(${target} PRIVATE -Wshadow-uncaptured-local)
+        endif()
         if(CFW_WARNINGS_AS_ERRORS)
             target_compile_options(${target} PRIVATE -Werror)
         endif()
@@ -30,6 +35,13 @@ function(cfw_configure_target target)
     target_compile_definitions(${target} PUBLIC
         $<$<CONFIG:Debug>:CFW_DEBUG_CHECKS=1>
         $<$<AND:$<CONFIG:Debug>,$<NOT:$<CXX_COMPILER_ID:MSVC>>>:_GLIBCXX_ASSERTIONS=1>)
+
+    # Coverage instrumentation for libFuzzer, on everything so the fuzzer sees
+    # inside the modules. Only the fuzz binaries link the libFuzzer runtime.
+    if(CFW_BUILD_FUZZERS)
+        target_compile_options(${target} PRIVATE -fsanitize=fuzzer-no-link)
+        target_link_options(${target} PRIVATE -fsanitize=fuzzer-no-link)
+    endif()
 
     foreach(sanitizer IN LISTS CFW_SANITIZE)
         if(sanitizer STREQUAL "ubsan-trap")
@@ -67,5 +79,11 @@ function(cfw_add_test module test_name)
     target_link_libraries(${test_name} PRIVATE ${module} cfw-test-support)
     cfw_configure_target(${test_name})
     add_test(NAME ${test_name} COMMAND ${test_name})
-    set_tests_properties(${test_name} PROPERTIES LABELS ${module} TIMEOUT 10)
+    # §9 wants the unit tests fast; sanitizers slow them 2-15x (TSan most), so
+    # the budget only applies to plain builds.
+    set(timeout 10)
+    if(CFW_SANITIZE)
+        set(timeout 120)
+    endif()
+    set_tests_properties(${test_name} PROPERTIES LABELS ${module} TIMEOUT ${timeout})
 endfunction()

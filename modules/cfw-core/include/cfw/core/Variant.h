@@ -56,19 +56,20 @@ public:
     explicit VariantArray(VariantType elementType);
 
     [[nodiscard]] VariantType elementType() const noexcept { return m_elementType; }
-    [[nodiscard]] std::size_t size() const noexcept { return m_items.size(); }
-    [[nodiscard]] bool empty() const noexcept { return m_items.empty(); }
+    // Defined after Variant: std::vector<Variant> members need it complete.
+    [[nodiscard]] std::size_t size() const noexcept;
+    [[nodiscard]] bool empty() const noexcept;
     [[nodiscard]] const Variant &operator[](std::size_t index) const;
-    [[nodiscard]] std::vector<Variant>::const_iterator begin() const noexcept { return m_items.begin(); }
-    [[nodiscard]] std::vector<Variant>::const_iterator end() const noexcept { return m_items.end(); }
+    [[nodiscard]] std::vector<Variant>::const_iterator begin() const noexcept;
+    [[nodiscard]] std::vector<Variant>::const_iterator end() const noexcept;
 
     // Fails with TypeMismatch if `value` is not of elementType().
     Result<void> append(Variant value);
     // Fails with OutOfRange or TypeMismatch; the array is unchanged on failure.
     Result<void> set(std::size_t index, Variant value);
     void removeAt(std::size_t index);
-    void reserve(std::size_t count) { m_items.reserve(count); }
-    void clear() noexcept { m_items.clear(); }
+    void reserve(std::size_t count);
+    void clear() noexcept;
 
     friend bool operator==(const VariantArray &a, const VariantArray &b);
 
@@ -150,5 +151,12 @@ private:
                                  AssetLink, VariantArray>;
     Storage m_value;
 };
+
+inline std::size_t VariantArray::size() const noexcept { return m_items.size(); }
+inline bool VariantArray::empty() const noexcept { return m_items.empty(); }
+inline std::vector<Variant>::const_iterator VariantArray::begin() const noexcept { return m_items.begin(); }
+inline std::vector<Variant>::const_iterator VariantArray::end() const noexcept { return m_items.end(); }
+inline void VariantArray::reserve(std::size_t count) { m_items.reserve(count); }
+inline void VariantArray::clear() noexcept { m_items.clear(); }
 
 } // namespace cfw
