@@ -20,7 +20,7 @@ constexpr std::uint32_t tag(const char (&t)[5]) { return FontFace::tag(t); }
 constexpr std::uint32_t kGlobalBit = 1u << 31;
 constexpr unsigned kMaxCombiningMarks = 32;
 
-enum class Engine : std::uint8_t { Default, Arabic, Hebrew, Thai };
+enum class Engine : std::uint8_t { Default, Arabic, Hebrew, Thai, Hangul };
 
 // Arabic joining forms, in the order of kArabicFeatures.
 enum ArabicAction : std::uint8_t { Isol, Fina, Fin2, Fin3, Medi, Med2, Init, None };
@@ -487,6 +487,9 @@ struct Shaper::Plan {
     bool fallbackMarkPositioning = false;
     bool thaiPua = false;
     bool zeroMarks = true;
+    bool composeCharacters = true;
+    std::uint32_t hangulMasks[4] = {};
+    std::uint32_t caltMask = 0;
     // Arabic fallback shaping: lookups made from presentation forms, run
     // after GSUB stage fallbackStage.
     std::vector<std::byte> fallbackGsub;
@@ -559,6 +562,7 @@ const Shaper::Plan &Shaper::plan(const FontFace &face, Script script, TextDirect
     case Script::Hebrew: p->engine = Engine::Hebrew; break;
     case Script::Thai:
     case Script::Lao: p->engine = Engine::Thai; break;
+    case Script::Hangul: p->engine = Engine::Hangul; break;
     default: break;
     }
 
@@ -590,6 +594,11 @@ const Shaper::Plan &Shaper::plan(const FontFace &face, Script script, TextDirect
     add(tag("numr"), 0);
     add(tag("dnom"), 0);
     add(tag("rand"), Global | Random, 255);
+    if (p->engine == Engine::Hangul) {
+        add(tag("ljmo"), 0);
+        add(tag("vjmo"), 0);
+        add(tag("tjmo"), 0);
+    }
     if (p->engine == Engine::Arabic) {
         add(tag("stch"), Global);
         ++stage;
@@ -632,6 +641,9 @@ const Shaper::Plan &Shaper::plan(const FontFace &face, Script script, TextDirect
     add(tag("rclt"), Global);
     for (const FontFeature &f : features) {
         add(f.tag, (f.start == 0 && f.end == 0xFFFFFFFFu) ? Global : 0, f.value);
+    }
+    if (p->engine == Engine::Hangul) {
+        add(tag("calt"), 0); // its own mask bit, so jamo can be kept out of it
     }
     const unsigned stages = stage + 1;
 
@@ -718,6 +730,15 @@ const Shaper::Plan &Shaper::plan(const FontFace &face, Script script, TextDirect
         if (f.tag == tag("rlig")) {
             rligMask = oneMask;
         }
+        if (f.tag == tag("ljmo")) {
+            p->hangulMasks[1] = oneMask;
+        } else if (f.tag == tag("vjmo")) {
+            p->hangulMasks[2] = oneMask;
+        } else if (f.tag == tag("tjmo")) {
+            p->hangulMasks[3] = oneMask;
+        } else if (f.tag == tag("calt")) {
+            p->caltMask = oneMask;
+        }
         if (f.tag == tag("rtlm")) {
             p->rtlmMask = oneMask;
         } else if (f.tag == tag("kern")) {
@@ -788,7 +809,8 @@ const Shaper::Plan &Shaper::plan(const FontFace &face, Script script, TextDirect
     p->fallbackGlyphClasses = !p->gdef.hasGlyphClasses();
     p->adjustMarkOffsets = !p->applyGpos && (!p->applyKern || !ot::hasCrossStreamKerning(face));
     p->fallbackMarkPositioning = p->adjustMarkOffsets && fallbackPosition;
-    p->zeroMarks = !p->applyKern || !ot::hasMachineKerning(face);
+    p->zeroMarks = p->engine != Engine::Hangul && (!p->applyKern || !ot::hasMachineKerning(face));
+    p->composeCharacters = p->engine != Engine::Hangul; // HarfBuzz's normalisation mode "none" for Hangul
     p->thaiPua = script == Script::Thai && !p->gsub.foundScript();
     // Arabic fonts without the joining forms: forms and ligatures from the
     // presentation forms the font maps.
@@ -820,6 +842,7 @@ struct Normalizer {
     Engine engine;
     bool hasGposMark;
     ot::Buffer &b;
+    bool recompose = true; // false: decompose only what the font lacks, never recompose
 
     // A character replacing the current one (a decomposition part): its
     // own Unicode properties.
@@ -969,7 +992,7 @@ struct Normalizer {
                 variationCluster(end);
             } else {
                 while (b.idx < end) {
-                    decomposeCurrent(false);
+                    decomposeCurrent(!recompose);
                 }
             }
         }
@@ -1021,7 +1044,7 @@ struct Normalizer {
                 }
             }
         }
-        if (allSimple) {
+        if (allSimple || !recompose) {
             return;
         }
 
@@ -1160,6 +1183,155 @@ void decomposeSaraAm(ot::Buffer &b) {
         if (start > 0) { // the nikhahit is combining: it joins the previous cluster
             b.mergeOutClusters(start - 1, end);
         }
+    }
+    b.swapBuffers();
+}
+
+// ---- Hangul (HarfBuzz's Hangul shaper) ----
+
+constexpr char32_t kLBase = 0x1100;
+constexpr char32_t kVBase = 0x1161;
+constexpr char32_t kTBase = 0x11A7;
+constexpr char32_t kLCount = 19;
+constexpr char32_t kVCount = 21;
+constexpr char32_t kTCount = 28;
+constexpr char32_t kSBase = 0xAC00;
+constexpr char32_t kNCount = kVCount * kTCount;
+constexpr char32_t kSCount = kLCount * kNCount;
+
+bool isHangulL(char32_t u) { return (u >= 0x1100 && u <= 0x115F) || (u >= 0xA960 && u <= 0xA97C); }
+bool isHangulV(char32_t u) { return (u >= 0x1160 && u <= 0x11A7) || (u >= 0xD7B0 && u <= 0xD7C6); }
+bool isHangulT(char32_t u) { return (u >= 0x11A8 && u <= 0x11FF) || (u >= 0xD7CB && u <= 0xD7FB); }
+
+// Composes jamo sequences into syllables the font has, and decomposes
+// syllables it lacks (or that a trailing jamo follows) into jamo, marking
+// them for ljmo/vjmo/tjmo; tone marks move before their syllable.
+void hangulPreprocess(const FontFace &face, ot::Buffer &b) {
+    const auto has = [&](char32_t u) { return face.glyphIndex(u) != 0; };
+    const auto zeroWidth = [&](char32_t u) {
+        const GlyphId g = face.glyphIndex(u);
+        return g != 0 && face.advanceWidth(g) == 0;
+    };
+    // Replaces `in` characters at idx with `out`, each a copy of the current one.
+    const auto replace = [&](std::size_t in, std::initializer_list<char32_t> out) {
+        b.mergeClusters(b.idx, b.idx + in);
+        const ot::GlyphInfo orig = b.idx < b.len() ? b.cur() : b.out.back();
+        for (const char32_t u : out) {
+            ot::GlyphInfo g = orig;
+            g.codepoint = u;
+            b.out.push_back(g);
+        }
+        b.idx += in;
+    };
+    b.clearOutput();
+    std::size_t start = 0;
+    std::size_t end = 0;
+    const std::size_t count = b.len();
+    for (b.idx = 0; b.idx < count;) {
+        const char32_t u = b.cur().codepoint;
+        if (u == 0x302E || u == 0x302F) { // tone marks
+            if (start < end && end == b.out.size()) {
+                b.nextGlyph();
+                if (!zeroWidth(u)) {
+                    b.mergeOutClusters(start, end + 1);
+                    const ot::GlyphInfo tone = b.out[end];
+                    std::memmove(&b.out[start + 1], &b.out[start], (end - start) * sizeof(ot::GlyphInfo));
+                    b.out[start] = tone;
+                }
+            } else if (has(0x25CC)) {
+                if (!zeroWidth(u)) {
+                    replace(1, {u, 0x25CC});
+                } else {
+                    replace(1, {0x25CC, u});
+                }
+            } else {
+                b.nextGlyph();
+            }
+            start = end = b.out.size();
+            continue;
+        }
+        start = b.out.size();
+        if (isHangulL(u) && b.idx + 1 < count) {
+            const char32_t l = u;
+            const char32_t v = b.info[b.idx + 1].codepoint;
+            if (isHangulV(v)) {
+                char32_t t = 0;
+                char32_t tindex = 0;
+                if (b.idx + 2 < count) {
+                    t = b.info[b.idx + 2].codepoint;
+                    if (isHangulT(t)) {
+                        tindex = t - kTBase;
+                    } else {
+                        t = 0;
+                    }
+                }
+                const bool combiningT = t == 0 || (t > kTBase && t < kTBase + kTCount);
+                if (l >= kLBase && l < kLBase + kLCount && v >= kVBase && v < kVBase + kVCount && combiningT) {
+                    const char32_t syllable = kSBase + (l - kLBase) * kNCount + (v - kVBase) * kTCount + tindex;
+                    if (has(syllable)) {
+                        replace(t ? 3 : 2, {syllable});
+                        end = start + 1;
+                        continue;
+                    }
+                }
+                b.cur().shaperAction = 1;
+                b.nextGlyph();
+                b.cur().shaperAction = 2;
+                b.nextGlyph();
+                if (t) {
+                    b.cur().shaperAction = 3;
+                    b.nextGlyph();
+                    end = start + 3;
+                } else {
+                    end = start + 2;
+                }
+                b.mergeOutClusters(start, end);
+                continue;
+            }
+        } else if (u >= kSBase && u < kSBase + kSCount) {
+            const bool hasSyllable = has(u);
+            const char32_t lindex = (u - kSBase) / kNCount;
+            const char32_t nindex = (u - kSBase) % kNCount;
+            const char32_t vindex = nindex / kTCount;
+            const char32_t tindex = nindex % kTCount;
+            const char32_t next = b.idx + 1 < count ? b.info[b.idx + 1].codepoint : 0;
+            if (!tindex && next > kTBase && next < kTBase + kTCount) {
+                const char32_t composed = u + (next - kTBase);
+                if (has(composed)) {
+                    replace(2, {composed});
+                    end = start + 1;
+                    continue;
+                }
+            }
+            if (!hasSyllable || (!tindex && isHangulT(next))) {
+                const char32_t parts[3] = {kLBase + lindex, kVBase + vindex, kTBase + tindex};
+                if (has(parts[0]) && has(parts[1]) && (!tindex || has(parts[2]))) {
+                    std::size_t length = tindex ? 3 : 2;
+                    if (tindex) {
+                        replace(1, {parts[0], parts[1], parts[2]});
+                    } else {
+                        replace(1, {parts[0], parts[1]});
+                    }
+                    if (hasSyllable && !tindex) {
+                        b.nextGlyph(); // the trailing jamo that follows
+                        ++length;
+                    }
+                    end = start + length;
+                    std::size_t i = start;
+                    b.out[i++].shaperAction = 1;
+                    b.out[i++].shaperAction = 2;
+                    if (i < end) {
+                        b.out[i++].shaperAction = 3;
+                    }
+                    b.mergeOutClusters(start, end);
+                    continue;
+                }
+            }
+            if (hasSyllable) {
+                end = start + 1;
+            }
+        }
+        b.nextGlyph();
     }
     b.swapBuffers();
 }
@@ -1613,6 +1785,9 @@ void Shaper::shape(const FontFace &face, Span<const char32_t> text, const ShapeO
         reverseGraphemes(b);
         b.backward = !b.backward;
     }
+    if (p.engine == Engine::Hangul) {
+        hangulPreprocess(face, b);
+    }
     if (p.engine == Engine::Thai) {
         decomposeSaraAm(b);
         if (p.thaiPua) {
@@ -1631,7 +1806,15 @@ void Shaper::shape(const FontFace &face, Span<const char32_t> text, const ShapeO
         }
     }
 
-    Normalizer{face, p.engine, p.hasGposMark, b}.run();
+    Normalizer{face, p.engine, p.hasGposMark, b, p.composeCharacters}.run();
+    if (p.engine == Engine::Hangul) {
+        for (ot::GlyphInfo &g : b.info) {
+            g.mask |= p.hangulMasks[g.shaperAction & 3];
+            if (isHangulL(g.codepoint) || isHangulV(g.codepoint) || isHangulT(g.codepoint)) {
+                g.mask &= ~p.caltMask;
+            }
+        }
+    }
 
     // Masks: automatic fractions, Arabic joining forms, ranged features.
     if (hasFractionSlash && (p.fracMask || (p.numrMask && p.dnomMask))) {
