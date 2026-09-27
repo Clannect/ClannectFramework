@@ -124,6 +124,16 @@ const JsonValue &JsonValue::operator[](std::size_t index) const noexcept {
     return nullJson();
 }
 
-bool operator==(const JsonValue &a, const JsonValue &b) { return a.m_value == b.m_value; }
+bool operator==(const JsonValue &a, const JsonValue &b) {
+    // JSON has one number type, so an Integer and a Double compare as doubles,
+    // as Qt compares them. Both Qt and CFW write integral doubles without an
+    // exponent (-2.5e10 as -25000000000), which re-parses as an Integer; this
+    // rule is what keeps a write + re-parse equal. Two Integers still compare
+    // exactly.
+    if (a.isNumber() && b.isNumber() && a.type() != b.type()) {
+        return a.toDouble() == b.toDouble();
+    }
+    return a.m_value == b.m_value;
+}
 
 } // namespace cfw

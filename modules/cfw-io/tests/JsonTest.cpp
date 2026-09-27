@@ -91,6 +91,24 @@ void keepsIntegerPrecision() {
                "and they write back as the Qt build wrote them");
 }
 
+void numbersCompareByValue() {
+    check(JsonValue(5) == JsonValue(5.0), "Integer 5 equals Double 5.0");
+    check(!(JsonValue(5) == JsonValue(5.5)), "but not 5.5");
+    check(!(JsonValue(9007199254740993) == JsonValue(9007199254740992)), "two Integers compare exactly");
+    check(!(JsonValue(1) == JsonValue(true)), "a number never equals a bool");
+    // Found by the FuzzJson corpus: -2.5e10 writes as -25000000000, which
+    // re-parses as an Integer. The round trip must still compare equal.
+    const JsonValue parsed = parseJson("[-2.5e10]").value();
+    const JsonValue again = parseJson(writeJson(parsed, JsonFormat::Compact)).value();
+    check(again[0u].asInteger() != nullptr && parsed[0u].asDouble() != nullptr, "the type changes on the round trip");
+    check(again == parsed, "the value does not");
+    // Also found by FuzzJson: 123456790123453e3 is not exact as a double; it
+    // writes as its shortest digits, 123456790123453000, which re-parses as
+    // an exact Integer one rounding step away.
+    const JsonValue inexact = parseJson("[123456790123453e3]").value();
+    check(parseJson(writeJson(inexact, JsonFormat::Compact)).value() == inexact, "inexact doubles round-trip too");
+}
+
 void stringsAndEscapes() {
     const JsonValue v = parseJson(R"(["a\"b\\c\/d\b\f\n\r\t", "é😀", "\ud800x", "\udc00"])").value();
     checkEqual(v[0u].toString(""), StringView("a\"b\\c/d\b\f\n\r\t"), "simple escapes");
@@ -155,6 +173,7 @@ int main() {
     parsesTheSceneStructure();
     numbersFollowTheQtFormat();
     keepsIntegerPrecision();
+    numbersCompareByValue();
     stringsAndEscapes();
     objectsSortAndDeduplicate();
     reportsErrorsWithPositions();
