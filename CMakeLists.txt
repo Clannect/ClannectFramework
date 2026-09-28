@@ -39,6 +39,7 @@ add_subdirectory(modules/cfw-net)
 add_subdirectory(modules/cfw-image)
 add_subdirectory(modules/cfw-text)
 add_subdirectory(modules/cfw-gfx)
+add_subdirectory(modules/cfw-ui)
 
 if(CFW_BUILD_TOOLS)
     add_subdirectory(fuzz)
