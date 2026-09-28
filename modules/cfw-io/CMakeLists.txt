@@ -14,6 +14,7 @@ endif()
 cfw_add_module(cfw-io
     SOURCES
         src/Arguments.cpp
+        src/Environment.cpp
         src/ByteBuffer.cpp
         src/FileSystem.cpp
         src/FileWatcher.cpp

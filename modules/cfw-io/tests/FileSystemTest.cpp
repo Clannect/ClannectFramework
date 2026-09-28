@@ -1,6 +1,7 @@
 // Files on a real disk, inside a TemporaryDirectory: atomic save, reads with
 // limits, directories, mapping, standard paths, settings and the watcher.
 
+#include "cfw/io/Environment.h"
 #include "cfw/io/FileSystem.h"
 #include "cfw/io/FileWatcher.h"
 #include "cfw/io/MappedFile.h"
@@ -177,7 +178,19 @@ void watcherSeesChanges() {
 
 } // namespace
 
+void readsEnvironmentVariables() {
+#ifdef _WIN32
+    _putenv_s("CFW_ENV_TEST", "caf\xc3\xa9");
+#else
+    setenv("CFW_ENV_TEST", "caf\xc3\xa9", 1);
+#endif
+    const auto value = environmentVariable("CFW_ENV_TEST");
+    check(value.has_value(), "set variable found");
+    check(!environmentVariable("CFW_ENV_TEST_UNSET_1234").has_value(), "unset variable is nothing");
+}
+
 int main() {
+    readsEnvironmentVariables();
     atomicSaveReplacesAndLeavesNoDebris();
     unicodePathsWork();
     readsEnforceLimitsAndEncoding();

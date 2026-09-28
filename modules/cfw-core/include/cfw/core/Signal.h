@@ -10,6 +10,16 @@
 #include "cfw/core/Connection.h"
 #include "cfw/core/SignalOwner.h"
 
+// Qt defines `emit` as an empty macro. While CFW and Qt code live side by side
+// (the engine's port), this header must still compile after Qt's; code that
+// includes both calls sig.emit(...) with Qt's macro off (QT_NO_EMIT) or not at
+// all.
+#ifdef emit
+#pragma push_macro("emit")
+#undef emit
+#define CFW_SIGNAL_RESTORE_EMIT
+#endif
+
 namespace cfw {
 
 // A typed notification with any number of connected slots. Plain C++: no moc,
@@ -146,3 +156,8 @@ private:
 };
 
 } // namespace cfw
+
+#ifdef CFW_SIGNAL_RESTORE_EMIT
+#pragma pop_macro("emit")
+#undef CFW_SIGNAL_RESTORE_EMIT
+#endif
