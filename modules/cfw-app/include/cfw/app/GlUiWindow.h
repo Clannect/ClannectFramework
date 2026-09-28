@@ -33,6 +33,10 @@
 
 namespace cfw {
 
+namespace detail {
+class AccessibilityBridge;
+}
+
 class GlUiWindow;
 
 // What a view renders into this frame.
@@ -130,6 +134,7 @@ private:
     GLuint m_vao = 0;
     std::vector<ScopedConnection> m_connections;
     bool m_open = true;
+    std::unique_ptr<detail::AccessibilityBridge> m_accessibility;
     std::optional<RectF> m_textInputArea; // last told to the window
     bool m_textInputKnown = false;
     std::function<void()> m_closeHandler;

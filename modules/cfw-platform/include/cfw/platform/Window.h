@@ -106,6 +106,11 @@ public:
     // handler: the window refuses drops.
     void setDropHandler(std::function<bool(const DropEvent &)> handler) { m_dropHandler = std::move(handler); }
 
+    // Windows only: sees each message before the window does; a value
+    // handles it (the accessibility bridge answers WM_GETOBJECT this way).
+    std::function<std::optional<std::intptr_t>(unsigned message, std::uintptr_t wParam, std::intptr_t lParam)>
+        nativeMessageFilter;
+
 protected:
     Window() = default;
     bool handleDrop(const DropEvent &event) { return m_dropHandler && m_dropHandler(event); }

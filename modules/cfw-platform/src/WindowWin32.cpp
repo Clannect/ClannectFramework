@@ -482,6 +482,12 @@ private:
 };
 
 LRESULT WindowWin32::handle(UINT message, WPARAM wParam, LPARAM lParam) {
+    if (nativeMessageFilter) {
+        if (const std::optional<std::intptr_t> result =
+                nativeMessageFilter(message, std::uintptr_t(wParam), std::intptr_t(lParam))) {
+            return LRESULT(*result);
+        }
+    }
     switch (message) {
     case WM_SIZE: {
         const Vec2i size{int(LOWORD(lParam)), int(HIWORD(lParam))};

@@ -25,6 +25,10 @@
 
 namespace cfw {
 
+namespace detail {
+class AccessibilityBridge;
+}
+
 class UiWindow {
 public:
     [[nodiscard]] static Result<std::unique_ptr<UiWindow>> create(const WindowOptions &options, Theme theme);
@@ -57,6 +61,7 @@ private:
     Image m_canvas;
     std::vector<ScopedConnection> m_connections;
     bool m_open = true;
+    std::unique_ptr<detail::AccessibilityBridge> m_accessibility;
     std::optional<RectF> m_textInputArea; // last told to the window
     bool m_textInputKnown = false;
     std::function<void()> m_closeHandler;

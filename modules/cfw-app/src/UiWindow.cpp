@@ -1,5 +1,7 @@
 #include "cfw/app/UiWindow.h"
 
+#include "AccessibilityBridge.h"
+
 #include <algorithm>
 #include <cstring>
 
@@ -29,6 +31,7 @@ UiWindow::UiWindow(std::unique_ptr<Window> window, Theme theme) : m_window(std::
     m_connections.push_back(m_window->key.connect([this](const KeyEvent &e) { m_surface.dispatch(e); }));
     m_connections.push_back(m_window->text.connect([this](const TextEvent &e) { m_surface.dispatch(e); }));
     m_window->setDropHandler([this](const DropEvent &e) { return m_surface.dispatch(e); });
+    m_accessibility = detail::createAccessibilityBridge(*m_window, m_surface);
     m_connections.push_back(
         m_window->composition.connect([this](const CompositionEvent &e) { m_surface.dispatch(e); }));
     m_connections.push_back(m_window->resized.connect([this](Vec2i pixels) { resize(pixels); }));
@@ -74,6 +77,9 @@ bool UiWindow::frame() {
     m_surface.runTimers();
     updateCursor();
     m_surface.layout();
+    if (m_accessibility) {
+        m_accessibility->update();
+    }
     // The input method follows the caret, and is off when no text is edited.
     const std::optional<RectF> textInput = m_surface.textInputArea();
     if (!m_textInputKnown || textInput != m_textInputArea) {
