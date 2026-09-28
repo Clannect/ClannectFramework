@@ -244,13 +244,15 @@ void Stack::arrangeContent(const RectF &rect) {
     }
     const float length = row ? available.x : available.y;
     used += gap() * float(visible.empty() ? 0 : visible.size() - 1);
-    const float spare = std::max(0.0f, length - used);
+    // Spare room goes to the stretching children; a shortfall comes out of
+    // them too (never below nothing), so fixed bars stay whole and on screen.
+    const float spare = length - used;
 
     float cursor = row ? inner.x : inner.y;
     for (std::size_t i = 0; i < visible.size(); ++i) {
         float extent = sizes[i];
         if (totalStretch > 0.0f) {
-            extent += spare * visible[i]->stretch() / totalStretch;
+            extent = std::max(0.0f, extent + spare * visible[i]->stretch() / totalStretch);
         }
         extent = std::round(extent);
         const RectF placed = row ? RectF{cursor, inner.y, extent, available.y}

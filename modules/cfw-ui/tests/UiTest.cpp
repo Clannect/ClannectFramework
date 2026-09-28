@@ -83,6 +83,20 @@ void stacksLayOut() {
     checkEqual(right.rect().width, 175.0f, "three quarters");
     checkEqual(left.rect().height, 40.0f, "rows fill the cross axis");
 
+    // Too little room: the stretching child gives way, the fixed ones stay
+    // whole and inside the stack.
+    Surface tight;
+    tight.setSize({100, 100});
+    auto &squeezed = static_cast<Stack &>(tight.root().add(std::make_unique<Stack>(Stack::Direction::Column, 0.0f)));
+    Probe &header = squeezed.add<Probe>(Vec2{10, 30});
+    Probe &body = squeezed.add<Probe>(Vec2{10, 200});
+    body.setStretch(1);
+    Probe &footer = squeezed.add<Probe>(Vec2{10, 20});
+    tight.layout();
+    checkEqual(header.rect().height, 30.0f, "a fixed child keeps its height");
+    checkEqual(body.rect().height, 50.0f, "the stretching child shrinks to what is left");
+    checkEqual(footer.rect().bottom(), 100.0f, "the last child stays on screen");
+
     // Changing one child re-measures it and its ancestors, not its siblings.
     const int before = c.measured;
     b.setFixedSize({0, 50});
