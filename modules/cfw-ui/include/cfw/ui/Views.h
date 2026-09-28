@@ -4,12 +4,16 @@
 
 #include <cstdint>
 #include <functional>
+#include <optional>
 #include <set>
+#include <unordered_map>
 #include <unordered_set>
 #include <vector>
 
 #include "cfw/core/Signal.h"
+#include "cfw/ui/Controls.h"
 #include "cfw/ui/Element.h"
+#include "cfw/ui/Icon.h"
 
 namespace cfw {
 
@@ -83,6 +87,16 @@ public:
     [[nodiscard]] virtual std::size_t childCount(Id parent) const = 0;
     [[nodiscard]] virtual Id child(Id parent, std::size_t index) const = 0;
     [[nodiscard]] virtual String text(Id node) const = 0;
+    // Shown before the text (none by default).
+    [[nodiscard]] virtual Icon icon(Id) const { return {}; }
+    // What the view may do with a node (nothing by default).
+    [[nodiscard]] virtual bool canRename(Id) const { return false; }
+    [[nodiscard]] virtual bool canDrag(Id) const { return false; }
+    // Whether `nodes` may be dropped into `parent` at `index` (before the
+    // child now at that index), or onto it when index is -1.
+    [[nodiscard]] virtual bool canDrop(const std::vector<Id> &, Id /*parent*/, std::ptrdiff_t /*index*/) const {
+        return false;
+    }
     // The model calls this after any change; the view rebuilds its rows.
     Signal<> changed;
 };
@@ -93,8 +107,20 @@ public:
 // is expanded. Selection: click, Ctrl+click toggles, Shift+click extends;
 // Up/Down/Home/End/PageUp/PageDown move (Shift extends), Right expands or
 // goes to the first child, Left collapses or goes to the parent, Enter or a
-// double-click activates. The view scrolls itself (wheel, keeping the
-// current row visible).
+// double-click activates, F2 renames. The view scrolls itself (wheel,
+// keeping the current row visible).
+//
+// With a flat model and setShowsExpanders(false) it is a list view.
+//
+// Editing, where the model allows it:
+// - rename in place (F2 or startRename()): Enter or leaving the field
+//   commits (renamed), Escape cancels;
+// - drag selected rows and drop them before, after or onto another row
+//   (dropped: the nodes, the new parent, the index or -1 for "onto");
+// - a right press asks for a context menu, over the row's selection.
+//
+// A filter shows the nodes it matches with their ancestors, all expanded
+// (the Explorer's search).
 class TreeView : public Element {
 public:
     explicit TreeView(TreeModel &model);
@@ -109,9 +135,21 @@ public:
     [[nodiscard]] TreeModel::Id current() const noexcept { return m_current; }
     // Expands the ancestors of `node` (given as a path from the root) and scrolls to it.
     void reveal(const std::vector<TreeModel::Id> &path);
+    void setShowsExpanders(bool shows);
+    // Null: no filter.
+    void setFilter(std::function<bool(TreeModel::Id)> matches);
+    [[nodiscard]] bool isFiltered() const noexcept { return static_cast<bool>(m_filter); }
+
+    void startRename(TreeModel::Id node);
+    [[nodiscard]] bool isRenaming() const noexcept { return m_renaming != TreeModel::kRoot; }
+    void cancelRename();
 
     [[nodiscard]] float rowHeight() const;
     [[nodiscard]] std::size_t rowCount() const noexcept { return m_rows.size(); }
+    [[nodiscard]] TreeModel::Id rowNode(std::size_t row) const { return m_rows[row].id; }
+    // The row's rectangle in surface coordinates (may be scrolled out of view).
+    [[nodiscard]] RectF rowRect(std::size_t row) const;
+    [[nodiscard]] std::ptrdiff_t rowOf(TreeModel::Id id) const;
     [[nodiscard]] float scrollOffset() const noexcept { return m_scroll; }
     void scrollTo(float offset);
     // Rows painted by the last paint(): the virtualisation guarantee.
@@ -119,6 +157,10 @@ public:
 
     Signal<> selectionChanged;
     Signal<TreeModel::Id> activated;
+    Signal<TreeModel::Id, const String &> renamed;
+    Signal<const std::vector<TreeModel::Id> &, TreeModel::Id, std::ptrdiff_t> dropped;
+    // The node under the pointer (kRoot: empty space) and where, in surface coordinates.
+    Signal<TreeModel::Id, Vec2> contextMenuRequested;
 
     void paint(Painter &painter, const Theme &theme) override;
     bool onPointer(const PointerEvent &event) override;
@@ -136,22 +178,49 @@ private:
         std::uint32_t depth;
         bool hasChildren;
     };
+    struct Drop {
+        TreeModel::Id parent = TreeModel::kRoot;
+        std::ptrdiff_t index = -1;
+        std::ptrdiff_t row = -1; // the row it is relative to (-1: below the last)
+        enum class Zone : std::uint8_t { Before, Onto, After } zone = Zone::Onto;
+    };
     void rebuild();
     void addRows(TreeModel::Id parent, std::uint32_t depth);
-    [[nodiscard]] std::ptrdiff_t rowOf(TreeModel::Id id) const;
+    bool computeVisible(TreeModel::Id node);
     void setCurrentRow(std::size_t row, bool extend, bool toggle);
     void ensureRowVisible(std::size_t row);
     [[nodiscard]] float maxScroll() const;
+    [[nodiscard]] std::ptrdiff_t rowAt(float y) const;
+    [[nodiscard]] float textX(const Row &row) const;
+    [[nodiscard]] std::optional<Drop> dropAt(Vec2 position) const;
+    [[nodiscard]] std::ptrdiff_t indexInParent(TreeModel::Id parent, TreeModel::Id node) const;
+    void commitRename();
 
     TreeModel &m_model;
     ScopedConnection m_modelChanged;
     std::vector<Row> m_rows;
+    std::unordered_map<TreeModel::Id, std::size_t> m_rowIndex;
     std::unordered_set<TreeModel::Id> m_expanded;
     std::set<TreeModel::Id> m_selected;
     TreeModel::Id m_current = TreeModel::kRoot;
     TreeModel::Id m_anchor = TreeModel::kRoot;
     float m_scroll = 0.0f;
     std::size_t m_painted = 0;
+    bool m_showsExpanders = true;
+
+    std::function<bool(TreeModel::Id)> m_filter;
+    std::unordered_map<TreeModel::Id, bool> m_visible; // filtered: node or a descendant matches
+
+    TextField *m_editor = nullptr;
+    TreeModel::Id m_renaming = TreeModel::kRoot;
+    std::vector<ScopedConnection> m_editorConnections;
+
+    // Pointer gestures: a press may become a drag.
+    Vec2 m_pressAt;
+    std::ptrdiff_t m_pressRow = -1;
+    bool m_selectOnRelease = false; // a press on a multi-selection keeps it for a drag
+    bool m_dragging = false;
+    std::optional<Drop> m_drop;
 };
 
 } // namespace cfw

@@ -335,6 +335,7 @@ void TextField::onFocusChanged(bool focused) {
             m_dirty = false;
             editingFinished.emit();
         }
+        focusLost.emit();
     }
     invalidatePaint();
 }

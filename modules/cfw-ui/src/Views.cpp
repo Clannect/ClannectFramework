@@ -245,6 +245,11 @@ bool TabBar::onKey(const KeyEvent &event) {
 
 // ---- TreeView ---------------------------------------------------------------------
 
+namespace {
+constexpr float kIconSize = 16.0f;
+constexpr float kDragThreshold = 4.0f;
+} // namespace
+
 TreeView::TreeView(TreeModel &model) : m_model(model) {
     setRole(Role::Tree);
     setFocusable(true);
@@ -257,13 +262,37 @@ TreeView::~TreeView() = default;
 
 float TreeView::rowHeight() const { return std::round(theme().controlHeight - 4.0f); }
 
+bool TreeView::computeVisible(TreeModel::Id node) {
+    bool visible = node != TreeModel::kRoot && m_filter(node);
+    const std::size_t count = m_model.childCount(node);
+    for (std::size_t i = 0; i < count; ++i) {
+        // Every child is visited, so each node's answer is known.
+        visible = computeVisible(m_model.child(node, i)) || visible;
+    }
+    m_visible[node] = visible;
+    return visible;
+}
+
 void TreeView::addRows(TreeModel::Id parent, std::uint32_t depth) {
     const std::size_t count = m_model.childCount(parent);
     for (std::size_t i = 0; i < count; ++i) {
         const TreeModel::Id id = m_model.child(parent, i);
-        const bool hasChildren = m_model.childCount(id) > 0;
+        if (m_filter && !m_visible[id]) {
+            continue;
+        }
+        bool hasChildren = false;
+        const std::size_t children = m_model.childCount(id);
+        if (m_filter) {
+            for (std::size_t c = 0; c < children && !hasChildren; ++c) {
+                hasChildren = m_visible[m_model.child(id, c)];
+            }
+        } else {
+            hasChildren = children > 0;
+        }
+        m_rowIndex[id] = m_rows.size();
         m_rows.push_back({id, parent, depth, hasChildren});
-        if (hasChildren && m_expanded.contains(id)) {
+        // A filtered tree shows every match, so everything leading to one is open.
+        if (hasChildren && (m_filter || m_expanded.contains(id))) {
             addRows(id, depth + 1);
         }
     }
@@ -271,22 +300,27 @@ void TreeView::addRows(TreeModel::Id parent, std::uint32_t depth) {
 
 void TreeView::rebuild() {
     m_rows.clear();
+    m_rowIndex.clear();
+    m_visible.clear();
+    if (m_filter) {
+        computeVisible(TreeModel::kRoot);
+    }
     addRows(TreeModel::kRoot, 0);
     if (rowOf(m_current) < 0) {
         m_current = TreeModel::kRoot;
     }
+    if (isRenaming() && rowOf(m_renaming) < 0) {
+        cancelRename();
+    }
+    m_drop.reset();
     m_scroll = std::clamp(m_scroll, 0.0f, maxScroll());
     invalidateLayout();
     invalidatePaint();
 }
 
 std::ptrdiff_t TreeView::rowOf(TreeModel::Id id) const {
-    for (std::size_t i = 0; i < m_rows.size(); ++i) {
-        if (m_rows[i].id == id) {
-            return std::ptrdiff_t(i);
-        }
-    }
-    return -1;
+    const auto it = m_rowIndex.find(id);
+    return it == m_rowIndex.end() ? -1 : std::ptrdiff_t(it->second);
 }
 
 void TreeView::setExpanded(TreeModel::Id node, bool expanded) {
@@ -309,6 +343,17 @@ void TreeView::setExpanded(const std::vector<TreeModel::Id> &nodes, bool expande
             m_expanded.erase(node);
         }
     }
+    rebuild();
+}
+
+void TreeView::setShowsExpanders(bool shows) {
+    m_showsExpanders = shows;
+    invalidatePaint();
+}
+
+void TreeView::setFilter(std::function<bool(TreeModel::Id)> matches) {
+    m_filter = std::move(matches);
+    m_scroll = 0.0f;
     rebuild();
 }
 
@@ -352,6 +397,7 @@ void TreeView::scrollTo(float offset) {
     offset = std::clamp(offset, 0.0f, maxScroll());
     if (offset != m_scroll) {
         m_scroll = offset;
+        invalidateLayout(); // the rename field moves with its row
         invalidatePaint();
     }
 }
@@ -365,11 +411,43 @@ void TreeView::ensureRowVisible(std::size_t row) {
     }
 }
 
+RectF TreeView::rowRect(std::size_t row) const {
+    const float h = rowHeight();
+    return {rect().x, std::round(rect().y + float(row) * h - m_scroll), rect().width, h};
+}
+
+std::ptrdiff_t TreeView::rowAt(float y) const {
+    const float offset = y - rect().y + m_scroll;
+    if (offset < 0.0f) {
+        return -1;
+    }
+    const std::size_t index = std::size_t(offset / rowHeight());
+    return index < m_rows.size() ? std::ptrdiff_t(index) : -1;
+}
+
+float TreeView::textX(const Row &row) const {
+    float x = rect().x + 4.0f + float(row.depth) * kIndent + (m_showsExpanders ? 16.0f : 0.0f);
+    if (!m_model.icon(row.id).isNull()) {
+        x += kIconSize + 4.0f;
+    }
+    return x;
+}
+
 Vec2 TreeView::measureContent(Vec2 available) {
     return {std::min(available.x, 200.0f), std::min(available.y, float(m_rows.size()) * rowHeight())};
 }
 
-void TreeView::arrangeContent(const RectF &) { m_scroll = std::clamp(m_scroll, 0.0f, maxScroll()); }
+void TreeView::arrangeContent(const RectF &) {
+    m_scroll = std::clamp(m_scroll, 0.0f, maxScroll());
+    if (m_editor && isRenaming()) {
+        const std::ptrdiff_t row = rowOf(m_renaming);
+        if (row >= 0) {
+            const RectF line = rowRect(std::size_t(row));
+            const float x = textX(m_rows[std::size_t(row)]) - 4.0f;
+            m_editor->arrange({x, line.y, std::max(40.0f, rect().right() - x - 2.0f), line.height});
+        }
+    }
+}
 
 void TreeView::setCurrentRow(std::size_t row, bool extend, bool toggle) {
     if (m_rows.empty()) {
@@ -400,6 +478,114 @@ void TreeView::setCurrentRow(std::size_t row, bool extend, bool toggle) {
     selectionChanged.emit();
 }
 
+// ---- Renaming ----
+
+void TreeView::startRename(TreeModel::Id node) {
+    if (!m_model.canRename(node)) {
+        return;
+    }
+    const std::ptrdiff_t row = rowOf(node);
+    if (row < 0) {
+        return;
+    }
+    ensureRowVisible(std::size_t(row));
+    if (!m_editor) {
+        // One field, reused: committing happens inside its own signals.
+        m_editor = &add<TextField>();
+        m_editorConnections.push_back(m_editor->submitted.connect([this](const String &) { commitRename(); }));
+        m_editorConnections.push_back(m_editor->focusLost.connect([this] { commitRename(); }));
+    }
+    m_renaming = node;
+    m_editor->setText(m_model.text(node));
+    m_editor->selectAll();
+    m_editor->setVisible(true);
+    invalidateLayout();
+    if (Surface *s = surface()) {
+        s->setFocus(m_editor);
+    }
+}
+
+void TreeView::commitRename() {
+    if (!isRenaming()) {
+        return;
+    }
+    const TreeModel::Id node = m_renaming;
+    const String text = m_editor->text();
+    cancelRename();
+    if (!text.empty() && text != m_model.text(node)) {
+        renamed.emit(node, text);
+    }
+}
+
+void TreeView::cancelRename() {
+    if (!isRenaming()) {
+        return;
+    }
+    m_renaming = TreeModel::kRoot; // first: hiding the field ends its editing
+    const bool hadFocus = m_editor->hasFocus();
+    m_editor->setVisible(false);
+    if (hadFocus) {
+        if (Surface *s = surface()) {
+            s->setFocus(this);
+        }
+    }
+    invalidatePaint();
+}
+
+// ---- Drag and drop ----
+
+std::ptrdiff_t TreeView::indexInParent(TreeModel::Id parent, TreeModel::Id node) const {
+    const std::size_t count = m_model.childCount(parent);
+    for (std::size_t i = 0; i < count; ++i) {
+        if (m_model.child(parent, i) == node) {
+            return std::ptrdiff_t(i);
+        }
+    }
+    return -1;
+}
+
+std::optional<TreeView::Drop> TreeView::dropAt(Vec2 position) const {
+    const std::vector<TreeModel::Id> nodes = selection();
+    if (nodes.empty()) {
+        return std::nullopt;
+    }
+    const std::ptrdiff_t at = rowAt(position.y);
+    if (at < 0) {
+        // Below the last row: at the end of the top level.
+        Drop drop{TreeModel::kRoot, std::ptrdiff_t(m_model.childCount(TreeModel::kRoot)), -1, Drop::Zone::After};
+        if (m_model.canDrop(nodes, drop.parent, drop.index)) {
+            return drop;
+        }
+        return std::nullopt;
+    }
+    const Row &row = m_rows[std::size_t(at)];
+    const RectF line = rowRect(std::size_t(at));
+    const float f = (position.y - line.y) / line.height;
+    const std::ptrdiff_t index = indexInParent(row.parent, row.id);
+    // An open parent's lower edge is the top of its first child: "into".
+    const bool openParent = row.hasChildren && (m_filter || m_expanded.contains(row.id));
+    std::vector<Drop> tries;
+    if (f < 0.25f) {
+        tries = {{row.parent, index, at, Drop::Zone::Before}, {row.id, -1, at, Drop::Zone::Onto}};
+    } else if (f > 0.75f && !openParent) {
+        tries = {{row.parent, index + 1, at, Drop::Zone::After}, {row.id, -1, at, Drop::Zone::Onto}};
+    } else {
+        tries = {{row.id, -1, at, Drop::Zone::Onto}};
+    }
+    for (const Drop &drop : tries) {
+        // Never onto (or into) a dragged node itself.
+        if (drop.zone == Drop::Zone::Onto && std::find(nodes.begin(), nodes.end(), row.id) != nodes.end()) {
+            continue;
+        }
+        if (m_model.canDrop(nodes, drop.parent, drop.index)) {
+            return drop;
+        }
+    }
+    return std::nullopt;
+}
+
+// ---- Painting and input ----
+
 void TreeView::paint(Painter &painter, const Theme &theme) {
     const RectF r = rect();
     painter.fillRect(r, theme.panel);
@@ -412,67 +598,181 @@ void TreeView::paint(Painter &painter, const Theme &theme) {
     m_painted = 0;
     for (std::size_t i = first; i < last; ++i) {
         const Row &row = m_rows[i];
-        const RectF line{r.x, std::round(r.y + float(i) * h - m_scroll), r.width, h};
+        const RectF line = rowRect(i);
         const bool selected = m_selected.contains(row.id);
         if (selected) {
             Color fill = theme.accent;
             fill.a = hasFocus() ? 0.55f : 0.3f;
             painter.fillRect(line, fill);
         }
+        if (m_drop && m_drop->row == std::ptrdiff_t(i) && m_drop->zone == Drop::Zone::Onto) {
+            painter.strokeRect(line.grownBy(-1.0f, -1.0f, -1.0f, -1.0f), Pen(theme.accent, 2.0f));
+        }
         if (row.id == m_current && hasFocus()) {
             painter.strokeRect(line.grownBy(-0.5f, -0.5f, -0.5f, -0.5f), Pen(theme.accent, 1.0f));
         }
-        const float x = line.x + 4.0f + float(row.depth) * kIndent;
-        if (row.hasChildren) {
-            triangle(painter, {x + 6.0f, line.y + h / 2.0f}, m_expanded.contains(row.id), theme.textMuted);
+        float x = line.x + 4.0f + float(row.depth) * kIndent;
+        if (m_showsExpanders) {
+            if (row.hasChildren) {
+                triangle(painter, {x + 6.0f, line.y + h / 2.0f}, m_filter || m_expanded.contains(row.id),
+                         theme.textMuted);
+            }
+            x += 16.0f;
         }
-        if (layoutIn(layout, m_model.text(row.id), theme, kInfinity, false, TextAlign::Start)) {
+        const Icon icon = m_model.icon(row.id);
+        if (!icon.isNull()) {
+            icon.paint(painter, {x, std::round(line.y + (h - kIconSize) / 2.0f), kIconSize, kIconSize}, theme.text);
+            x += kIconSize + 4.0f;
+        }
+        if (row.id != m_renaming && layoutIn(layout, m_model.text(row.id), theme, kInfinity, false, TextAlign::Start)) {
             const Vec2 origin = centredOrigin(layout, line);
-            painter.drawText(layout, {x + 16.0f, origin.y}, theme.text);
+            painter.drawText(layout, {x, origin.y}, isEnabled() ? theme.text : theme.textDisabled);
         }
         ++m_painted;
+    }
+    if (m_drop && m_drop->zone != Drop::Zone::Onto) {
+        // A line where the rows will go, indented to their depth.
+        float y = 0.0f;
+        std::uint32_t depth = 0;
+        if (m_drop->row < 0) {
+            y = rowRect(m_rows.size()).y;
+        } else {
+            const RectF line = rowRect(std::size_t(m_drop->row));
+            y = m_drop->zone == Drop::Zone::Before ? line.y : line.bottom();
+            depth = m_rows[std::size_t(m_drop->row)].depth;
+        }
+        const float x = r.x + 4.0f + float(depth) * kIndent + (m_showsExpanders ? 16.0f : 0.0f);
+        painter.drawLine({x, std::round(y) + 0.5f}, {r.right() - 4.0f, std::round(y) + 0.5f}, Pen(theme.accent, 2.0f));
     }
     painter.restore();
 }
 
 bool TreeView::onPointer(const PointerEvent &event) {
     const RectF r = rect();
-    if (event.type == PointerEvent::Type::Wheel) {
+    switch (event.type) {
+    case PointerEvent::Type::Wheel: {
         const float before = m_scroll;
         scrollTo(m_scroll - (event.wheelDelta.y != 0.0f ? event.wheelDelta.y : 0.0f));
         return m_scroll != before;
     }
-    if (event.type != PointerEvent::Type::Press) {
-        return event.type == PointerEvent::Type::Release && isPressed();
+    case PointerEvent::Type::Move: {
+        if (!isPressed() || m_pressRow < 0) {
+            return false;
+        }
+        if (!m_dragging) {
+            const Vec2 d = event.position - m_pressAt;
+            const std::vector<TreeModel::Id> nodes = selection();
+            const bool draggable =
+                !nodes.empty() && std::all_of(nodes.begin(), nodes.end(), [this](TreeModel::Id id) {
+                    return m_model.canDrag(id);
+                });
+            if (!draggable || d.length() < kDragThreshold) {
+                return true;
+            }
+            m_dragging = true;
+            m_selectOnRelease = false;
+        }
+        // Near the edges the view scrolls towards the pointer.
+        if (event.position.y < r.y + rowHeight() / 2.0f) {
+            scrollTo(m_scroll - rowHeight() / 2.0f);
+        } else if (event.position.y > r.bottom() - rowHeight() / 2.0f) {
+            scrollTo(m_scroll + rowHeight() / 2.0f);
+        }
+        m_drop = dropAt(event.position);
+        invalidatePaint();
+        return true;
     }
-    const float y = event.position.y - r.y + m_scroll;
-    const std::size_t index = std::size_t(std::max(0.0f, y / rowHeight()));
-    if (index >= m_rows.size()) {
-        if (!m_selected.empty()) {
+    case PointerEvent::Type::Release: {
+        if (!isPressed()) {
+            return false;
+        }
+        if (m_dragging) {
+            const std::optional<Drop> drop = m_drop;
+            m_dragging = false;
+            m_drop.reset();
+            invalidatePaint();
+            if (drop) {
+                dropped.emit(selection(), drop->parent, drop->index);
+            }
+        } else if (m_selectOnRelease && m_pressRow >= 0 && std::size_t(m_pressRow) < m_rows.size()) {
+            setCurrentRow(std::size_t(m_pressRow), false, false);
+        }
+        m_selectOnRelease = false;
+        m_pressRow = -1;
+        return true;
+    }
+    case PointerEvent::Type::Press:
+        break;
+    default:
+        return false;
+    }
+
+    if (isRenaming()) {
+        commitRename(); // a press elsewhere in the tree ends the rename
+    }
+    const std::ptrdiff_t at = rowAt(event.position.y);
+    if (at < 0) {
+        if (!m_selected.empty() && event.button == PointerButton::Left) {
             m_selected.clear();
             invalidatePaint();
             selectionChanged.emit();
         }
-        return true;
+        if (event.button == PointerButton::Right) {
+            contextMenuRequested.emit(TreeModel::kRoot, event.position);
+            return true;
+        }
+        return event.button == PointerButton::Left;
     }
+    const std::size_t index = std::size_t(at);
     const Row row = m_rows[index];
     const float arrowX = r.x + 4.0f + float(row.depth) * kIndent;
-    if (row.hasChildren && event.position.x >= arrowX && event.position.x < arrowX + 14.0f) {
+    if (m_showsExpanders && row.hasChildren && !m_filter && event.button == PointerButton::Left &&
+        event.position.x >= arrowX && event.position.x < arrowX + 14.0f) {
         setExpanded(row.id, !isExpanded(row.id));
         return true;
     }
-    if (event.button == PointerButton::Right && m_selected.contains(row.id)) {
-        return false; // keep the selection for a context menu
+    if (event.button == PointerButton::Right) {
+        // A context menu works on the selection: a row outside it becomes it.
+        if (!m_selected.contains(row.id)) {
+            setCurrentRow(index, false, false);
+        }
+        contextMenuRequested.emit(row.id, event.position);
+        return true;
     }
-    setCurrentRow(index, hasModifier(event.modifiers, Modifier::Shift), ctrlHeld(event.modifiers));
-    if (event.clickCount >= 2 && event.button == PointerButton::Left) {
+    if (event.button != PointerButton::Left) {
+        return false;
+    }
+    m_pressAt = event.position;
+    m_pressRow = at;
+    const bool shift = hasModifier(event.modifiers, Modifier::Shift);
+    const bool ctrl = ctrlHeld(event.modifiers);
+    if (!shift && !ctrl && m_selected.contains(row.id) && m_selected.size() > 1) {
+        // Keep a multi-selection until release: it may be about to be dragged.
+        m_selectOnRelease = true;
+        m_current = row.id;
+        invalidatePaint();
+    } else {
+        setCurrentRow(index, shift, ctrl);
+    }
+    if (event.clickCount >= 2) {
         activated.emit(row.id);
     }
-    return event.button == PointerButton::Left;
+    return true;
 }
 
 bool TreeView::onKey(const KeyEvent &event) {
-    if (event.type != KeyEvent::Type::Press || m_rows.empty()) {
+    if (event.type != KeyEvent::Type::Press) {
+        return false;
+    }
+    if (isRenaming()) {
+        // Keys the field did not take: only Escape means something here.
+        if (event.key == Key::Escape) {
+            cancelRename();
+            return true;
+        }
+        return false;
+    }
+    if (m_rows.empty()) {
         return false;
     }
     const std::ptrdiff_t at = rowOf(m_current);
@@ -487,7 +787,7 @@ bool TreeView::onKey(const KeyEvent &event) {
     case Key::PageDown: setCurrentRow(row + page, shift, false); return true;
     case Key::PageUp: setCurrentRow(row > page ? row - page : 0, shift, false); return true;
     case Key::Right:
-        if (at >= 0 && m_rows[row].hasChildren) {
+        if (at >= 0 && m_rows[row].hasChildren && !m_filter) {
             if (!isExpanded(m_current)) {
                 setExpanded(m_current, true);
             } else {
@@ -497,7 +797,7 @@ bool TreeView::onKey(const KeyEvent &event) {
         return true;
     case Key::Left:
         if (at >= 0) {
-            if (isExpanded(m_current)) {
+            if (isExpanded(m_current) && !m_filter) {
                 setExpanded(m_current, false);
             } else if (m_rows[row].parent != TreeModel::kRoot) {
                 setCurrentRow(std::size_t(rowOf(m_rows[row].parent)), false, false);
@@ -509,6 +809,12 @@ bool TreeView::onKey(const KeyEvent &event) {
             activated.emit(m_current);
         }
         return true;
+    case Key::F2:
+        if (at >= 0 && m_model.canRename(m_current)) {
+            startRename(m_current);
+            return true;
+        }
+        return false;
     default:
         return false;
     }

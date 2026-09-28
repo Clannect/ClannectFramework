@@ -119,6 +119,7 @@ public:
     Signal<const String &> textChanged; // every edit
     Signal<const String &> submitted;   // Enter
     Signal<> editingFinished;           // Enter, or focus lost after an edit
+    Signal<> focusLost;                 // every time, edited or not
 
     void paint(Painter &painter, const Theme &theme) override;
     bool onPointer(const PointerEvent &event) override;
