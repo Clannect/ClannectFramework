@@ -195,6 +195,32 @@ MenuItem::MenuItem(String text, String shortcut) : m_text(std::move(text)), m_sh
     setFocusable(true);
 }
 
+void MenuItem::setText(String text) {
+    m_text = std::move(text);
+    setAccessibleName(m_text);
+    invalidateLayout();
+    invalidatePaint();
+}
+
+void MenuItem::setShortcutText(String shortcut) {
+    m_shortcut = std::move(shortcut);
+    invalidateLayout();
+    invalidatePaint();
+}
+
+void MenuItem::setIcon(Icon icon) {
+    m_icon = std::move(icon);
+    invalidatePaint();
+}
+
+void MenuItem::setSubmenu(std::function<void(Menu &)> fill) {
+    m_submenu = std::move(fill);
+    invalidateLayout();
+    invalidatePaint();
+}
+
+Menu *MenuItem::menu() const { return dynamic_cast<Menu *>(parent()); }
+
 Vec2 MenuItem::measureContent(Vec2) {
     const Theme &t = theme();
     float width = 0.0f;
@@ -204,26 +230,47 @@ Vec2 MenuItem::measureContent(Vec2) {
             width += 3 * t.padding + std::ceil(m_shortcutLayout.size().x);
         }
     }
+    if (m_submenu) {
+        width += 2 * t.padding; // the arrow
+    }
     return {width + 2 * t.padding + kBox + t.spacing, t.controlHeight};
 }
 
 void MenuItem::paint(Painter &painter, const Theme &theme) {
     const RectF r = rect();
     const bool enabled = isEnabled();
-    if (enabled && (isHovered() || hasFocus())) {
+    const Menu *owner = menu();
+    const bool open = owner && owner->m_submenuItem == this;
+    const bool lit = enabled && (isHovered() || hasFocus() || open);
+    if (lit) {
         PainterPath shape;
         shape.addRoundedRect(r.grownBy(-3, -1, -3, -1), theme.radius, theme.radius);
         painter.fillPath(shape, theme.accent);
     }
-    const Color text = !enabled ? theme.textDisabled : (isHovered() || hasFocus()) ? theme.accentText : theme.text;
-    if (m_checked) {
+    const Color text = !enabled ? theme.textDisabled : lit ? theme.accentText : theme.text;
+    const float boxX = r.x + theme.padding;
+    if (!m_icon.isNull()) {
+        const float y = std::round(r.y + (r.height - kBox) / 2.0f);
+        m_icon.paint(painter, {boxX, y, kBox, kBox}, text);
+    } else if (m_checked) {
         PainterPath tick;
-        const float x = r.x + theme.padding;
+        const float x = boxX;
         const float y = r.y + r.height / 2.0f;
         tick.moveTo({x + 1, y});
         tick.lineTo({x + 4, y + 3});
         tick.lineTo({x + 9, y - 3});
         painter.strokePath(tick, Pen(text, 1.6f));
+    }
+    if (m_submenu) {
+        PainterPath arrow;
+        const float x = r.right() - theme.padding - 3.0f;
+        const float y = r.y + r.height / 2.0f;
+        arrow.moveTo({x - 3, y - 4});
+        arrow.lineTo({x + 1, y});
+        arrow.lineTo({x - 3, y + 4});
+        Pen pen(text, 1.5f);
+        pen.cap = CapStyle::Round;
+        painter.strokePath(arrow, pen);
     }
     if (!theme.font) {
         return;
@@ -232,20 +279,49 @@ void MenuItem::paint(Painter &painter, const Theme &theme) {
     painter.drawText(m_layout, {r.x + theme.padding + kBox + theme.spacing, origin.y}, text);
     if (!m_shortcut.empty()) {
         painter.drawText(m_shortcutLayout, {r.right() - theme.padding - m_shortcutLayout.size().x, origin.y},
-                         enabled ? theme.textMuted : theme.textDisabled);
+                         !enabled ? theme.textDisabled : lit ? theme.accentText : theme.textMuted);
+    }
+}
+
+void MenuItem::onHoverChanged(bool hovered) {
+    invalidatePaint();
+    Menu *owner = menu();
+    if (!hovered || !owner || !isEnabled()) {
+        return;
+    }
+    // Hovering an item opens its submenu, and closes a sibling's.
+    if (m_submenu) {
+        if (owner->m_submenuItem != this) {
+            owner->openSubmenuOf(*this, false);
+        }
+    } else {
+        owner->closeSubmenu();
     }
 }
 
 bool MenuItem::onPointer(const PointerEvent &event) {
     if (event.type == PointerEvent::Type::Release && isHovered()) {
-        activated.emit();
+        if (m_submenu) {
+            if (Menu *owner = menu(); owner && owner->m_submenuItem != this) {
+                owner->openSubmenuOf(*this, false);
+            }
+        } else {
+            activated.emit();
+        }
         return true;
     }
     return event.type == PointerEvent::Type::Press;
 }
 
 bool MenuItem::onKey(const KeyEvent &event) {
-    if (activates(event)) {
+    if (m_submenu && event.type == KeyEvent::Type::Press &&
+        (event.key == Key::Right || event.key == Key::Enter || event.key == Key::Space)) {
+        if (Menu *owner = menu()) {
+            owner->openSubmenuOf(*this, true);
+        }
+        return true;
+    }
+    if (!m_submenu && activates(event)) {
         activated.emit();
         return true;
     }
@@ -259,13 +335,24 @@ MenuItem &Menu::addItem(String text, std::function<void()> action, String shortc
     // Closing destroys the menu (and the item), so the action runs after.
     static_cast<void>(item.activated.connect([this, action = std::move(action)] {
         const std::function<void()> run = action;
-        if (Surface *s = surface()) {
-            s->closePopup(*this);
-        }
+        closeAll();
         if (run) {
             run();
         }
     }));
+    return item;
+}
+
+MenuItem &Menu::addItem(Icon icon, String text, std::function<void()> action, String shortcut) {
+    MenuItem &item = addItem(std::move(text), std::move(action), std::move(shortcut));
+    item.setIcon(std::move(icon));
+    return item;
+}
+
+MenuItem &Menu::addSubmenu(String text, std::function<void(Menu &)> fill, Icon icon) {
+    MenuItem &item = add<MenuItem>(std::move(text));
+    item.setSubmenu(std::move(fill));
+    item.setIcon(std::move(icon));
     return item;
 }
 
@@ -278,6 +365,64 @@ void Menu::addSeparator() {
 Menu &Menu::popup(Surface &surface, std::unique_ptr<Menu> menu, Vec2 position) {
     Menu &opened = static_cast<Menu &>(surface.openPopup(std::move(menu), position));
     return opened;
+}
+
+void Menu::focusFirstItem() {
+    for (const auto &child : children()) {
+        if (child->isFocusable() && child->isEnabled() && child->isVisible()) {
+            if (Surface *s = surface()) {
+                s->setFocus(child.get());
+            }
+            return;
+        }
+    }
+}
+
+void Menu::closeAll() {
+    Menu *root = this;
+    while (root->m_parentMenu) {
+        root = root->m_parentMenu;
+    }
+    if (Surface *s = root->surface()) {
+        s->closePopup(*root); // closes the submenus above it too
+    }
+}
+
+void Menu::openSubmenuOf(MenuItem &item, bool focusFirst) {
+    Surface *s = surface();
+    if (!s || !item.m_submenu) {
+        return;
+    }
+    closeSubmenu();
+    auto submenu = std::make_unique<Menu>();
+    submenu->m_parentMenu = this;
+    item.m_submenu(*submenu);
+    const Vec2 at{rect().right() - 4.0f, item.rect().y - 4.0f};
+    Menu *opened = submenu.get();
+    s->openPopup(std::move(submenu), at, [this, opened] {
+        if (m_openSubmenu == opened) {
+            m_openSubmenu = nullptr;
+            if (m_submenuItem) {
+                m_submenuItem->invalidatePaint();
+            }
+            m_submenuItem = nullptr;
+        }
+    });
+    m_openSubmenu = opened;
+    m_submenuItem = &item;
+    item.invalidatePaint();
+    if (focusFirst) {
+        s->layout();
+        opened->focusFirstItem();
+    }
+}
+
+void Menu::closeSubmenu() {
+    if (m_openSubmenu) {
+        if (Surface *s = surface()) {
+            s->closePopup(*m_openSubmenu); // its onClosed clears the pointers
+        }
+    }
 }
 
 void Menu::paint(Painter &painter, const Theme &theme) {
@@ -295,7 +440,31 @@ void Menu::paint(Painter &painter, const Theme &theme) {
 }
 
 bool Menu::onKey(const KeyEvent &event) {
-    if (event.type != KeyEvent::Type::Press || (event.key != Key::Up && event.key != Key::Down)) {
+    if (event.type != KeyEvent::Type::Press) {
+        return false;
+    }
+    if (event.key == Key::Left || event.key == Key::Right) {
+        if (event.key == Key::Left && m_parentMenu) {
+            Menu *parent = m_parentMenu;
+            MenuItem *item = parent->m_submenuItem;
+            parent->closeSubmenu(); // destroys this menu: touch nothing of it after
+            if (item && parent->surface()) {
+                parent->surface()->setFocus(item);
+            }
+            return true;
+        }
+        Menu *root = this;
+        while (root->m_parentMenu) {
+            root = root->m_parentMenu;
+        }
+        if (root->sideways) {
+            const std::function<void(int)> move = root->sideways;
+            move(event.key == Key::Left ? -1 : 1);
+            return true;
+        }
+        return true;
+    }
+    if (event.key != Key::Up && event.key != Key::Down) {
         return false;
     }
     std::vector<Element *> items;

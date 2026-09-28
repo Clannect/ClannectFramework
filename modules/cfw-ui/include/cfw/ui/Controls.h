@@ -12,6 +12,7 @@
 #include "cfw/core/Signal.h"
 #include "cfw/text/TextLayout.h"
 #include "cfw/ui/Element.h"
+#include "cfw/ui/Icon.h"
 
 namespace cfw {
 
@@ -41,15 +42,29 @@ private:
 // A push button: click with the pointer (press and release inside), or
 // Space/Enter while focused. Hover, pressed, focus and disabled states come
 // from the theme.
+//
+// With an icon and no text it is a square icon button; flat, it has no fill
+// at rest (a toolbar button); checkable, each click toggles it (a tool
+// choice, a panel's visibility).
 class Button : public Element {
 public:
     explicit Button(String text = {});
+    explicit Button(Icon icon, String text = {});
     void setText(String text);
     [[nodiscard]] const String &text() const noexcept { return m_text; }
+    void setIcon(Icon icon);
+    [[nodiscard]] const Icon &icon() const noexcept { return m_icon; }
+    void setIconSize(float size);
     // Filled with the accent colour (the default action of a dialog).
     void setPrimary(bool primary);
+    void setFlat(bool flat);
+    void setCheckable(bool checkable) noexcept { m_checkable = checkable; }
+    [[nodiscard]] bool isCheckable() const noexcept { return m_checkable; }
+    void setChecked(bool checked); // does not emit toggled
+    [[nodiscard]] bool isChecked() const noexcept { return m_checked; }
 
     Signal<> clicked;
+    Signal<bool> toggled; // checkable buttons, after a click changed the state
 
     void paint(Painter &painter, const Theme &theme) override;
     bool onPointer(const PointerEvent &event) override;
@@ -62,10 +77,16 @@ protected:
     Vec2 measureContent(Vec2 available) override;
 
 private:
+    void activate();
     String m_text;
+    Icon m_icon;
+    float m_iconSize = 16.0f;
     TextLayout m_layout;
     bool m_laidOut = false;
     bool m_primary = false;
+    bool m_flat = false;
+    bool m_checkable = false;
+    bool m_checked = false;
 };
 
 } // namespace cfw
@@ -269,44 +290,78 @@ private:
     Surface *m_popupSurface = nullptr;
 };
 
-// One row of a popup menu or dropdown list: text, optional shortcut text,
-// highlighted under the pointer, activates on release or Enter.
+class Menu;
+
+// One row of a popup menu or dropdown list: an optional icon, text, optional
+// shortcut text, highlighted under the pointer, activates on release or
+// Enter. An item with a submenu opens it instead (hover, Enter or Right).
 class MenuItem : public Element {
 public:
     explicit MenuItem(String text, String shortcut = {});
     [[nodiscard]] const String &text() const noexcept { return m_text; }
+    void setText(String text);
+    void setShortcutText(String shortcut);
+    void setIcon(Icon icon);
     void setChecked(bool checked) { m_checked = checked; invalidatePaint(); }
+    [[nodiscard]] bool isChecked() const noexcept { return m_checked; }
+    // Fills the submenu each time it opens.
+    void setSubmenu(std::function<void(Menu &)> fill);
+    [[nodiscard]] bool hasSubmenu() const noexcept { return static_cast<bool>(m_submenu); }
     Signal<> activated;
 
     void paint(Painter &painter, const Theme &theme) override;
     bool onPointer(const PointerEvent &event) override;
     bool onKey(const KeyEvent &event) override;
-    void onHoverChanged(bool) override { invalidatePaint(); }
+    void onHoverChanged(bool hovered) override;
     void onFocusChanged(bool) override { invalidatePaint(); }
 
 protected:
     Vec2 measureContent(Vec2 available) override;
 
 private:
+    friend class Menu;
+    [[nodiscard]] Menu *menu() const;
     String m_text;
     String m_shortcut;
+    Icon m_icon;
     TextLayout m_layout;
     TextLayout m_shortcutLayout;
     bool m_checked = false;
+    std::function<void(Menu &)> m_submenu;
 };
 
 // A popup menu: a column of MenuItems on a panel. Up/Down move between
-// items; activating one closes the menu.
+// items; activating one closes the menu and every menu it was opened from.
+// Left closes a submenu; Left and Right in a menu that is not a submenu go
+// to `sideways` (a menu bar moves to its neighbouring menu).
 class Menu : public Stack {
 public:
     Menu();
     MenuItem &addItem(String text, std::function<void()> action, String shortcut = {});
+    MenuItem &addItem(Icon icon, String text, std::function<void()> action, String shortcut = {});
+    MenuItem &addSubmenu(String text, std::function<void(Menu &)> fill, Icon icon = {});
     void addSeparator();
     // Opens this menu as a popup of `surface` at `position`.
     static Menu &popup(Surface &surface, std::unique_ptr<Menu> menu, Vec2 position);
 
+    // Focuses the first enabled item (a menu opened from the keyboard).
+    void focusFirstItem();
+    // Closes this menu, its submenus and the menus it came from.
+    void closeAll();
+    [[nodiscard]] Menu *parentMenu() const noexcept { return m_parentMenu; }
+    [[nodiscard]] Menu *openSubmenu() const noexcept { return m_openSubmenu; }
+    std::function<void(int direction)> sideways; // -1 left, +1 right
+
     void paint(Painter &painter, const Theme &theme) override;
     bool onKey(const KeyEvent &event) override;
+
+private:
+    friend class MenuItem;
+    void openSubmenuOf(MenuItem &item, bool focusFirst);
+    void closeSubmenu();
+    Menu *m_parentMenu = nullptr;
+    Menu *m_openSubmenu = nullptr;
+    MenuItem *m_submenuItem = nullptr;
 };
 
 } // namespace cfw

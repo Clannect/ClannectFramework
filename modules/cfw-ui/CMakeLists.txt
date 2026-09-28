@@ -5,8 +5,10 @@
 cfw_add_module(cfw-ui
     SOURCES
         src/Choices.cpp
+        src/Chrome.cpp
         src/Controls.cpp
         src/Element.cpp
+        src/Icon.cpp
         src/ScrollArea.cpp
         src/Shortcut.cpp
         src/Surface.cpp
@@ -22,4 +24,5 @@ cfw_add_module(cfw-ui
 if(CFW_BUILD_TESTS)
     cfw_add_test(cfw-ui UiTest)
     cfw_add_test(cfw-ui ShellTest)
+    cfw_add_test(cfw-ui ChromeTest)
 endif()

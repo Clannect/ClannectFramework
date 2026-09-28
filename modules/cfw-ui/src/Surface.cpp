@@ -196,8 +196,14 @@ void Surface::closePopup(Element &popup) {
     if (it == m_popups.end()) {
         return;
     }
-    Popup closing = std::move(*it);
-    m_popups.erase(it);
+    // Popups are a stack: what was opened above this one (a submenu, a
+    // dropdown's list in a dialog, a tooltip) closes first.
+    const std::size_t index = std::size_t(it - m_popups.begin());
+    while (m_popups.size() > index + 1) {
+        closePopup(*m_popups.back().element);
+    }
+    Popup closing = std::move(m_popups[index]);
+    m_popups.erase(m_popups.begin() + std::ptrdiff_t(index));
     if (closing.element.get() == m_toolTip) {
         m_toolTip = nullptr;
         m_toolTipFor = nullptr;
