@@ -75,6 +75,11 @@ int main() {
     ui->window().key.emit(copy);
     checkEqual(clipboardText(), String("héllo"), "copy goes to the system clipboard");
 
+    int asked = 0;
+    ui->setCloseHandler([&] { ++asked; });
+    ui->window().closeRequested.emit();
+    check(asked == 1 && ui->isOpen(), "a close handler decides whether the window closes");
+    ui->setCloseHandler({});
     ui->window().closeRequested.emit();
     check(!ui->isOpen(), "closing the window ends the app loop");
     return cfw::test::finish("UiWindowTest");

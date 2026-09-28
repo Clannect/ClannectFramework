@@ -96,6 +96,10 @@ public:
     [[nodiscard]] const GlFunctions &gl() const noexcept { return m_gl; }
     [[nodiscard]] bool isOpen() const noexcept { return m_open; }
     void close() noexcept { m_open = false; }
+    // What the window's close button does. Unset, it closes the window;
+    // set, the handler decides (after asking about unsaved work, say) and
+    // calls close() itself when the window should go.
+    void setCloseHandler(std::function<void()> handler) { m_closeHandler = std::move(handler); }
 
     // Renders and presents if anything changed. Returns whether it did.
     bool frame();
@@ -126,6 +130,7 @@ private:
     GLuint m_vao = 0;
     std::vector<ScopedConnection> m_connections;
     bool m_open = true;
+    std::function<void()> m_closeHandler;
     std::size_t m_frames = 0;
     Cursor m_cursor = Cursor::Arrow;
 };

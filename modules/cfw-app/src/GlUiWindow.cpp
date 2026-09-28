@@ -130,7 +130,13 @@ GlUiWindow::GlUiWindow(std::unique_ptr<Window> window, std::unique_ptr<GlContext
     m_connections.push_back(m_window->resized.connect([this](Vec2i) { resize(); }));
     m_connections.push_back(m_window->dpiChanged.connect([this](float) { resize(); }));
     m_connections.push_back(m_window->repaintRequested.connect([this] { m_fullRedraw = true; }));
-    m_connections.push_back(m_window->closeRequested.connect([this] { m_open = false; }));
+    m_connections.push_back(m_window->closeRequested.connect([this] {
+        if (m_closeHandler) {
+            m_closeHandler();
+        } else {
+            m_open = false;
+        }
+    }));
     m_connections.push_back(m_window->focusChanged.connect([this](bool focused) {
         if (!focused) {
             m_surface.dispatch(PointerEvent{PointerEvent::Type::Leave});

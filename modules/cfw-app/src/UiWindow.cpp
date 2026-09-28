@@ -31,7 +31,13 @@ UiWindow::UiWindow(std::unique_ptr<Window> window, Theme theme) : m_window(std::
     m_connections.push_back(m_window->resized.connect([this](Vec2i pixels) { resize(pixels); }));
     m_connections.push_back(m_window->dpiChanged.connect([this](float) { resize(m_window->pixelSize()); }));
     m_connections.push_back(m_window->repaintRequested.connect([this] { m_fullRepaint = true; }));
-    m_connections.push_back(m_window->closeRequested.connect([this] { m_open = false; }));
+    m_connections.push_back(m_window->closeRequested.connect([this] {
+        if (m_closeHandler) {
+            m_closeHandler();
+        } else {
+            m_open = false;
+        }
+    }));
     m_connections.push_back(m_window->focusChanged.connect([this](bool focused) {
         if (!focused) {
             m_surface.dispatch(PointerEvent{PointerEvent::Type::Leave});

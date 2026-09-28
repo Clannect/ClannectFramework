@@ -14,6 +14,7 @@
 //
 // Threads: the window's thread.
 
+#include <functional>
 #include <memory>
 
 #include "cfw/core/Result.h"
@@ -34,6 +35,10 @@ public:
     [[nodiscard]] Window &window() noexcept { return *m_window; }
     [[nodiscard]] bool isOpen() const noexcept { return m_open; }
     void close() noexcept { m_open = false; }
+    // What the window's close button does. Unset, it closes the window;
+    // set, the handler decides (after asking about unsaved work, say) and
+    // calls close() itself when the window should go.
+    void setCloseHandler(std::function<void()> handler) { m_closeHandler = std::move(handler); }
 
     // Lays out, paints and presents if anything changed. Returns whether it
     // painted.
@@ -51,6 +56,7 @@ private:
     Image m_canvas;
     std::vector<ScopedConnection> m_connections;
     bool m_open = true;
+    std::function<void()> m_closeHandler;
     bool m_fullRepaint = true;
     std::size_t m_frames = 0;
     Cursor m_cursor = Cursor::Arrow;
