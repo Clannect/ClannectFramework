@@ -23,6 +23,7 @@ cfw_add_module(cfw-io
         src/JsonWriter.cpp
         src/MappedFile.cpp
         src/Path.cpp
+        src/Process.cpp
         src/Settings.cpp
         src/TemporaryDirectory.cpp
         ${CFW_IO_PLATFORM_SOURCES}
@@ -36,6 +37,7 @@ if(CFW_BUILD_TESTS)
     cfw_add_test(cfw-io JsonTest)
     cfw_add_test(cfw-io ByteBufferTest)
     cfw_add_test(cfw-io FileSystemTest)
+    cfw_add_test(cfw-io ProcessTest)
     target_compile_definitions(JsonTest PRIVATE CFW_IO_TESTDATA="${CMAKE_CURRENT_SOURCE_DIR}/testdata")
     cfw_add_test(cfw-io FuzzSmokeTest)
     target_compile_definitions(FuzzSmokeTest PRIVATE CFW_IO_TESTDATA="${CMAKE_CURRENT_SOURCE_DIR}/testdata")
