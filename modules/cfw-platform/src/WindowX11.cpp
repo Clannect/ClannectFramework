@@ -1,15 +1,18 @@
 // X11 backend: Xlib, an input method for text (Xutf8LookupString), MIT
-// XPutImage presentation, Xft.dpi for the scale.
+// XPutImage presentation, Xft.dpi for the scale, and the CLIPBOARD
+// selection (ICCCM: TARGETS, UTF8_STRING, STRING; INCR when reading).
 
 #include <poll.h>
 #include <unistd.h>
 
 #include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
 #include <map>
+#include <optional>
 #include <vector>
 
 #include "PixelCopy.h"
@@ -44,7 +47,16 @@ struct X11Connection {
     Atom utf8String = 0;
     int wakePipe[2] = {-1, -1};
     std::map<::Window, WindowX11 *> windows;
-    String clipboard; // in-process until X selections are implemented
+    // The clipboard: an unmapped window owns the CLIPBOARD selection while
+    // `clipboard` holds what this process copied.
+    ::Window selectionWindow = 0;
+    Atom clipboardAtom = 0;
+    Atom targets = 0;
+    Atom textAtom = 0;
+    Atom incr = 0;
+    Atom transferProperty = 0;
+    String clipboard;
+    bool ownsClipboard = false;
 };
 
 X11Connection &connection() {
@@ -65,6 +77,11 @@ bool connect() {
     c.deleteWindow = XInternAtom(c.display, "WM_DELETE_WINDOW", False);
     c.netWmName = XInternAtom(c.display, "_NET_WM_NAME", False);
     c.utf8String = XInternAtom(c.display, "UTF8_STRING", False);
+    c.clipboardAtom = XInternAtom(c.display, "CLIPBOARD", False);
+    c.targets = XInternAtom(c.display, "TARGETS", False);
+    c.textAtom = XInternAtom(c.display, "TEXT", False);
+    c.incr = XInternAtom(c.display, "INCR", False);
+    c.transferProperty = XInternAtom(c.display, "CFW_SELECTION", False);
     c.im = XOpenIM(c.display, nullptr, nullptr, nullptr);
     if (::pipe(c.wakePipe) != 0) {
         c.wakePipe[0] = c.wakePipe[1] = -1;
@@ -194,6 +211,36 @@ public:
         XFlush(connection().display);
     }
 
+    // EWMH: _NET_WM_STATE_FULLSCREEN, asked of the window manager for a
+    // mapped window and set as the initial state for an unmapped one.
+    void setFullScreen(bool fullScreen) override {
+        X11Connection &c = connection();
+        const Atom state = XInternAtom(c.display, "_NET_WM_STATE", False);
+        const Atom fullScreenAtom = XInternAtom(c.display, "_NET_WM_STATE_FULLSCREEN", False);
+        XWindowAttributes attributes{};
+        XGetWindowAttributes(c.display, m_window, &attributes);
+        if (attributes.map_state == IsViewable) {
+            XEvent event{};
+            event.xclient.type = ClientMessage;
+            event.xclient.window = m_window;
+            event.xclient.message_type = state;
+            event.xclient.format = 32;
+            event.xclient.data.l[0] = fullScreen ? 1 : 0; // _NET_WM_STATE_ADD / _REMOVE
+            event.xclient.data.l[1] = long(fullScreenAtom);
+            event.xclient.data.l[3] = 1; // a normal application
+            XSendEvent(c.display, DefaultRootWindow(c.display), False,
+                       SubstructureRedirectMask | SubstructureNotifyMask, &event);
+        } else if (fullScreen) {
+            XChangeProperty(c.display, m_window, state, XA_ATOM, 32, PropModeReplace,
+                            reinterpret_cast<const unsigned char *>(&fullScreenAtom), 1);
+        } else {
+            XDeleteProperty(c.display, m_window, state);
+        }
+        XFlush(c.display);
+        m_fullScreen = fullScreen;
+    }
+    bool isFullScreen() const override { return m_fullScreen; }
+
     void setTitle(StringView title) override {
         X11Connection &c = connection();
         const String text(title);
@@ -321,6 +368,7 @@ private:
     std::vector<std::uint32_t> m_frame;
     Vec2i m_frameSize;
     bool m_repaint = false;
+    bool m_fullScreen = false;
     std::map<unsigned, ::Cursor> m_cursors;
     // Double-click detection.
     Time m_lastPressTime = 0;
@@ -493,6 +541,205 @@ Result<std::unique_ptr<Window>> Window::create(const WindowOptions &options) {
 
 void *detail::x11Display() { return connection().display; }
 
+namespace {
+
+::Window selectionWindow(X11Connection &c) {
+    if (!c.selectionWindow) {
+        XSetWindowAttributes attributes{};
+        attributes.event_mask = PropertyChangeMask;
+        c.selectionWindow = XCreateWindow(c.display, DefaultRootWindow(c.display), -10, -10, 1, 1, 0, 0,
+                                          InputOnly, CopyFromParent, CWEventMask, &attributes);
+    }
+    return c.selectionWindow;
+}
+
+// The largest property one request can carry, in bytes.
+std::size_t maxPropertyBytes(Display *display) {
+    long units = XExtendedMaxRequestSize(display);
+    if (units <= 0) {
+        units = XMaxRequestSize(display);
+    }
+    return std::size_t(std::max(4096L, units * 4 - 1024));
+}
+
+// Another client asks for what this process copied.
+void answerSelectionRequest(X11Connection &c, const XSelectionRequestEvent &request) {
+    XSelectionEvent reply{};
+    reply.type = SelectionNotify;
+    reply.display = request.display;
+    reply.requestor = request.requestor;
+    reply.selection = request.selection;
+    reply.target = request.target;
+    reply.time = request.time;
+    // Obsolete clients leave the property unset: the target names it.
+    const Atom property = request.property ? request.property : request.target;
+    reply.property = 0;
+    if (request.selection == c.clipboardAtom && c.ownsClipboard) {
+        if (request.target == c.targets) {
+            const Atom supported[] = {c.targets, c.utf8String, XA_STRING, c.textAtom};
+            XChangeProperty(c.display, request.requestor, property, XA_ATOM, 32, PropModeReplace,
+                            reinterpret_cast<const unsigned char *>(supported), 4);
+            reply.property = property;
+        } else if ((request.target == c.utf8String || request.target == XA_STRING || request.target == c.textAtom) &&
+                   c.clipboard.size() <= maxPropertyBytes(c.display)) {
+            const Atom type = request.target == XA_STRING ? XA_STRING : c.utf8String;
+            XChangeProperty(c.display, request.requestor, property, type, 8, PropModeReplace,
+                            reinterpret_cast<const unsigned char *>(c.clipboard.data()), int(c.clipboard.size()));
+            reply.property = property;
+        }
+    }
+    XSendEvent(c.display, request.requestor, False, 0, reinterpret_cast<XEvent *>(&reply));
+    XFlush(c.display);
+}
+
+// Handles the selection window's events; false if `event` is not one.
+bool handleSelectionEvent(X11Connection &c, XEvent &event) {
+    if (!c.selectionWindow || event.xany.window != c.selectionWindow) {
+        return false;
+    }
+    if (event.type == SelectionRequest) {
+        answerSelectionRequest(c, event.xselectionrequest);
+    } else if (event.type == SelectionClear && event.xselectionclear.selection == c.clipboardAtom) {
+        c.ownsClipboard = false; // someone else copied
+        c.clipboard.clear();
+    }
+    return true;
+}
+
+// Waits (at most until `deadline`) for an event on the selection window
+// matching `accept`, answering requests to this process meanwhile.
+template <class Accept>
+bool waitForSelectionEvent(X11Connection &c, std::chrono::steady_clock::time_point deadline, XEvent &out,
+                           Accept accept) {
+    while (std::chrono::steady_clock::now() < deadline) {
+        while (XPending(c.display)) {
+            XEvent event;
+            XPeekEvent(c.display, &event);
+            if (event.xany.window == c.selectionWindow) {
+                XNextEvent(c.display, &event);
+                if (accept(event)) {
+                    out = event;
+                    return true;
+                }
+                handleSelectionEvent(c, event);
+            } else {
+                // Leave other windows' events for processEvents: look further.
+                bool found = false;
+                if (XCheckWindowEvent(c.display, c.selectionWindow, PropertyChangeMask, &event)) {
+                    if (accept(event)) {
+                        out = event;
+                        return true;
+                    }
+                    found = true;
+                }
+                if (XCheckTypedWindowEvent(c.display, c.selectionWindow, SelectionNotify, &event)) {
+                    if (accept(event)) {
+                        out = event;
+                        return true;
+                    }
+                    found = true;
+                }
+                if (XCheckTypedWindowEvent(c.display, c.selectionWindow, SelectionRequest, &event)) {
+                    handleSelectionEvent(c, event);
+                    found = true;
+                }
+                if (!found) {
+                    break;
+                }
+            }
+        }
+        pollfd fd{ConnectionNumber(c.display), POLLIN, 0};
+        ::poll(&fd, 1, 10);
+        XEventsQueued(c.display, QueuedAfterReading);
+    }
+    return false;
+}
+
+// Reads and deletes the transfer property; appends its bytes to `out`.
+// Returns the property's type (0 if there was none).
+Atom takeProperty(X11Connection &c, String &out, std::size_t *itemsRead = nullptr) {
+    Atom type = 0;
+    int format = 0;
+    unsigned long items = 0;
+    unsigned long remaining = 0;
+    unsigned char *data = nullptr;
+    if (XGetWindowProperty(c.display, c.selectionWindow, c.transferProperty, 0, 0x7fffffff, True, AnyPropertyType,
+                           &type, &format, &items, &remaining, &data) != Success) {
+        return 0;
+    }
+    if (data) {
+        if (format == 8 && type != c.incr) {
+            out.append(reinterpret_cast<const char *>(data), items);
+        }
+        XFree(data);
+    }
+    if (itemsRead) {
+        *itemsRead = items;
+    }
+    return type;
+}
+
+// Latin-1 to UTF-8 (the STRING target).
+String latin1ToUtf8(const String &latin1) {
+    String out;
+    for (const char ch : latin1) {
+        const auto byte = static_cast<unsigned char>(ch);
+        if (byte < 0x80) {
+            out += ch;
+        } else {
+            out += char(0xC0 | (byte >> 6));
+            out += char(0x80 | (byte & 0x3F));
+        }
+    }
+    return out;
+}
+
+std::optional<String> convertSelection(X11Connection &c, Atom target) {
+    using namespace std::chrono;
+    const auto deadline = steady_clock::now() + milliseconds(1500);
+    XDeleteProperty(c.display, c.selectionWindow, c.transferProperty);
+    XConvertSelection(c.display, c.clipboardAtom, target, c.transferProperty, c.selectionWindow, CurrentTime);
+    XFlush(c.display);
+    XEvent event;
+    if (!waitForSelectionEvent(c, deadline, event, [&](const XEvent &e) {
+            return e.type == SelectionNotify && e.xselection.selection == c.clipboardAtom;
+        })) {
+        return std::nullopt;
+    }
+    if (event.xselection.property == 0) {
+        return std::nullopt; // the owner cannot give this target
+    }
+    String text;
+    const Atom type = takeProperty(c, text);
+    if (type == c.incr) {
+        // Incremental: the owner writes chunks, each after we delete the last,
+        // and ends with an empty one.
+        XFlush(c.display);
+        for (;;) {
+            if (!waitForSelectionEvent(c, steady_clock::now() + milliseconds(1500), event, [&](const XEvent &e) {
+                    return e.type == PropertyNotify && e.xproperty.atom == c.transferProperty &&
+                           e.xproperty.state == PropertyNewValue;
+                })) {
+                return std::nullopt;
+            }
+            std::size_t items = 0;
+            takeProperty(c, text, &items);
+            XFlush(c.display);
+            if (items == 0) {
+                break;
+            }
+        }
+    } else if (type == 0) {
+        return std::nullopt;
+    }
+    if (target == XA_STRING) {
+        return latin1ToUtf8(text);
+    }
+    return text;
+}
+
+} // namespace
+
 bool processEvents(Duration maxWait) {
     X11Connection &c = connection();
     if (!c.display) {
@@ -516,6 +763,9 @@ bool processEvents(Duration maxWait) {
         XNextEvent(display, &event);
         if (XFilterEvent(&event, None)) {
             continue; // consumed by the input method
+        }
+        if (handleSelectionEvent(c, event)) {
+            continue;
         }
         const auto it = c.windows.find(event.xany.window);
         if (it != c.windows.end()) {
@@ -545,7 +795,40 @@ void wakeUp() {
     }
 }
 
-String clipboardText() { return connection().clipboard; }
-void setClipboardText(StringView text) { connection().clipboard = String(text); }
+String clipboardText() {
+    X11Connection &c = connection();
+    if (!c.display) {
+        // No display: this process is the whole clipboard.
+        return c.ownsClipboard ? c.clipboard : String();
+    }
+    // Ask the server: another application may have copied since, and its
+    // SelectionClear may still be waiting in the queue.
+    const ::Window owner = XGetSelectionOwner(c.display, c.clipboardAtom);
+    if (c.ownsClipboard && owner == c.selectionWindow) {
+        return c.clipboard;
+    }
+    c.ownsClipboard = false;
+    if (owner == 0) {
+        return {};
+    }
+    selectionWindow(c);
+    if (std::optional<String> text = convertSelection(c, c.utf8String)) {
+        return *text;
+    }
+    return convertSelection(c, XA_STRING).value_or(String());
+}
+
+void setClipboardText(StringView text) {
+    X11Connection &c = connection();
+    c.clipboard = String(text);
+    if (!c.display && !connect()) {
+        c.ownsClipboard = true; // no display: this process is the whole clipboard
+        return;
+    }
+    const ::Window owner = selectionWindow(c);
+    XSetSelectionOwner(c.display, c.clipboardAtom, owner, CurrentTime);
+    c.ownsClipboard = XGetSelectionOwner(c.display, c.clipboardAtom) == owner;
+    XFlush(c.display);
+}
 
 } // namespace cfw

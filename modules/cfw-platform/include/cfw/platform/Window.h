@@ -75,6 +75,11 @@ public:
     // screen's edge. The move arrives as an ordinary pointer event. Does
     // nothing where the platform cannot.
     virtual void setPointerPosition(Vec2 position) { (void)position; }
+    // Covers the whole monitor the window is on, without a frame (the
+    // window manager's full-screen state on X11), or puts it back as it was.
+    // Does nothing where the platform cannot.
+    virtual void setFullScreen(bool fullScreen) { (void)fullScreen; }
+    [[nodiscard]] virtual bool isFullScreen() const { return false; }
     // HWND on Windows, the X11 Window id on X11 (for embedding WebView2 and
     // for GL context creation).
     [[nodiscard]] virtual void *nativeHandle() const = 0;

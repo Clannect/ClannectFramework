@@ -100,6 +100,20 @@ int main() {
     setClipboardText("Clannect ✓");
     checkEqual(clipboardText(), String("Clannect ✓"), "the clipboard round-trips UTF-8");
 
+    // Full screen and back. Only Windows resizes here: the X11 test server
+    // has no window manager to honour the request.
+    const Vec2i windowed = window->pixelSize();
+    window->setFullScreen(true);
+    check(window->isFullScreen(), "full screen on");
+#if defined(_WIN32)
+    pumpUntil([&] { return window->pixelSize().x > windowed.x; });
+    check(window->pixelSize().x > windowed.x && window->pixelSize().y > windowed.y, "full screen covers the monitor");
+#endif
+    window->setFullScreen(false);
+    check(!window->isFullScreen(), "full screen off");
+    pumpUntil([&] { return window->pixelSize() == windowed; });
+    check(window->pixelSize() == windowed, "leaving full screen restores the size");
+
     window->setTitle("Renamed ✓");
     window->setCursor(Cursor::IBeam);
     window->hide();

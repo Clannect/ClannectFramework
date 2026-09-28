@@ -183,6 +183,33 @@ public:
     void hide() override { ShowWindow(m_hwnd, SW_HIDE); }
     void setTitle(StringView title) override { SetWindowTextW(m_hwnd, wide(title).c_str()); }
 
+    // The usual borderless full screen: a popup-style window over the whole
+    // monitor; the old style and placement come back when it ends.
+    void setFullScreen(bool fullScreen) override {
+        if (fullScreen == m_fullScreen) {
+            return;
+        }
+        if (fullScreen) {
+            m_savedStyle = GetWindowLongPtrW(m_hwnd, GWL_STYLE);
+            m_savedPlacement.length = sizeof m_savedPlacement;
+            GetWindowPlacement(m_hwnd, &m_savedPlacement);
+            MONITORINFO monitor{};
+            monitor.cbSize = sizeof monitor;
+            GetMonitorInfoW(MonitorFromWindow(m_hwnd, MONITOR_DEFAULTTONEAREST), &monitor);
+            SetWindowLongPtrW(m_hwnd, GWL_STYLE, (m_savedStyle & ~LONG_PTR(WS_OVERLAPPEDWINDOW)) | WS_POPUP);
+            const RECT r = monitor.rcMonitor;
+            SetWindowPos(m_hwnd, HWND_TOP, r.left, r.top, r.right - r.left, r.bottom - r.top,
+                         SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
+        } else {
+            SetWindowLongPtrW(m_hwnd, GWL_STYLE, m_savedStyle);
+            SetWindowPlacement(m_hwnd, &m_savedPlacement);
+            SetWindowPos(m_hwnd, nullptr, 0, 0, 0, 0,
+                         SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
+        }
+        m_fullScreen = fullScreen;
+    }
+    bool isFullScreen() const override { return m_fullScreen; }
+
     void setSize(Vec2i size) override {
         RECT r{0, 0, LONG(std::lround(float(size.x) * m_scale)), LONG(std::lround(float(size.y) * m_scale))};
         AdjustWindowRectEx(&r, DWORD(GetWindowLongPtrW(m_hwnd, GWL_STYLE)), FALSE,
@@ -299,6 +326,9 @@ private:
     }
 
     HWND m_hwnd;
+    bool m_fullScreen = false;
+    LONG_PTR m_savedStyle = 0;
+    WINDOWPLACEMENT m_savedPlacement{};
     float m_scale = 1.0f;
     Vec2i m_size;
     std::vector<std::uint32_t> m_frame;
