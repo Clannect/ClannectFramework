@@ -4,9 +4,13 @@
 namespace cfw {
 
 bool GlFunctions::load(const GlContext &context, const char **missing) {
+    return load([&context](const char *name) { return context.procAddress(name); }, missing);
+}
+
+bool GlFunctions::load(const std::function<void *(const char *name)> &resolve, const char **missing) {
     bool ok = true;
 #define CFW_GL_LOAD(ret, name, params)                                                                         \
-    name = reinterpret_cast<ret(CFW_GL_API *) params>(context.procAddress("gl" #name));                        \
+    name = reinterpret_cast<ret(CFW_GL_API *) params>(resolve("gl" #name));                        \
     if (!name && ok) {                                                                                         \
         ok = false;                                                                                            \
         if (missing) {                                                                                         \
