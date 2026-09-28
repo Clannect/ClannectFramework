@@ -21,7 +21,6 @@
 // captured before it is included.
 namespace cfw::x11 {
 constexpr Modifier kNoModifier = Modifier::None;
-constexpr PointerButton kNoButton = PointerButton::None;
 } // namespace cfw::x11
 
 #include <X11/Xatom.h>
