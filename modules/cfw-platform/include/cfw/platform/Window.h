@@ -19,6 +19,8 @@
 //
 // Threads: windows and processEvents() on one thread; wakeUp() from any.
 
+#include "cfw/core/Rect.h"
+#include <optional>
 #include <functional>
 #include <cstdint>
 #include <memory>
@@ -81,6 +83,10 @@ public:
     // Does nothing where the platform cannot.
     virtual void setFullScreen(bool fullScreen) { (void)fullScreen; }
     [[nodiscard]] virtual bool isFullScreen() const { return false; }
+    // Where the text caret is (logical pixels), so an input method places its
+    // candidate window beside it; nothing when no text is being edited, which
+    // turns the input method off (keys then reach the application as keys).
+    virtual void setTextInputArea(const std::optional<RectF> &caret) { (void)caret; }
     // HWND on Windows, the X11 Window id on X11 (for embedding WebView2 and
     // for GL context creation).
     [[nodiscard]] virtual void *nativeHandle() const = 0;
@@ -88,6 +94,7 @@ public:
     Signal<const PointerEvent &> pointer;
     Signal<const KeyEvent &> key;
     Signal<const TextEvent &> text;
+    Signal<const CompositionEvent &> composition;
     Signal<Vec2i> resized; // physical pixels
     Signal<float> dpiChanged;
     Signal<bool> focusChanged;

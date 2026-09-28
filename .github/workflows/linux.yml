@@ -27,7 +27,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install tools
-        run: sudo apt-get update && sudo apt-get install -y ninja-build
+        # Xvfb gives the window, GL, clipboard and drop tests a display;
+        # uim-xim is a real input method for the IME test.
+        run: >
+          sudo apt-get update && sudo apt-get install -y ninja-build libx11-dev xvfb
+          uim-xim uim-anthy
       - name: Configure
         run: cmake --preset ${{ matrix.preset }} -DCMAKE_CXX_COMPILER=${{ matrix.compiler }}
       - name: Build
@@ -36,7 +40,7 @@ jobs:
         env:
           ASAN_OPTIONS: detect_leaks=1:abort_on_error=1:strict_string_checks=1
           UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
-        run: ctest --preset ${{ matrix.preset }}
+        run: xvfb-run -a -s "-screen 0 1280x1024x24" ctest --preset ${{ matrix.preset }}
 
   tsan:
     name: tsan (cfw-net)

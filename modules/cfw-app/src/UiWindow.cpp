@@ -29,6 +29,8 @@ UiWindow::UiWindow(std::unique_ptr<Window> window, Theme theme) : m_window(std::
     m_connections.push_back(m_window->key.connect([this](const KeyEvent &e) { m_surface.dispatch(e); }));
     m_connections.push_back(m_window->text.connect([this](const TextEvent &e) { m_surface.dispatch(e); }));
     m_window->setDropHandler([this](const DropEvent &e) { return m_surface.dispatch(e); });
+    m_connections.push_back(
+        m_window->composition.connect([this](const CompositionEvent &e) { m_surface.dispatch(e); }));
     m_connections.push_back(m_window->resized.connect([this](Vec2i pixels) { resize(pixels); }));
     m_connections.push_back(m_window->dpiChanged.connect([this](float) { resize(m_window->pixelSize()); }));
     m_connections.push_back(m_window->repaintRequested.connect([this] { m_fullRepaint = true; }));
@@ -72,6 +74,13 @@ bool UiWindow::frame() {
     m_surface.runTimers();
     updateCursor();
     m_surface.layout();
+    // The input method follows the caret, and is off when no text is edited.
+    const std::optional<RectF> textInput = m_surface.textInputArea();
+    if (!m_textInputKnown || textInput != m_textInputArea) {
+        m_textInputKnown = true;
+        m_textInputArea = textInput;
+        m_window->setTextInputArea(textInput);
+    }
     const RectF damage = m_surface.takeDamage();
     if (!m_fullRepaint && damage.isEmpty()) {
         return false;

@@ -130,6 +130,8 @@ private:
     GLuint m_vao = 0;
     std::vector<ScopedConnection> m_connections;
     bool m_open = true;
+    std::optional<RectF> m_textInputArea; // last told to the window
+    bool m_textInputKnown = false;
     std::function<void()> m_closeHandler;
     std::size_t m_frames = 0;
     Cursor m_cursor = Cursor::Arrow;

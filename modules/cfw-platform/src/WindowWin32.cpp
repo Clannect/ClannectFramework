@@ -1,7 +1,9 @@
 // Win32 backend: a window class with CS_DBLCLKS, per-monitor DPI (v2 where
 // the OS has it), SetDIBitsToDevice presentation, UTF-16 WM_CHAR text with
 // surrogate pairs, mouse capture while a button is held, and file drops
-// (an OLE IDropTarget, and WM_DROPFILES from senders that post it).
+// (an OLE IDropTarget, and WM_DROPFILES from senders that post it). Input
+// methods through IMM32: the composition is drawn by the application, the
+// candidate window follows the caret, and the IME is off outside text.
 
 #include "PixelCopy.h"
 #include "cfw/image/Image.h"
@@ -22,6 +24,7 @@ constexpr Modifier kNoModifier = Modifier::None;
 #endif
 #include <windows.h>
 #include <windowsx.h>
+#include <imm.h>
 #include <ole2.h>
 #include <shellapi.h>
 
@@ -291,6 +294,35 @@ public:
     void hide() override { ShowWindow(m_hwnd, SW_HIDE); }
     void setTitle(StringView title) override { SetWindowTextW(m_hwnd, wide(title).c_str()); }
 
+    void setTextInputArea(const std::optional<RectF> &caret) override {
+        if (!caret) {
+            // Keys go to the application as keys (a game's WASD), not to
+            // the IME. The window's own context comes back with the next area.
+            ImmAssociateContextEx(m_hwnd, nullptr, 0);
+            return;
+        }
+        ImmAssociateContextEx(m_hwnd, nullptr, IACE_DEFAULT);
+        HIMC context = ImmGetContext(m_hwnd);
+        if (!context) {
+            return;
+        }
+        const LONG left = LONG(std::lround(caret->x * m_scale));
+        const LONG top = LONG(std::lround(caret->y * m_scale));
+        const LONG bottom = LONG(std::lround(caret->bottom() * m_scale));
+        COMPOSITIONFORM composition{};
+        composition.dwStyle = CFS_POINT;
+        composition.ptCurrentPos = POINT{left, top};
+        ImmSetCompositionWindow(context, &composition);
+        // The candidate list goes below the caret, never over the line.
+        CANDIDATEFORM candidate{};
+        candidate.dwIndex = 0;
+        candidate.dwStyle = CFS_EXCLUDE;
+        candidate.ptCurrentPos = POINT{left, bottom};
+        candidate.rcArea = RECT{left, top, left + 1, bottom};
+        ImmSetCandidateWindow(context, &candidate);
+        ImmReleaseContext(m_hwnd, context);
+    }
+
     // The usual borderless full screen: a popup-style window over the whole
     // monitor; the old style and placement come back when it ends.
     void setFullScreen(bool fullScreen) override {
@@ -469,6 +501,50 @@ LRESULT WindowWin32::handle(UINT message, WPARAM wParam, LPARAM lParam) {
     }
     case WM_ERASEBKGND:
         return 1;
+    case WM_IME_SETCONTEXT:
+        // The application draws the composition; the IME only its candidates.
+        return DefWindowProcW(m_hwnd, message, wParam, lParam & ~LPARAM(ISC_SHOWUICOMPOSITIONWINDOW));
+    case WM_IME_STARTCOMPOSITION:
+        return 0;
+    case WM_IME_COMPOSITION: {
+        HIMC context = ImmGetContext(m_hwnd);
+        if (!context) {
+            break;
+        }
+        const auto read = [context](DWORD which) {
+            const LONG bytes = ImmGetCompositionStringW(context, which, nullptr, 0);
+            std::u16string text(std::size_t(std::max<LONG>(bytes, 0)) / sizeof(char16_t), u'\0');
+            if (bytes > 0) {
+                ImmGetCompositionStringW(context, which, text.data(), DWORD(bytes));
+            }
+            return text;
+        };
+        if (lParam & GCS_RESULTSTR) {
+            const std::u16string result = read(GCS_RESULTSTR);
+            if (!result.empty()) {
+                text.emit(TextEvent{utf16ToUtf8Lossy(result)});
+            }
+        }
+        if (lParam & GCS_COMPSTR) {
+            const std::u16string composing = read(GCS_COMPSTR);
+            CompositionEvent event;
+            event.text = utf16ToUtf8Lossy(composing);
+            LONG cursor = long(composing.size());
+            if (lParam & GCS_CURSORPOS) {
+                cursor = std::clamp<LONG>(ImmGetCompositionStringW(context, GCS_CURSORPOS, nullptr, 0), 0,
+                                          LONG(composing.size()));
+            }
+            event.cursor = utf16ToUtf8Lossy(std::u16string_view(composing).substr(0, std::size_t(cursor))).size();
+            composition.emit(event);
+        } else if (lParam & GCS_RESULTSTR) {
+            composition.emit(CompositionEvent{}); // committed, nothing left
+        }
+        ImmReleaseContext(m_hwnd, context);
+        return 0; // handled: no WM_IME_CHAR / WM_CHAR for the result
+    }
+    case WM_IME_ENDCOMPOSITION:
+        composition.emit(CompositionEvent{});
+        return 0;
     case WM_DROPFILES: {
         const auto drop = reinterpret_cast<HDROP>(wParam);
         POINT client{};

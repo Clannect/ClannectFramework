@@ -15,6 +15,7 @@
 // Threads: the window's thread.
 
 #include <functional>
+#include <optional>
 #include <memory>
 
 #include "cfw/core/Result.h"
@@ -56,6 +57,8 @@ private:
     Image m_canvas;
     std::vector<ScopedConnection> m_connections;
     bool m_open = true;
+    std::optional<RectF> m_textInputArea; // last told to the window
+    bool m_textInputKnown = false;
     std::function<void()> m_closeHandler;
     bool m_fullRepaint = true;
     std::size_t m_frames = 0;

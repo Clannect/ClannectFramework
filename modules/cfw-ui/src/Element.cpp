@@ -165,6 +165,8 @@ bool Element::onKey(const KeyEvent &) { return false; }
 bool Element::onText(const TextEvent &) { return false; }
 bool Element::onDrop(const DropEvent &) { return false; }
 void Element::paintOverlay(Painter &, const Theme &) {}
+bool Element::onComposition(const CompositionEvent &) { return false; }
+std::optional<RectF> Element::textInputArea() const { return std::nullopt; }
 void Element::onHoverChanged(bool) {}
 void Element::onPressedChanged(bool) {}
 void Element::onFocusChanged(bool) {}

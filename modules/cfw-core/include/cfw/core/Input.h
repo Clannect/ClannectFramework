@@ -68,6 +68,15 @@ struct TextEvent {
     String text; // UTF-8, already composed (IME commits arrive here too)
 };
 
+// Text an input method is composing (pinyin being converted, a Hangul
+// syllable being built, a dead key's accent): shown at the caret,
+// underlined, until the input method commits it (a TextEvent with the
+// result) or cancels it. Empty text ends the composition.
+struct CompositionEvent {
+    String text;            // UTF-8
+    std::size_t cursor = 0; // the input method's cursor, a byte offset in text
+};
+
 // Files dragged over a window from another application (a file manager).
 // Enter comes first, Moves follow as the pointer moves, and it ends with
 // either Leave or Drop.

@@ -96,6 +96,11 @@ void TextField::relayout() {
         if (m_masked) {
             const std::u32string dots(m_text.size(), U'\u2022');
             m_layout.setText(Span<const char32_t>(dots.data(), dots.size()));
+        } else if (!m_composition.empty()) {
+            // The composition stands in for the selection until committed.
+            const auto [from, to] = std::minmax(m_anchor, m_caret);
+            std::u32string shown = m_text.substr(0, from) + m_composition + m_text.substr(to);
+            m_layout.setText(Span<const char32_t>(shown.data(), shown.size()));
         } else {
             m_layout.setText(Span<const char32_t>(m_text.data(), m_text.size()));
         }
@@ -106,7 +111,7 @@ void TextField::relayout() {
     }
     // Keep the caret in view.
     const float inner = std::max(0.0f, rect().width - 2 * t.padding);
-    const float caretX = t.font ? m_layout.caret(m_caret).x : 0.0f;
+    const float caretX = t.font ? m_layout.caret(shownCaret()).x : 0.0f;
     if (caretX - m_scroll > inner) {
         m_scroll = caretX - inner;
     } else if (caretX < m_scroll) {
@@ -197,7 +202,8 @@ void TextField::paint(Painter &painter, const Theme &theme) {
     const float top = std::round(rect().y + (rect().height - height) / 2.0f + baseline) - baseline;
     const Vec2 origin{textLeft(), top};
 
-    if (focused && m_anchor != m_caret) {
+    const bool composing = !m_composition.empty();
+    if (focused && m_anchor != m_caret && !composing) {
         const auto [from, to] = std::minmax(m_anchor, m_caret);
         const float x0 = m_layout.caret(from).x;
         const float x1 = m_layout.caret(to).x;
@@ -205,13 +211,21 @@ void TextField::paint(Painter &painter, const Theme &theme) {
         selection.a = 0.4f;
         painter.fillRect({origin.x + x0, origin.y, x1 - x0, height}, selection);
     }
-    if (m_text.empty()) {
+    if (m_text.empty() && !composing) {
         painter.drawText(m_placeholderLayout, origin, theme.textMuted);
     } else {
         painter.drawText(m_layout, origin, isEnabled() ? theme.text : theme.textDisabled);
     }
+    if (composing) {
+        // The composition is underlined, as every input method expects.
+        const std::size_t from = std::min(m_anchor, m_caret);
+        const float x0 = origin.x + m_layout.caret(from).x;
+        const float x1 = origin.x + m_layout.caret(from + m_composition.size()).x;
+        const float y = std::round(origin.y + height) - 0.5f;
+        painter.drawLine({x0, y}, {x1, y}, Pen(theme.text, 1.0f));
+    }
     if (focused && !m_readOnly) {
-        const float x = std::round(origin.x + m_layout.caret(m_caret).x) + 0.5f;
+        const float x = std::round(origin.x + m_layout.caret(shownCaret()).x) + 0.5f;
         painter.drawLine({x, origin.y}, {x, origin.y + height}, Pen(theme.text, 1.0f));
     }
     painter.restore();
@@ -343,10 +357,50 @@ bool TextField::onKey(const KeyEvent &event) {
     }
 }
 
+std::size_t TextField::shownCaret() const noexcept {
+    return m_composition.empty() ? m_caret : std::min(m_anchor, m_caret) + m_compositionCursor;
+}
+
+String TextField::composition() const { return encode(m_composition); }
+
+void TextField::clearComposition() {
+    if (!m_composition.empty()) {
+        m_composition.clear();
+        m_compositionCursor = 0;
+        m_layoutValid = false;
+        relayout();
+        invalidatePaint();
+    }
+}
+
+bool TextField::onComposition(const CompositionEvent &event) {
+    if (m_readOnly || m_masked) {
+        return false; // no composing into a password: it would show the text
+    }
+    std::u32string composed = decode(event.text);
+    std::erase_if(composed, isControl);
+    const std::size_t cursorBytes = std::min(event.cursor, event.text.size());
+    m_composition = std::move(composed);
+    m_compositionCursor = std::min(countCodepoints(StringView(event.text).substr(0, cursorBytes)), m_composition.size());
+    m_layoutValid = false;
+    relayout();
+    invalidatePaint();
+    return true;
+}
+
+std::optional<RectF> TextField::textInputArea() const {
+    if (m_readOnly || !hasFocus()) {
+        return std::nullopt;
+    }
+    const float x = theme().font ? m_layout.caret(shownCaret()).x : 0.0f;
+    return RectF{textLeft() + x, rect().y, 1.0f, rect().height};
+}
+
 bool TextField::onText(const TextEvent &event) {
     if (m_readOnly) {
         return false;
     }
+    clearComposition(); // the commit replaces what was being composed
     std::u32string typed = decode(event.text);
     std::erase_if(typed, isControl);
     if (typed.empty()) {
@@ -358,6 +412,7 @@ bool TextField::onText(const TextEvent &event) {
 
 void TextField::onFocusChanged(bool focused) {
     if (!focused) {
+        clearComposition();
         m_anchor = m_caret; // the selection goes with the focus
         if (m_dirty) {
             m_dirty = false;

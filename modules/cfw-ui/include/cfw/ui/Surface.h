@@ -59,6 +59,11 @@ public:
     // nearest ancestor that takes them, gets the drag. Returns whether it
     // would take them (Enter, Move) or took them (Drop).
     bool dispatch(const DropEvent &event);
+    // An input method's composition goes to the focused element.
+    bool dispatch(const CompositionEvent &event);
+    // Where the focused element edits text (for the input method's candidate
+    // window); nothing when no text is being edited.
+    [[nodiscard]] std::optional<RectF> textInputArea() const;
     [[nodiscard]] Element *dropTarget() const noexcept { return m_dropTarget; }
 
     // The deepest visible element under `point`.

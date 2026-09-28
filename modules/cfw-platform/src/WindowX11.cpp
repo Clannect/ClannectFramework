@@ -3,6 +3,8 @@
 // selection (ICCCM: TARGETS, UTF8_STRING, STRING; INCR when reading), and
 // file drops (XDND version 5, text/uri-list).
 
+#include <langinfo.h>
+#include <locale.h>
 #include <poll.h>
 #include <unistd.h>
 
@@ -17,6 +19,7 @@
 #include <vector>
 
 #include "PixelCopy.h"
+#include "Preedit.h"
 #include "X11Internal.h"
 #include "cfw/core/Url.h"
 #include "cfw/image/Image.h"
@@ -79,6 +82,21 @@ bool connect() {
         return false;
     }
     XrmInitialize();
+    // Input methods speak the C library's locale: make its character type
+    // UTF-8 (the environment's, else C.UTF-8) unless the application chose
+    // one, and read XMODIFIERS (@im=ibus, @im=fcitx) to find the server.
+    const char *current = setlocale(LC_CTYPE, nullptr);
+    if (!current || std::strcmp(current, "C") == 0 || std::strcmp(current, "POSIX") == 0) {
+        const char *chosen = setlocale(LC_CTYPE, "");
+        if (!chosen || std::strcmp(nl_langinfo(CODESET), "UTF-8") != 0) {
+            if (!setlocale(LC_CTYPE, "C.UTF-8")) {
+                setlocale(LC_CTYPE, "C");
+            }
+        }
+    }
+    if (XSupportsLocale()) {
+        XSetLocaleModifiers("");
+    }
     c.deleteWindow = XInternAtom(c.display, "WM_DELETE_WINDOW", False);
     c.netWmName = XInternAtom(c.display, "_NET_WM_NAME", False);
     c.utf8String = XInternAtom(c.display, "UTF8_STRING", False);
@@ -202,8 +220,79 @@ unsigned cursorShape(Cursor cursor) {
 
 class WindowX11 final : public Window {
 public:
-    WindowX11(::Window window, XIC ic, float scale, Vec2i size) : m_window(window), m_ic(ic), m_scale(scale), m_size(size) {
+    WindowX11(::Window window, float scale, Vec2i size) : m_window(window), m_ic(nullptr), m_scale(scale), m_size(size) {
         connection().windows[window] = this;
+        createInputContext();
+    }
+
+    // Xlib keeps every callback as an XIMProc and calls it with the types
+    // the callback is registered for; the cast through void(*)() says so.
+    template <class F> static XIMProc imProc(F function) {
+        return reinterpret_cast<XIMProc>(reinterpret_cast<void (*)()>(function));
+    }
+
+    // On-the-spot where the input method offers it (the preedit comes to
+    // the application through callbacks and is drawn in the text field);
+    // otherwise the input method draws its own (root-window style).
+    void createInputContext() {
+        XIM im = connection().im;
+        if (!im) {
+            return;
+        }
+        XIMStyles *styles = nullptr;
+        bool callbacks = false;
+        if (!XGetIMValues(im, XNQueryInputStyle, &styles, nullptr) && styles) {
+            for (unsigned short i = 0; i < styles->count_styles; ++i) {
+                callbacks = callbacks || styles->supported_styles[i] == (XIMPreeditCallbacks | XIMStatusNothing);
+            }
+            XFree(styles);
+        }
+        if (callbacks) {
+            m_preeditStart.client_data = reinterpret_cast<XPointer>(this);
+            m_preeditStart.callback = imProc(&WindowX11::preeditStart);
+            m_preeditDone.client_data = reinterpret_cast<XPointer>(this);
+            m_preeditDone.callback = imProc(&WindowX11::preeditDone);
+            m_preeditDraw.client_data = reinterpret_cast<XPointer>(this);
+            m_preeditDraw.callback = imProc(&WindowX11::preeditDraw);
+            m_preeditCaret.client_data = reinterpret_cast<XPointer>(this);
+            m_preeditCaret.callback = imProc(&WindowX11::preeditCaret);
+            XVaNestedList attributes =
+                XVaCreateNestedList(0, XNPreeditStartCallback, &m_preeditStart, XNPreeditDoneCallback, &m_preeditDone,
+                                    XNPreeditDrawCallback, &m_preeditDraw, XNPreeditCaretCallback, &m_preeditCaret,
+                                    nullptr);
+            m_ic = XCreateIC(im, XNInputStyle, XIMPreeditCallbacks | XIMStatusNothing, XNClientWindow, m_window,
+                             XNFocusWindow, m_window, XNPreeditAttributes, attributes, nullptr);
+            XFree(attributes);
+        }
+        if (!m_ic) {
+            m_ic = XCreateIC(im, XNInputStyle, XIMPreeditNothing | XIMStatusNothing, XNClientWindow, m_window,
+                             XNFocusWindow, m_window, nullptr);
+        }
+    }
+
+    // Where the caret is: the input method puts its candidates there. No
+    // area: the input method loses focus, so keys stay keys.
+    void setTextInputArea(const std::optional<RectF> &caret) override {
+        m_textInput = caret.has_value();
+        if (!m_ic) {
+            return;
+        }
+        if (caret) {
+            XPoint spot{short(std::lround(caret->x * m_scale)), short(std::lround(caret->bottom() * m_scale))};
+            XVaNestedList attributes = XVaCreateNestedList(0, XNSpotLocation, &spot, nullptr);
+            XSetICValues(m_ic, XNPreeditAttributes, attributes, nullptr);
+            XFree(attributes);
+            if (m_focused) {
+                XSetICFocus(m_ic);
+            }
+        } else {
+            if (!m_preedit.text().empty()) {
+                XFree(Xutf8ResetIC(m_ic)); // drop what was being composed
+                m_preedit.clear();
+                composition.emit(CompositionEvent{});
+            }
+            XUnsetICFocus(m_ic);
+        }
     }
 
     ~WindowX11() override {
@@ -381,8 +470,61 @@ private:
 
     Vec2 logical(int x, int y) const { return {float(x) / m_scale, float(y) / m_scale}; }
 
+    // XIM on-the-spot callbacks (Xlib calls them with the IC, our window and
+    // the call data).
+    static int preeditStart(XIC, XPointer self, XPointer) {
+        reinterpret_cast<WindowX11 *>(self)->m_preedit.clear();
+        return -1; // no length limit
+    }
+    static void preeditDone(XIC, XPointer self, XPointer) {
+        auto *window = reinterpret_cast<WindowX11 *>(self);
+        window->m_preedit.clear();
+        window->composition.emit(CompositionEvent{});
+    }
+    static void preeditDraw(XIC, XPointer self, XIMPreeditDrawCallbackStruct *call) {
+        auto *window = reinterpret_cast<WindowX11 *>(self);
+        std::u32string insert;
+        if (call->text) {
+            if (call->text->encoding_is_wchar) {
+                for (unsigned short i = 0; call->text->string.wide_char && i < call->text->length; ++i) {
+                    insert.push_back(char32_t(call->text->string.wide_char[i]));
+                }
+            } else if (call->text->string.multi_byte) {
+                // The locale is UTF-8 (connect() makes it so).
+                const StringView bytes(call->text->string.multi_byte);
+                for (std::size_t i = 0; i < bytes.size();) {
+                    const Utf8Char c = decodeUtf8At(bytes, i);
+                    insert.push_back(c.codepoint);
+                    i += c.length;
+                }
+            }
+        }
+        window->m_preedit.draw(call->chg_first, call->chg_length, insert, call->caret);
+        window->composition.emit(window->m_preedit.event());
+    }
+    static void preeditCaret(XIC, XPointer self, XIMPreeditCaretCallbackStruct *call) {
+        auto *window = reinterpret_cast<WindowX11 *>(self);
+        switch (call->direction) {
+        case XIMForwardChar: window->m_preedit.moveCaret(1); break;
+        case XIMBackwardChar: window->m_preedit.moveCaret(-1); break;
+        case XIMLineStart: window->m_preedit.setCaret(0); break;
+        case XIMLineEnd: window->m_preedit.setCaret(int(window->m_preedit.text().size())); break;
+        case XIMAbsolutePosition: window->m_preedit.setCaret(call->position); break;
+        default: break;
+        }
+        call->position = int(window->m_preedit.caret());
+        window->composition.emit(window->m_preedit.event());
+    }
+
     ::Window m_window;
     XIC m_ic;
+    XIMCallback m_preeditStart{};
+    XIMCallback m_preeditDone{};
+    XIMCallback m_preeditDraw{};
+    XIMCallback m_preeditCaret{};
+    detail::Preedit m_preedit;
+    bool m_textInput = true; // until told otherwise
+    bool m_focused = false;
     float m_scale;
     Vec2i m_size;
     std::vector<std::uint32_t> m_frame;
@@ -437,10 +579,12 @@ void WindowX11::handle(XEvent &event) {
         }
         break;
     case FocusIn:
-        if (m_ic) XSetICFocus(m_ic);
+        m_focused = true;
+        if (m_ic && m_textInput) XSetICFocus(m_ic);
         focusChanged.emit(true);
         break;
     case FocusOut:
+        m_focused = false;
         if (m_ic) XUnsetICFocus(m_ic);
         focusChanged.emit(false);
         break;
@@ -698,10 +842,7 @@ Result<std::unique_ptr<Window>> Window::create(const WindowOptions &options) {
         XSetWMNormalHints(display, window, hints);
         XFree(hints);
     }
-    XIC ic = c.im ? XCreateIC(c.im, XNInputStyle, XIMPreeditNothing | XIMStatusNothing, XNClientWindow, window,
-                              XNFocusWindow, window, nullptr)
-                  : nullptr;
-    auto result = std::make_unique<WindowX11>(window, ic, scale, size);
+    auto result = std::make_unique<WindowX11>(window, scale, size);
     result->setTitle(options.title);
     if (options.visible) {
         result->show();

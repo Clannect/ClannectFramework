@@ -133,8 +133,12 @@ public:
     bool onPointer(const PointerEvent &event) override;
     bool onKey(const KeyEvent &event) override;
     bool onText(const TextEvent &event) override;
+    bool onComposition(const CompositionEvent &event) override;
+    [[nodiscard]] std::optional<RectF> textInputArea() const override;
     void onFocusChanged(bool focused) override;
     void onHoverChanged(bool hovered) override;
+    // What an input method is composing (shown underlined at the caret).
+    [[nodiscard]] String composition() const;
 
 protected:
     Vec2 measureContent(Vec2 available) override;
@@ -151,8 +155,13 @@ private:
     [[nodiscard]] std::size_t indexAt(float x);
     void relayout();
     [[nodiscard]] float textLeft() const;
+    // The caret in the laid-out text (inside the composition while composing).
+    [[nodiscard]] std::size_t shownCaret() const noexcept;
+    void clearComposition();
 
     std::u32string m_text;
+    std::u32string m_composition;       // an input method's, not yet committed
+    std::size_t m_compositionCursor = 0; // in code points
     String m_placeholder;
     std::size_t m_caret = 0;
     std::size_t m_anchor = 0;

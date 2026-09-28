@@ -117,6 +117,12 @@ public:
     // would take them, and on Drop when it took them. Default: refuses (the
     // surface then asks the parent).
     virtual bool onDrop(const DropEvent &event);
+    // An input method's composition, sent to the focused element: return
+    // true when it shows it.
+    virtual bool onComposition(const CompositionEvent &event);
+    // Where text is being edited, in surface coordinates (the caret), when
+    // the element has focus; nothing for elements that take no text.
+    [[nodiscard]] virtual std::optional<RectF> textInputArea() const;
     virtual void onHoverChanged(bool hovered);
     virtual void onPressedChanged(bool pressed);
     virtual void onFocusChanged(bool focused);

@@ -512,6 +512,19 @@ void Surface::scheduleToolTip() {
 
 // ---- Input ---------------------------------------------------------------------
 
+bool Surface::dispatch(const CompositionEvent &event) {
+    m_closed.clear();
+    layout();
+    return m_focus && acceptsInput(m_focus) && m_focus->onComposition(event);
+}
+
+std::optional<RectF> Surface::textInputArea() const {
+    if (!m_focus || !m_focus->isVisible() || !m_focus->isEnabled()) {
+        return std::nullopt;
+    }
+    return m_focus->textInputArea();
+}
+
 bool Surface::dispatch(const DropEvent &event) {
     m_closed.clear();
     layout();

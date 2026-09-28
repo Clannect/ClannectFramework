@@ -16,6 +16,7 @@
 #if defined(_WIN32)
 // Win32DropPoster.cpp: posts WM_DROPFILES as the shell does.
 bool postFileDrop(void *hwnd, const std::vector<std::u16string> &paths, int x, int y);
+bool imeCompose(void *hwnd, std::u16string text, bool commit);
 #endif
 
 using namespace cfw;
@@ -127,6 +128,25 @@ int main() {
             check(drops[0].position.x > 0.0f && drops[0].position.y > 0.0f, "at the drop point");
         }
         window->setDropHandler({});
+    }
+
+    // An input method composing in the window: the composition arrives as
+    // it changes, and the committed text as ordinary text.
+    {
+        std::vector<CompositionEvent> compositions;
+        std::vector<String> typed;
+        ScopedConnection onComposition = window->composition.connect([&](const CompositionEvent &e) { compositions.push_back(e); });
+        ScopedConnection onText = window->text.connect([&](const TextEvent &e) { typed.push_back(e.text); });
+        window->setTextInputArea(RectF{20, 10, 1, 18});
+        check(imeCompose(window->nativeHandle(), u"\u306b\u307b\u3093", false), "the window has an input context");
+        pumpUntil([&] { return !compositions.empty(); });
+        check(!compositions.empty() && compositions.back().text == "\u306b\u307b\u3093",
+              "the composition arrives while composing");
+        imeCompose(window->nativeHandle(), u"\u65e5\u672c", true);
+        pumpUntil([&] { return !typed.empty(); });
+        check(typed.size() == 1 && typed[0] == "\u65e5\u672c", "the committed text arrives once, as text");
+        check(!compositions.empty() && compositions.back().text.empty(), "and the composition ends");
+        window->setTextInputArea(std::nullopt);
     }
 #endif
 
