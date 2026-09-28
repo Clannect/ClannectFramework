@@ -9,6 +9,9 @@
 #include <windows.h>
 #include <shlobj.h>
 
+#include <filesystem>
+#include <string>
+
 #include "cfw/io/StandardPaths.h"
 
 namespace cfw {
@@ -58,5 +61,20 @@ Result<Path> cacheDirectory(const AppIdentity &app) {
 Result<Path> documentsDirectory() { return knownFolder(FOLDERID_Documents, "Documents"); }
 
 Result<Path> homeDirectory() { return knownFolder(FOLDERID_Profile, "Profile"); }
+
+Result<Path> executablePath() {
+    std::wstring buffer(MAX_PATH, L'\0');
+    for (;;) {
+        const DWORD length = GetModuleFileNameW(nullptr, buffer.data(), DWORD(buffer.size()));
+        if (length == 0) {
+            return Error(ErrorCode::NotFound, "executable path unknown");
+        }
+        if (length < buffer.size()) {
+            buffer.resize(length);
+            return Path(std::filesystem::path(buffer));
+        }
+        buffer.resize(buffer.size() * 2); // truncated: a longer path
+    }
+}
 
 } // namespace cfw

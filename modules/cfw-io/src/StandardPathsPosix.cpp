@@ -3,6 +3,13 @@
 #include <pwd.h>
 #include <unistd.h>
 
+#include <cstring>
+#include <filesystem>
+#include <string>
+#if defined(__APPLE__)
+#include <mach-o/dyld.h>
+#endif
+
 #include <cstdlib>
 
 #include "cfw/io/StandardPaths.h"
@@ -36,6 +43,26 @@ Result<Path> xdg(const char *variable, const char *fallback) {
 } // namespace
 
 Result<Path> homeDirectory() { return home(); }
+
+Result<Path> executablePath() {
+#if defined(__APPLE__)
+    std::uint32_t size = 0;
+    _NSGetExecutablePath(nullptr, &size);
+    std::string buffer(size, '\0');
+    if (_NSGetExecutablePath(buffer.data(), &size) != 0) {
+        return Error(ErrorCode::NotFound, "executable path unknown");
+    }
+    buffer.resize(std::strlen(buffer.c_str()));
+    return Path(std::filesystem::weakly_canonical(std::filesystem::path(buffer)));
+#else
+    std::error_code error;
+    const std::filesystem::path self = std::filesystem::read_symlink("/proc/self/exe", error);
+    if (error) {
+        return Error(ErrorCode::NotFound, "executable path unknown");
+    }
+    return Path(self);
+#endif
+}
 
 #if defined(__APPLE__)
 

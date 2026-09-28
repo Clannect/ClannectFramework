@@ -2,6 +2,8 @@
 // limits, directories, mapping, standard paths, settings and the watcher.
 
 #include "cfw/io/Environment.h"
+
+#include <cstdlib>
 #include "cfw/io/FileSystem.h"
 #include "cfw/io/FileWatcher.h"
 #include "cfw/io/MappedFile.h"
@@ -189,8 +191,31 @@ void readsEnvironmentVariables() {
     check(!environmentVariable("CFW_ENV_TEST_UNSET_1234").has_value(), "unset variable is nothing");
 }
 
+void setsEnvironmentVariables() {
+    check(setEnvironmentVariable("CFW_TEST_SET", "caf\xc3\xa9 = ok"), "a variable is set");
+    check(environmentVariable("CFW_TEST_SET") == String("caf\xc3\xa9 = ok"), "and reads back, UTF-8 intact");
+    const char *crt = std::getenv("CFW_TEST_SET");
+    check(crt != nullptr, "the C runtime sees it too");
+    check(setEnvironmentVariable("CFW_TEST_SET", "second"), "set again");
+    check(environmentVariable("CFW_TEST_SET") == String("second"), "replaces the value");
+    check(!setEnvironmentVariable("", "x"), "an empty name is refused");
+    check(!setEnvironmentVariable("A=B", "x"), "a name with '=' is refused");
+}
+
+void findsTheExecutable() {
+    auto self = executablePath();
+    check(bool(self), "the executable's path is known");
+    if (self) {
+        check(self.value().isAbsolute(), "absolute");
+        check(self.value().stem().find("FileSystemTest") != String::npos, "and it is this test");
+        check(isFile(self.value()), "and it exists");
+    }
+}
+
 int main() {
     readsEnvironmentVariables();
+    setsEnvironmentVariables();
+    findsTheExecutable();
     atomicSaveReplacesAndLeavesNoDebris();
     unicodePathsWork();
     readsEnforceLimitsAndEncoding();

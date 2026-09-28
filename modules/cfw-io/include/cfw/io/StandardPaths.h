@@ -31,5 +31,7 @@ struct AppIdentity {
 [[nodiscard]] Result<Path> cacheDirectory(const AppIdentity &app);
 [[nodiscard]] Result<Path> documentsDirectory();
 [[nodiscard]] Result<Path> homeDirectory();
+// The running program's own file (QCoreApplication::applicationFilePath).
+[[nodiscard]] Result<Path> executablePath();
 
 } // namespace cfw

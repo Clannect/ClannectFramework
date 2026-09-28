@@ -42,4 +42,24 @@ std::optional<String> environmentVariable(StringView name) {
 #endif
 }
 
+bool setEnvironmentVariable(StringView name, StringView value) {
+    if (name.empty() || name.find('=') != StringView::npos) {
+        return false;
+    }
+#ifdef _WIN32
+    const Result<std::u16string> wideName = utf8ToUtf16(name);
+    const Result<std::u16string> wideValue = utf8ToUtf16(value);
+    if (!wideName || !wideValue) {
+        return false;
+    }
+    const auto *key = reinterpret_cast<const wchar_t *>(wideName.value().c_str());
+    const auto *text = reinterpret_cast<const wchar_t *>(wideValue.value().c_str());
+    // Both the process environment and the C runtime's copy, so getenv and
+    // child processes agree.
+    return SetEnvironmentVariableW(key, text) != 0 && _wputenv_s(key, text) == 0;
+#else
+    return ::setenv(String(name).c_str(), String(value).c_str(), 1) == 0;
+#endif
+}
+
 } // namespace cfw
