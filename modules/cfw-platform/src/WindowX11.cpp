@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "PixelCopy.h"
+#include "X11Internal.h"
 #include "cfw/image/Image.h"
 #include "cfw/platform/Window.h"
 
@@ -468,6 +469,8 @@ Result<std::unique_ptr<Window>> Window::create(const WindowOptions &options) {
     }
     return std::unique_ptr<Window>(std::move(result));
 }
+
+void *detail::x11Display() { return connection().display; }
 
 bool processEvents(Duration maxWait) {
     X11Connection &c = connection();
