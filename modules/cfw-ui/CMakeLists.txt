@@ -10,6 +10,7 @@ cfw_add_module(cfw-ui
         src/Dock.cpp
         src/Element.cpp
         src/Icon.cpp
+        src/PropertyGrid.cpp
         src/ScrollArea.cpp
         src/Shortcut.cpp
         src/Surface.cpp
@@ -28,4 +29,5 @@ if(CFW_BUILD_TESTS)
     cfw_add_test(cfw-ui ChromeTest)
     cfw_add_test(cfw-ui TreeEditTest)
     cfw_add_test(cfw-ui DockTest)
+    cfw_add_test(cfw-ui PropertyGridTest)
 endif()
