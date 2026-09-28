@@ -70,6 +70,11 @@ public:
     // Asks for a repaintRequested signal from the next processEvents().
     virtual void requestRepaint() = 0;
     virtual void setCursor(Cursor cursor) = 0;
+    // Moves the pointer to `position` (logical pixels in the client area), as
+    // a camera that turns with the mouse does to keep it from reaching the
+    // screen's edge. The move arrives as an ordinary pointer event. Does
+    // nothing where the platform cannot.
+    virtual void setPointerPosition(Vec2 position) { (void)position; }
     // HWND on Windows, the X11 Window id on X11 (for embedding WebView2 and
     // for GL context creation).
     [[nodiscard]] virtual void *nativeHandle() const = 0;

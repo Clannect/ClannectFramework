@@ -251,6 +251,13 @@ public:
         SetCursor(cursor == Cursor::Hidden ? nullptr : LoadCursorW(nullptr, cursorId(cursor)));
     }
 
+    void setPointerPosition(Vec2 position) override {
+        const float ratio = devicePixelRatio();
+        POINT point{LONG(std::lround(position.x * ratio)), LONG(std::lround(position.y * ratio))};
+        ClientToScreen(m_hwnd, &point);
+        SetCursorPos(point.x, point.y);
+    }
+
     void *nativeHandle() const override { return m_hwnd; }
 
     LRESULT handle(UINT message, WPARAM wParam, LPARAM lParam);

@@ -268,6 +268,13 @@ public:
         XDefineCursor(display, m_window, it->second);
     }
 
+    void setPointerPosition(Vec2 position) override {
+        Display *display = connection().display;
+        XWarpPointer(display, None, m_window, 0, 0, 0, 0, int(std::lround(position.x * m_scale)),
+                     int(std::lround(position.y * m_scale)));
+        XFlush(display);
+    }
+
     void *nativeHandle() const override { return reinterpret_cast<void *>(m_window); }
 
     // ---- Event handling (called by processEvents) ----

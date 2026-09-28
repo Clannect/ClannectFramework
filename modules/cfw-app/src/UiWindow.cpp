@@ -19,6 +19,7 @@ Result<std::unique_ptr<UiWindow>> UiWindow::create(const WindowOptions &options,
 
 UiWindow::UiWindow(std::unique_ptr<Window> window, Theme theme) : m_window(std::move(window)), m_surface(std::move(theme)) {
     m_surface.readClipboard = [] { return clipboardText(); };
+    m_surface.movePointer = [this](Vec2 position) { m_window->setPointerPosition(position); };
     m_surface.writeClipboard = [](StringView text) { setClipboardText(text); };
     resize(m_window->pixelSize());
     m_connections.push_back(m_window->pointer.connect([this](const PointerEvent &e) {

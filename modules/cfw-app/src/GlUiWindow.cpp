@@ -119,6 +119,7 @@ Result<std::unique_ptr<GlUiWindow>> GlUiWindow::create(const WindowOptions &opti
 GlUiWindow::GlUiWindow(std::unique_ptr<Window> window, std::unique_ptr<GlContext> context, Theme theme)
     : m_window(std::move(window)), m_context(std::move(context)), m_surface(std::move(theme)) {
     m_surface.readClipboard = [] { return clipboardText(); };
+    m_surface.movePointer = [this](Vec2 position) { m_window->setPointerPosition(position); };
     m_surface.writeClipboard = [](StringView text) { setClipboardText(text); };
     m_connections.push_back(m_window->pointer.connect([this](const PointerEvent &e) {
         m_surface.dispatch(e);

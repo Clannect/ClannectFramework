@@ -121,6 +121,10 @@ public:
     [[nodiscard]] String clipboardText() const;
     void setClipboardText(StringView text);
 
+    // Moves the pointer (surface coordinates), supplied by the platform
+    // window. Unset, nothing happens.
+    std::function<void(Vec2)> movePointer;
+
 private:
     friend class Element;
     void layoutInvalidated() noexcept { m_layoutDirty = true; }
