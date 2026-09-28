@@ -50,4 +50,9 @@ if(CFW_BUILD_TESTS)
     cfw_add_test(cfw-core PropertyTest)
     cfw_add_test(cfw-core EncodingTest)
     cfw_add_test(cfw-core RuntimeSupportTest)
+    cfw_add_test(cfw-core ResourceEmbedTest)
+    cfw_embed_resources(ResourceEmbedTest FUNCTION testResource NAMESPACE cfwtest BASE tests/data
+                        FILES tests/data/embedded/note.txt tests/data/embedded/random.bin)
+    target_compile_definitions(ResourceEmbedTest PRIVATE
+        CFW_EMBED_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/data")
 endif()
