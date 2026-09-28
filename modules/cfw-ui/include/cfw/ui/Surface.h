@@ -15,12 +15,14 @@
 //
 // Threads: one thread.
 
+#include <map>
 #include <functional>
 #include <memory>
 #include <vector>
 
 #include "cfw/core/Clock.h"
 #include "cfw/core/Rect.h"
+#include "cfw/core/Signal.h"
 #include "cfw/ui/Element.h"
 #include "cfw/ui/Shortcut.h"
 #include "cfw/ui/Theme.h"
@@ -135,8 +137,29 @@ public:
     // window. Unset, nothing happens.
     std::function<void(Vec2)> movePointer;
 
+    // ---- Accessibility ----
+    // The tree assistive technology sees: the window (id 1, named
+    // `accessibleTitle`), the element tree with anonymous containers left
+    // out, and the open popups and dialogs after it. Hidden elements are not
+    // in it. Built on request.
+    [[nodiscard]] AccessibleNode accessibilityTree();
+    // Performs `action` on the node `id`; false if it is gone or refused.
+    bool performAccessibleAction(std::uint64_t id, AccessibleAction action, StringView value = {});
+    // The node with the keyboard (an element, or its focused item); 0: none.
+    [[nodiscard]] std::uint64_t accessibleFocus();
+    // Emitted with the new node when the keyboard moves (only while
+    // someone is connected: the check costs nothing otherwise).
+    Signal<std::uint64_t> accessibleFocusChanged;
+    String accessibleTitle;
+
 private:
     friend class Element;
+    friend struct AccessibleFocusWatch;
+    void describeTree(Element &element, std::vector<AccessibleNode> &out,
+                      std::map<std::pair<std::uint64_t, std::uint64_t>, std::uint64_t> &seen);
+    std::uint64_t itemId(std::uint64_t element, std::uint64_t key);
+    Element *findAccessible(Element &from, std::uint64_t id);
+    void checkAccessibleFocus();
     void layoutInvalidated() noexcept { m_layoutDirty = true; }
     void addDamage(const RectF &rect);
     void elementRemoved(Element &element);
@@ -164,6 +187,10 @@ private:
         PopupOptions options;
     };
     std::vector<Popup> m_popups;
+    // Accessible ids of items, per (element id, item key).
+    std::map<std::pair<std::uint64_t, std::uint64_t>, std::uint64_t> m_itemIds;
+    std::uint64_t m_nextItemId = std::uint64_t(1) << 62;
+    std::uint64_t m_lastAccessibleFocus = 0;
     // Closed popups live until the next event or layout: a popup is often
     // closed from inside one of its own callbacks.
     std::vector<std::unique_ptr<Element>> m_closed;

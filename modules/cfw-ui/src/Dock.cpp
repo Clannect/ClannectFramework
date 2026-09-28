@@ -79,7 +79,7 @@ public:
 
 DockPanel::DockPanel(String id, String title, std::unique_ptr<Element> content)
     : m_id(std::move(id)), m_title(std::move(title)) {
-    setRole(Role::Group);
+    setRole(Role::Pane);
     setAccessibleName(m_title);
     setClipsChildren(true);
     m_actions = &add<Stack>(Stack::Direction::Row, 0.0f);
@@ -216,8 +216,6 @@ bool DockPanel::onPointer(const PointerEvent &event) {
 // ---- DockLayout ---------------------------------------------------------------------
 
 DockLayout::DockLayout() {
-    setRole(Role::Group);
-    setAccessibleName("docks");
 }
 
 Element &DockLayout::setCentral(std::unique_ptr<Element> central) {

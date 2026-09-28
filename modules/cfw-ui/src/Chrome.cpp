@@ -35,9 +35,7 @@ String withoutMnemonic(StringView text) {
 
 // ---- Panel and Separator ---------------------------------------------------------
 
-Panel::Panel(Direction direction, float spacing, float padding) : Stack(direction, spacing, padding) {
-    setRole(Role::Group);
-}
+Panel::Panel(Direction direction, float spacing, float padding) : Stack(direction, spacing, padding) {}
 
 void Panel::setBorder(Border border) {
     m_border = border;
@@ -67,7 +65,7 @@ void Panel::paint(Painter &painter, const Theme &theme) {
     }
 }
 
-Separator::Separator(Stack::Direction along) : m_along(along) { setAccessibleName("separator"); }
+Separator::Separator(Stack::Direction along) : m_along(along) { setRole(Role::Separator); }
 
 Vec2 Separator::measureContent(Vec2) {
     return m_along == Stack::Direction::Row ? Vec2{1.0f, 0.0f} : Vec2{0.0f, 1.0f};
@@ -88,7 +86,7 @@ void Separator::paint(Painter &painter, const Theme &theme) {
 
 ToolBar::ToolBar() : Panel(Direction::Row, 2.0f, 4.0f) {
     setBorder(Border::Bottom);
-    setAccessibleName("toolbar");
+    setRole(Role::ToolBar);
 }
 
 Button &ToolBar::addButton(Icon icon, String toolTip, std::function<void()> action) {
@@ -119,8 +117,7 @@ void ToolBar::addSpacer() { add<Element>().setStretch(1.0f); }
 
 MenuBar::MenuBar() : Panel(Direction::Row, 0.0f, 0.0f) {
     setBorder(Border::Bottom);
-    setRole(Role::Menu);
-    setAccessibleName("menu bar");
+    setRole(Role::MenuBar);
 }
 
 void MenuBar::addMenu(String title, std::function<void(Menu &)> fill) {
@@ -256,7 +253,7 @@ bool MenuBar::onPointer(const PointerEvent &event) {
 Slider::Slider(double minimum, double maximum, double value)
     : m_minimum(std::min(minimum, maximum)), m_maximum(std::max(minimum, maximum)),
       m_value(std::clamp(value, m_minimum, m_maximum)) {
-    setRole(Role::Group);
+    setRole(Role::Slider);
     setAccessibleName("slider");
     setFocusable(true);
 }
@@ -369,7 +366,7 @@ bool Slider::onKey(const KeyEvent &event) {
 // ---- ProgressBar ---------------------------------------------------------------------
 
 ProgressBar::ProgressBar() {
-    setRole(Role::Group);
+    setRole(Role::ProgressBar);
     setAccessibleName("progress");
 }
 

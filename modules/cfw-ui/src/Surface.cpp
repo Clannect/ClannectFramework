@@ -353,7 +353,22 @@ void Surface::setHovered(Element *element) {
     }
 }
 
+// Checks, when a dispatch or focus change is over, whether the node with
+// the keyboard changed, and says so to whoever listens.
+struct AccessibleFocusWatch {
+    explicit AccessibleFocusWatch(Surface &s) : surface(s) {}
+    ~AccessibleFocusWatch() {
+        if (surface.accessibleFocusChanged.connectionCount() > 0) {
+            surface.checkAccessibleFocus();
+        }
+    }
+    AccessibleFocusWatch(const AccessibleFocusWatch &) = delete;
+    AccessibleFocusWatch &operator=(const AccessibleFocusWatch &) = delete;
+    Surface &surface;
+};
+
 void Surface::setFocus(Element *element) {
+    const AccessibleFocusWatch watch(*this);
     if (element == m_focus) {
         return;
     }
@@ -513,6 +528,7 @@ void Surface::scheduleToolTip() {
 // ---- Input ---------------------------------------------------------------------
 
 bool Surface::dispatch(const CompositionEvent &event) {
+    const AccessibleFocusWatch watch(*this);
     m_closed.clear();
     layout();
     return m_focus && acceptsInput(m_focus) && m_focus->onComposition(event);
@@ -526,6 +542,7 @@ std::optional<RectF> Surface::textInputArea() const {
 }
 
 bool Surface::dispatch(const DropEvent &event) {
+    const AccessibleFocusWatch watch(*this);
     m_closed.clear();
     layout();
     const auto leaveTarget = [this, &event] {
@@ -576,6 +593,7 @@ bool Surface::dispatch(const DropEvent &event) {
 }
 
 bool Surface::dispatch(const PointerEvent &event) {
+    const AccessibleFocusWatch watch(*this);
     m_closed.clear();
     layout();
     if (event.type == PointerEvent::Type::Leave) {
@@ -655,6 +673,7 @@ bool Surface::dispatch(const PointerEvent &event) {
 }
 
 bool Surface::dispatch(const KeyEvent &event) {
+    const AccessibleFocusWatch watch(*this);
     m_closed.clear();
     if (event.type == KeyEvent::Type::Press) {
         hideToolTip();
@@ -693,6 +712,7 @@ bool Surface::dispatch(const KeyEvent &event) {
 }
 
 bool Surface::dispatch(const TextEvent &event) {
+    const AccessibleFocusWatch watch(*this);
     m_closed.clear();
     for (Element *e = m_focus; e; e = e->parent()) {
         if (e->onText(event)) {
@@ -700,6 +720,120 @@ bool Surface::dispatch(const TextEvent &event) {
         }
     }
     return false;
+}
+
+// ---- Accessibility ----
+
+std::uint64_t Surface::itemId(std::uint64_t element, std::uint64_t key) {
+    const auto [it, inserted] = m_itemIds.try_emplace({element, key}, 0);
+    if (inserted) {
+        it->second = m_nextItemId++;
+    }
+    return it->second;
+}
+
+void Surface::describeTree(Element &element, std::vector<AccessibleNode> &out,
+                           std::map<std::pair<std::uint64_t, std::uint64_t>, std::uint64_t> &seen) {
+    if (!element.isVisible()) {
+        return;
+    }
+    AccessibleNode node;
+    node.id = element.accessibleId();
+    node.bounds = element.rect();
+    element.describeAccessible(node);
+    const bool anonymous = node.role == Role::None && node.name.empty();
+    std::vector<AccessibleNode> &children = anonymous ? out : node.children;
+    for (const auto &child : element.children()) {
+        describeTree(*child, children, seen);
+    }
+    std::vector<AccessibleNode> items;
+    element.accessibleItems(items);
+    for (AccessibleNode &item : items) {
+        const std::pair key{element.accessibleId(), item.itemKey};
+        item.id = itemId(key.first, key.second);
+        seen[key] = item.id;
+        children.push_back(std::move(item));
+    }
+    if (!anonymous) {
+        out.push_back(std::move(node));
+    }
+}
+
+AccessibleNode Surface::accessibilityTree() {
+    layout();
+    AccessibleNode window;
+    window.id = 1;
+    window.role = Role::Window;
+    window.name = accessibleTitle;
+    window.bounds = {0, 0, m_size.x, m_size.y};
+    std::map<std::pair<std::uint64_t, std::uint64_t>, std::uint64_t> seen;
+    describeTree(*m_root, window.children, seen);
+    for (const Popup &popup : m_popups) {
+        if (popup.options.takesInput) {
+            describeTree(*popup.element, window.children, seen);
+        }
+    }
+    // Items no longer shown lose their ids (the focused one keeps its own).
+    if (m_focus) {
+        if (const std::optional<std::uint64_t> item = m_focus->accessibleFocusedItem()) {
+            seen[{m_focus->accessibleId(), *item}] = itemId(m_focus->accessibleId(), *item);
+        }
+    }
+    m_itemIds = std::move(seen);
+    return window;
+}
+
+Element *Surface::findAccessible(Element &from, std::uint64_t id) {
+    if (from.accessibleId() == id) {
+        return &from;
+    }
+    for (const auto &child : from.children()) {
+        if (Element *found = findAccessible(*child, id)) {
+            return found;
+        }
+    }
+    return nullptr;
+}
+
+bool Surface::performAccessibleAction(std::uint64_t id, AccessibleAction action, StringView value) {
+    const AccessibleFocusWatch watch(*this);
+    m_closed.clear();
+    layout();
+    std::uint64_t elementId = id;
+    std::optional<std::uint64_t> item;
+    for (const auto &[key, itemNode] : m_itemIds) {
+        if (itemNode == id) {
+            elementId = key.first;
+            item = key.second;
+            break;
+        }
+    }
+    Element *element = findAccessible(*m_root, elementId);
+    for (std::size_t i = 0; !element && i < m_popups.size(); ++i) {
+        element = findAccessible(*m_popups[i].element, elementId);
+    }
+    if (!element || !element->isVisible() || !element->isEnabled() || !acceptsInput(element)) {
+        return false;
+    }
+    return element->accessibleAction(action, item, value);
+}
+
+std::uint64_t Surface::accessibleFocus() {
+    if (!m_focus) {
+        return 0;
+    }
+    if (const std::optional<std::uint64_t> item = m_focus->accessibleFocusedItem()) {
+        return itemId(m_focus->accessibleId(), *item);
+    }
+    return m_focus->accessibleId();
+}
+
+void Surface::checkAccessibleFocus() {
+    const std::uint64_t focus = accessibleFocus();
+    if (focus != m_lastAccessibleFocus) {
+        m_lastAccessibleFocus = focus;
+        accessibleFocusChanged.emit(focus);
+    }
 }
 
 } // namespace cfw

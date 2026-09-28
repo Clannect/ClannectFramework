@@ -15,6 +15,8 @@ cfw_add_module(cfw-ui
         src/ScrollArea.cpp
         src/Shortcut.cpp
         src/Surface.cpp
+        src/Accessibility.cpp
+        src/AccessibleControls.cpp
         src/TextField.cpp
         src/Views.cpp
         src/Theme.cpp
@@ -34,4 +36,5 @@ if(CFW_BUILD_TESTS)
     cfw_add_test(cfw-ui DialogTest)
     cfw_add_test(cfw-ui DropTest)
     cfw_add_test(cfw-ui CompositionTest)
+    cfw_add_test(cfw-ui AccessibilityTest)
 endif()

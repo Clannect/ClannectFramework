@@ -60,6 +60,8 @@ public:
     void setExpanded(bool expanded);
     [[nodiscard]] bool isExpanded() const noexcept { return m_expanded; }
     Signal<bool> expandedChanged;
+    void describeAccessible(AccessibleNode &node) const override;
+    bool accessibleAction(AccessibleAction action, std::optional<std::uint64_t> item, StringView value) override;
 
     void paint(Painter &painter, const Theme &theme) override;
     bool onPointer(const PointerEvent &event) override;

@@ -256,8 +256,8 @@ bool PropertySection::onPointer(const PointerEvent &event) {
 // ---- PropertyGrid ------------------------------------------------------------------------
 
 PropertyGrid::PropertyGrid() {
-    setRole(Role::List);
-    setAccessibleName("properties");
+    setRole(Role::ScrollArea);
+    setAccessibleName("Properties");
     setContent<Stack>(Stack::Direction::Column, 0.0f);
 }
 

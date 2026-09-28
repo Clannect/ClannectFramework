@@ -503,7 +503,7 @@ bool Menu::onKey(const KeyEvent &event) {
 // ---- Dropdown --------------------------------------------------------------------
 
 Dropdown::Dropdown(std::vector<String> items, int current) : m_items(std::move(items)) {
-    setRole(Role::Button);
+    setRole(Role::ComboBox);
     setFocusable(true);
     setCurrentIndex(current);
 }

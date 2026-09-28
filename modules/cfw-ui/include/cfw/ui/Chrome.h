@@ -67,6 +67,9 @@ public:
     // Opens menu `index` (keyboard: focuses its first item).
     void openMenu(std::size_t index, bool fromKeyboard = false);
     [[nodiscard]] std::ptrdiff_t openIndex() const noexcept { return m_open; }
+    void describeAccessible(AccessibleNode &node) const override;
+    void accessibleItems(std::vector<AccessibleNode> &items) const override;
+    bool accessibleAction(AccessibleAction action, std::optional<std::uint64_t> item, StringView value) override;
 
     void paint(Painter &painter, const Theme &theme) override;
     bool onPointer(const PointerEvent &event) override;
@@ -102,6 +105,8 @@ public:
     [[nodiscard]] double minimum() const noexcept { return m_minimum; }
     [[nodiscard]] double maximum() const noexcept { return m_maximum; }
     Signal<double> valueChanged;
+    void describeAccessible(AccessibleNode &node) const override;
+    bool accessibleAction(AccessibleAction action, std::optional<std::uint64_t> item, StringView value) override;
 
     void paint(Painter &painter, const Theme &theme) override;
     bool onPointer(const PointerEvent &event) override;
@@ -132,6 +137,7 @@ public:
     [[nodiscard]] float value() const noexcept { return m_value; }
     void setBusy(bool busy);
     [[nodiscard]] bool isBusy() const noexcept { return m_busy; }
+    void describeAccessible(AccessibleNode &node) const override;
 
     void paint(Painter &painter, const Theme &theme) override;
 

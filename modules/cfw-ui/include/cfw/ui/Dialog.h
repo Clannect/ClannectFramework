@@ -33,6 +33,7 @@ public:
     // Closes the dialog; finished gets `result`.
     void finish(int result);
     Signal<int> finished;
+    void describeAccessible(AccessibleNode &node) const override;
 
     // Opens `dialog` modally over `surface`, centred.
     static Dialog &open(Surface &surface, std::unique_ptr<Dialog> dialog);
@@ -109,6 +110,8 @@ public:
     [[nodiscard]] Color color() const noexcept { return m_color; }
     void setDialogTitle(String title) { m_title = std::move(title); }
     Signal<Color> colorChanged;
+    void describeAccessible(AccessibleNode &node) const override;
+    bool accessibleAction(AccessibleAction action, std::optional<std::uint64_t> item, StringView value) override;
 
     void paint(Painter &painter, const Theme &theme) override;
     bool onPointer(const PointerEvent &event) override;

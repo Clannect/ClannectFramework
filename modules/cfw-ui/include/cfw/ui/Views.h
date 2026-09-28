@@ -65,6 +65,10 @@ public:
     // hides it.
     void setTabBadge(int index, String text, Color background, Color foreground);
     Signal<int> currentChanged;
+    void describeAccessible(AccessibleNode &node) const override;
+    void accessibleItems(std::vector<AccessibleNode> &items) const override;
+    [[nodiscard]] std::optional<std::uint64_t> accessibleFocusedItem() const override;
+    bool accessibleAction(AccessibleAction action, std::optional<std::uint64_t> item, StringView value) override;
 
     void paint(Painter &painter, const Theme &theme) override;
     bool onPointer(const PointerEvent &event) override;
@@ -203,6 +207,10 @@ public:
     Signal<const std::vector<TreeModel::Id> &, TreeModel::Id, std::ptrdiff_t> dropped;
     // The node under the pointer (kRoot: empty space) and where, in surface coordinates.
     Signal<TreeModel::Id, Vec2> contextMenuRequested;
+    void describeAccessible(AccessibleNode &node) const override;
+    void accessibleItems(std::vector<AccessibleNode> &items) const override;
+    [[nodiscard]] std::optional<std::uint64_t> accessibleFocusedItem() const override;
+    bool accessibleAction(AccessibleAction action, std::optional<std::uint64_t> item, StringView value) override;
 
     void paint(Painter &painter, const Theme &theme) override;
     bool onPointer(const PointerEvent &event) override;

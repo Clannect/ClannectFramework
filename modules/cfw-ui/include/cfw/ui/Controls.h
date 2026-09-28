@@ -24,6 +24,7 @@ public:
     [[nodiscard]] const String &text() const noexcept { return m_text; }
     void setWrap(bool wrap);
     void setMuted(bool muted); // secondary text colour
+    void describeAccessible(AccessibleNode &node) const override;
 
     void paint(Painter &painter, const Theme &theme) override;
 
@@ -65,6 +66,8 @@ public:
 
     Signal<> clicked;
     Signal<bool> toggled; // checkable buttons, after a click changed the state
+    void describeAccessible(AccessibleNode &node) const override;
+    bool accessibleAction(AccessibleAction action, std::optional<std::uint64_t> item, StringView value) override;
 
     void paint(Painter &painter, const Theme &theme) override;
     bool onPointer(const PointerEvent &event) override;
@@ -134,6 +137,8 @@ public:
     bool onKey(const KeyEvent &event) override;
     bool onText(const TextEvent &event) override;
     bool onComposition(const CompositionEvent &event) override;
+    void describeAccessible(AccessibleNode &node) const override;
+    bool accessibleAction(AccessibleAction action, std::optional<std::uint64_t> item, StringView value) override;
     [[nodiscard]] std::optional<RectF> textInputArea() const override;
     void onFocusChanged(bool focused) override;
     void onHoverChanged(bool hovered) override;
@@ -236,6 +241,8 @@ public:
     void setPartial(bool partial);
     [[nodiscard]] bool isPartial() const noexcept { return m_partial; }
     Signal<bool> toggled;
+    void describeAccessible(AccessibleNode &node) const override;
+    bool accessibleAction(AccessibleAction action, std::optional<std::uint64_t> item, StringView value) override;
 
     void paint(Painter &painter, const Theme &theme) override;
     bool onPointer(const PointerEvent &event) override;
@@ -271,6 +278,8 @@ public:
 
     bool onKey(const KeyEvent &event) override;
     bool onPointer(const PointerEvent &event) override;
+    void describeAccessible(AccessibleNode &node) const override;
+    bool accessibleAction(AccessibleAction action, std::optional<std::uint64_t> item, StringView value) override;
 
 private:
     void commit(double value);
@@ -303,6 +312,8 @@ public:
     [[nodiscard]] bool isOpen() const noexcept { return m_popup != nullptr; }
     void open();
     Signal<int> currentChanged;
+    void describeAccessible(AccessibleNode &node) const override;
+    bool accessibleAction(AccessibleAction action, std::optional<std::uint64_t> item, StringView value) override;
 
     void paint(Painter &painter, const Theme &theme) override;
     bool onPointer(const PointerEvent &event) override;
@@ -342,6 +353,8 @@ public:
     void setSubmenu(std::function<void(Menu &)> fill);
     [[nodiscard]] bool hasSubmenu() const noexcept { return static_cast<bool>(m_submenu); }
     Signal<> activated;
+    void describeAccessible(AccessibleNode &node) const override;
+    bool accessibleAction(AccessibleAction action, std::optional<std::uint64_t> item, StringView value) override;
 
     void paint(Painter &painter, const Theme &theme) override;
     bool onPointer(const PointerEvent &event) override;

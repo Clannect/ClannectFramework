@@ -37,9 +37,7 @@ void triangle(Painter &painter, Vec2 c, bool open, const Color &color) {
 
 // ---- Splitter ---------------------------------------------------------------------
 
-Splitter::Splitter(Stack::Direction direction, float ratio) : m_direction(direction), m_ratio(std::clamp(ratio, 0.0f, 1.0f)) {
-    setRole(Role::Group);
-}
+Splitter::Splitter(Stack::Direction direction, float ratio) : m_direction(direction), m_ratio(std::clamp(ratio, 0.0f, 1.0f)) {}
 
 std::optional<Cursor> Splitter::cursorAt(Vec2 position) const {
     const RectF h = handle();
@@ -135,7 +133,7 @@ bool Splitter::onPointer(const PointerEvent &event) {
 // ---- TabBar -----------------------------------------------------------------------
 
 TabBar::TabBar(std::vector<String> tabs) : m_tabs(std::move(tabs)) {
-    setRole(Role::Tab);
+    setRole(Role::TabList);
     setFocusable(true);
 }
 

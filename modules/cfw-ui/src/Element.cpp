@@ -1,6 +1,7 @@
 #include "cfw/ui/Element.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 
 #include "cfw/core/Contract.h"
@@ -9,7 +10,12 @@
 
 namespace cfw {
 
-Element::Element() = default;
+namespace {
+// 1 is the window; items get ids from their own range (Surface).
+std::atomic<std::uint64_t> gNextAccessibleId{2};
+} // namespace
+
+Element::Element() : m_accessibleId(gNextAccessibleId.fetch_add(1, std::memory_order_relaxed)) {}
 Element::~Element() = default;
 
 Element &Element::add(std::unique_ptr<Element> child) {
@@ -166,6 +172,27 @@ bool Element::onText(const TextEvent &) { return false; }
 bool Element::onDrop(const DropEvent &) { return false; }
 void Element::paintOverlay(Painter &, const Theme &) {}
 bool Element::onComposition(const CompositionEvent &) { return false; }
+
+void Element::describeAccessible(AccessibleNode &node) const {
+    node.role = m_role;
+    node.name = m_accessibleName;
+    node.description = m_toolTip;
+    node.states.focusable = m_focusable;
+    node.states.focused = hasFocus();
+    node.states.disabled = !isEnabled();
+}
+
+void Element::accessibleItems(std::vector<AccessibleNode> &) const {}
+
+std::optional<std::uint64_t> Element::accessibleFocusedItem() const { return std::nullopt; }
+
+bool Element::accessibleAction(AccessibleAction action, std::optional<std::uint64_t> item, StringView) {
+    if (action == AccessibleAction::Focus && !item && m_focusable && isEnabled() && surface()) {
+        surface()->setFocus(this);
+        return true;
+    }
+    return false;
+}
 std::optional<RectF> Element::textInputArea() const { return std::nullopt; }
 void Element::onHoverChanged(bool) {}
 void Element::onPressedChanged(bool) {}
@@ -191,9 +218,7 @@ void Element::arrangeContent(const RectF &rect) {
 // ---- Stack ------------------------------------------------------------------------
 
 Stack::Stack(Direction direction, float spacing, float padding)
-    : m_direction(direction), m_spacing(spacing), m_padding(padding) {
-    setRole(Role::Group);
-}
+    : m_direction(direction), m_spacing(spacing), m_padding(padding) {}
 
 void Stack::setSpacing(float spacing) {
     m_spacing = spacing;

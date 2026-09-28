@@ -13,7 +13,7 @@ constexpr float kMinThumb = 20.0f;
 } // namespace
 
 ScrollArea::ScrollArea() {
-    setRole(Role::Group);
+    setRole(Role::ScrollArea);
     setClipsChildren(true);
 }
 

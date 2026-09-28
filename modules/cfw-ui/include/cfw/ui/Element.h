@@ -26,6 +26,7 @@
 #include "cfw/core/Span.h"
 #include "cfw/core/String.h"
 #include "cfw/core/Vec2.h"
+#include "cfw/ui/Accessibility.h"
 #include "cfw/ui/Event.h"
 
 namespace cfw {
@@ -33,10 +34,6 @@ namespace cfw {
 class Painter;
 class Surface;
 struct Theme;
-
-enum class Role : std::uint8_t {
-    None, Group, Label, Button, CheckBox, TextField, List, ListItem, Tree, TreeItem, Menu, MenuItem, Tab, Dialog,
-};
 
 class Element {
 public:
@@ -103,6 +100,22 @@ public:
     [[nodiscard]] Role role() const noexcept { return m_role; }
     void setAccessibleName(String name) { m_accessibleName = std::move(name); }
     [[nodiscard]] const String &accessibleName() const noexcept { return m_accessibleName; }
+    // Unique among the process's elements, never reused.
+    [[nodiscard]] std::uint64_t accessibleId() const noexcept { return m_accessibleId; }
+    // Fills `node` (id and bounds are already set): role, name, value,
+    // description, states, range. The default gives the role, the accessible
+    // name, the tooltip as description, and focus and enabled states;
+    // controls override it and call it first.
+    virtual void describeAccessible(AccessibleNode &node) const;
+    // Items the element draws itself (tree rows, tabs), each with an
+    // itemKey; they follow the element's child elements in its node.
+    virtual void accessibleItems(std::vector<AccessibleNode> &items) const;
+    // The item with the keyboard, while the element has focus.
+    [[nodiscard]] virtual std::optional<std::uint64_t> accessibleFocusedItem() const;
+    // Performs `action` on the element (no item) or on one of its items;
+    // `value` goes with SetValue. Returns whether it did anything. The
+    // default focuses a focusable element on Focus.
+    virtual bool accessibleAction(AccessibleAction action, std::optional<std::uint64_t> item, StringView value);
 
     // ---- For subclasses and the surface ----
     // Paints the element itself (children are painted after, by the surface).
@@ -150,6 +163,7 @@ private:
     Vec2 m_measured;
     Role m_role = Role::None;
     String m_accessibleName;
+    std::uint64_t m_accessibleId;
     String m_toolTip;
     std::optional<Cursor> m_cursor;
     bool m_visible = true;
