@@ -59,6 +59,11 @@ public:
     [[nodiscard]] const std::vector<String> &tabs() const noexcept { return m_tabs; }
     void setCurrentIndex(int index); // does not emit
     [[nodiscard]] int currentIndex() const noexcept { return m_current; }
+    // An icon before a tab's text (a null icon removes it).
+    void setTabIcon(int index, Icon icon);
+    // A small pill after a tab's text, such as a count of errors; empty text
+    // hides it.
+    void setTabBadge(int index, String text, Color background, Color foreground);
     Signal<int> currentChanged;
 
     void paint(Painter &painter, const Theme &theme) override;
@@ -71,10 +76,18 @@ protected:
     Vec2 measureContent(Vec2 available) override;
 
 private:
+    struct Badge {
+        String text;
+        Color background;
+        Color foreground;
+    };
     [[nodiscard]] std::vector<float> widths() const;
+    [[nodiscard]] float badgeWidth(std::size_t index) const;
     [[nodiscard]] int tabAt(float x) const;
     void choose(int index);
     std::vector<String> m_tabs;
+    std::vector<Icon> m_icons;   // by tab, may be shorter
+    std::vector<Badge> m_badges; // by tab, may be shorter
     int m_current = 0;
     int m_hoveredTab = -1;
 };

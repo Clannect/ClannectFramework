@@ -151,6 +151,63 @@ void TabBar::setCurrentIndex(int index) {
     invalidatePaint();
 }
 
+void TabBar::setTabIcon(int index, Icon icon) {
+    if (index < 0) {
+        return;
+    }
+    if (m_icons.size() <= std::size_t(index)) {
+        m_icons.resize(std::size_t(index) + 1);
+    }
+    m_icons[std::size_t(index)] = std::move(icon);
+    invalidateLayout();
+    invalidatePaint();
+}
+
+void TabBar::setTabBadge(int index, String text, Color background, Color foreground) {
+    if (index < 0) {
+        return;
+    }
+    if (m_badges.size() <= std::size_t(index)) {
+        m_badges.resize(std::size_t(index) + 1);
+    }
+    m_badges[std::size_t(index)] = {std::move(text), background, foreground};
+    invalidateLayout();
+    invalidatePaint();
+}
+
+namespace {
+
+constexpr float kTabIconSize = 14.0f;
+constexpr float kTabGap = 6.0f;
+constexpr float kBadgeHeight = 15.0f;
+constexpr float kBadgeTextSize = 10.0f;
+
+bool layoutBadge(TextLayout &layout, StringView text, const Theme &theme) {
+    if (!theme.font) {
+        return false;
+    }
+    TextStyle style;
+    style.font = theme.font;
+    style.pixelSize = kBadgeTextSize;
+    style.fallback = theme.fonts.get();
+    TextLayoutOptions options;
+    options.wrap = false;
+    layout.setText(text);
+    layout.layout(style, options);
+    return true;
+}
+
+} // namespace
+
+float TabBar::badgeWidth(std::size_t index) const {
+    if (index >= m_badges.size() || m_badges[index].text.empty()) {
+        return 0.0f;
+    }
+    TextLayout layout;
+    const float text = layoutBadge(layout, m_badges[index].text, theme()) ? std::ceil(layout.size().x) : 6.0f;
+    return std::max(kBadgeHeight, text + 8.0f);
+}
+
 void TabBar::choose(int index) {
     if (index < 0 || index >= int(m_tabs.size()) || index == m_current) {
         return;
@@ -163,9 +220,15 @@ std::vector<float> TabBar::widths() const {
     const Theme &t = theme();
     std::vector<float> out;
     TextLayout layout;
-    for (const String &tab : m_tabs) {
-        const float text = layoutIn(layout, tab, t, kInfinity, false, TextAlign::Start) ? std::ceil(layout.size().x) : 40.0f;
-        out.push_back(text + 2 * t.padding * 1.5f);
+    for (std::size_t i = 0; i < m_tabs.size(); ++i) {
+        float width = layoutIn(layout, m_tabs[i], t, kInfinity, false, TextAlign::Start) ? std::ceil(layout.size().x) : 40.0f;
+        if (i < m_icons.size() && !m_icons[i].isNull()) {
+            width += kTabIconSize + kTabGap;
+        }
+        if (const float badge = badgeWidth(i); badge > 0.0f) {
+            width += badge + kTabGap;
+        }
+        out.push_back(width + 2 * t.padding * 1.5f);
     }
     return out;
 }
@@ -206,10 +269,36 @@ void TabBar::paint(Painter &painter, const Theme &theme) {
         } else if (int(i) == m_hoveredTab) {
             painter.fillRect(tab, theme.controlHover);
         }
-        if (layoutIn(layout, m_tabs[i], theme, kInfinity, false, TextAlign::Start)) {
-            const Vec2 origin = centredOrigin(layout, tab);
-            painter.drawText(layout, {std::round(tab.x + (tab.width - layout.size().x) / 2), origin.y},
-                             current ? theme.text : theme.textMuted);
+        const Color ink = current ? theme.text : theme.textMuted;
+        // Icon, text and badge, centred together.
+        const bool hasIcon = i < m_icons.size() && !m_icons[i].isNull();
+        const float badge = badgeWidth(i);
+        const bool hasText = layoutIn(layout, m_tabs[i], theme, kInfinity, false, TextAlign::Start);
+        const float textWidth = hasText ? std::ceil(layout.size().x) : 0.0f;
+        float x = std::round(tab.x + (tab.width - (textWidth + (hasIcon ? kTabIconSize + kTabGap : 0.0f) +
+                                                   (badge > 0.0f ? badge + kTabGap : 0.0f))) /
+                                         2);
+        if (hasIcon) {
+            m_icons[i].paint(painter,
+                             {x, std::round(tab.y + (tab.height - kTabIconSize) / 2), kTabIconSize, kTabIconSize},
+                             ink);
+            x += kTabIconSize + kTabGap;
+        }
+        if (hasText) {
+            painter.drawText(layout, {x, centredOrigin(layout, tab).y}, ink);
+            x += textWidth;
+        }
+        if (badge > 0.0f) {
+            const Badge &b = m_badges[i];
+            const RectF pill{x + kTabGap, std::round(tab.y + (tab.height - kBadgeHeight) / 2), badge, kBadgeHeight};
+            PainterPath shape;
+            shape.addRoundedRect(pill, kBadgeHeight / 2, kBadgeHeight / 2);
+            painter.fillPath(shape, b.background);
+            TextLayout text;
+            if (layoutBadge(text, b.text, theme)) {
+                const Vec2 origin = centredOrigin(text, pill);
+                painter.drawText(text, {std::round(pill.x + (pill.width - text.size().x) / 2), origin.y}, b.foreground);
+            }
         }
         if (current && hasFocus()) {
             painter.strokeRect(tab.grownBy(-1, -1, -1, -1), Pen(theme.accent, 1.0f));

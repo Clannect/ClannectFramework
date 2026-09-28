@@ -456,6 +456,15 @@ void views() {
     checkEqual(tab, 1, "clicking a tab selects it");
     surface.dispatch(key(Key::Left));
     checkEqual(tab, 0, "Left goes to the previous tab");
+    const float plainWidth = tabs.measure({400, 300}).x;
+    tabs.setTabBadge(1, "12", Color{0.4f, 0.1f, 0.1f, 1.0f}, Color{1, 1, 1, 1});
+    const float badged = tabs.measure({400, 300}).x;
+    check(badged > plainWidth + 14.0f, "a badge widens its tab");
+    tabs.setTabIcon(0, Icon::fromSvg(R"(<svg viewBox="0 0 24 24"><rect width="24" height="24"/></svg>)"));
+    check(tabs.measure({400, 300}).x > badged + 14.0f, "and so does an icon");
+    tabs.setTabBadge(1, "", Color{}, Color{});
+    tabs.setTabIcon(0, Icon());
+    checkNear(tabs.measure({400, 300}).x, plainWidth, 0.01, "removing both restores the width");
 
     // TreeView: a scene of 101,000 instances.
     checkEqual(tree.rowCount(), std::size_t{1000}, "collapsed folders show one row each");
