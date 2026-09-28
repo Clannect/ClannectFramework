@@ -75,6 +75,15 @@ void enableDpiAwareness() {
 }
 
 Key keyOf(WPARAM vk) {
+    if (vk >= 'A' && vk <= 'Z') {
+        return static_cast<Key>(static_cast<unsigned>(Key::A) + (vk - 'A'));
+    }
+    if (vk >= '0' && vk <= '9') {
+        return static_cast<Key>(static_cast<unsigned>(Key::Digit0) + (vk - '0'));
+    }
+    if (vk >= VK_F1 && vk <= VK_F12) {
+        return static_cast<Key>(static_cast<unsigned>(Key::F1) + (vk - VK_F1));
+    }
     switch (vk) {
     case VK_TAB: return Key::Tab;
     case VK_RETURN: return Key::Enter;
@@ -90,15 +99,6 @@ Key keyOf(WPARAM vk) {
     case VK_END: return Key::End;
     case VK_PRIOR: return Key::PageUp;
     case VK_NEXT: return Key::PageDown;
-    case 'A': return Key::A;
-    case 'C': return Key::C;
-    case 'V': return Key::V;
-    case 'X': return Key::X;
-    case 'Y': return Key::Y;
-    case 'Z': return Key::Z;
-    case VK_F1: return Key::F1;
-    case VK_F2: return Key::F2;
-    case VK_F5: return Key::F5;
     case VK_SHIFT: return Key::Shift;
     case VK_CONTROL: return Key::Control;
     case VK_MENU: return Key::Alt;

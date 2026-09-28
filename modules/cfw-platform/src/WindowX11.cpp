@@ -95,6 +95,18 @@ float systemScale(Display *display) {
 }
 
 Key keyOf(KeySym sym) {
+    if (sym >= XK_a && sym <= XK_z) {
+        return static_cast<Key>(static_cast<unsigned>(Key::A) + (sym - XK_a));
+    }
+    if (sym >= XK_A && sym <= XK_Z) {
+        return static_cast<Key>(static_cast<unsigned>(Key::A) + (sym - XK_A));
+    }
+    if (sym >= XK_0 && sym <= XK_9) {
+        return static_cast<Key>(static_cast<unsigned>(Key::Digit0) + (sym - XK_0));
+    }
+    if (sym >= XK_F1 && sym <= XK_F12) {
+        return static_cast<Key>(static_cast<unsigned>(Key::F1) + (sym - XK_F1));
+    }
     switch (sym) {
     case XK_Tab: case XK_ISO_Left_Tab: return Key::Tab;
     case XK_Return: case XK_KP_Enter: return Key::Enter;
@@ -110,15 +122,6 @@ Key keyOf(KeySym sym) {
     case XK_End: case XK_KP_End: return Key::End;
     case XK_Page_Up: case XK_KP_Page_Up: return Key::PageUp;
     case XK_Page_Down: case XK_KP_Page_Down: return Key::PageDown;
-    case XK_a: case XK_A: return Key::A;
-    case XK_c: case XK_C: return Key::C;
-    case XK_v: case XK_V: return Key::V;
-    case XK_x: case XK_X: return Key::X;
-    case XK_y: case XK_Y: return Key::Y;
-    case XK_z: case XK_Z: return Key::Z;
-    case XK_F1: return Key::F1;
-    case XK_F2: return Key::F2;
-    case XK_F5: return Key::F5;
     case XK_Shift_L: case XK_Shift_R: return Key::Shift;
     case XK_Control_L: case XK_Control_R: return Key::Control;
     case XK_Alt_L: case XK_Alt_R: return Key::Alt;
