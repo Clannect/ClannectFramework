@@ -263,17 +263,17 @@ void Surface::paintTree(Painter &painter, Element &element) {
         return;
     }
     element.paint(painter, m_theme);
-    if (element.children().empty()) {
-        return;
+    if (!element.children().empty()) {
+        painter.save();
+        if (element.clipsChildren()) {
+            painter.clipRect(element.rect());
+        }
+        for (const auto &child : element.children()) {
+            paintTree(painter, *child);
+        }
+        painter.restore();
     }
-    painter.save();
-    if (element.clipsChildren()) {
-        painter.clipRect(element.rect());
-    }
-    for (const auto &child : element.children()) {
-        paintTree(painter, *child);
-    }
-    painter.restore();
+    element.paintOverlay(painter, m_theme);
 }
 
 String Surface::clipboardText() const { return readClipboard ? readClipboard() : m_clipboard; }
@@ -303,6 +303,9 @@ void Surface::elementRemoved(Element &element) {
     }
     if (contains(element, m_focus)) {
         m_focus = nullptr;
+    }
+    if (contains(element, m_dropTarget)) {
+        m_dropTarget = nullptr;
     }
     if (m_toolTipFor && contains(element, m_toolTipFor)) {
         m_toolTipFor = nullptr;
@@ -508,6 +511,56 @@ void Surface::scheduleToolTip() {
 }
 
 // ---- Input ---------------------------------------------------------------------
+
+bool Surface::dispatch(const DropEvent &event) {
+    m_closed.clear();
+    layout();
+    const auto leaveTarget = [this, &event] {
+        if (m_dropTarget) {
+            DropEvent leave;
+            leave.type = DropEvent::Type::Leave;
+            leave.position = event.position;
+            Element *target = m_dropTarget;
+            m_dropTarget = nullptr;
+            target->onDrop(leave);
+        }
+    };
+    if (event.type == DropEvent::Type::Leave) {
+        leaveTarget();
+        return false;
+    }
+    // The element under the point, or the nearest ancestor taking the files.
+    // The current target is asked with a Move, a new one with an Enter.
+    Element *candidate = hitTest(event.position);
+    while (candidate && (!candidate->isEnabled() || !acceptsInput(candidate))) {
+        candidate = candidate->parent();
+    }
+    Element *target = nullptr;
+    for (; candidate; candidate = candidate->parent()) {
+        DropEvent asked = event;
+        if (candidate != m_dropTarget) {
+            asked.type = DropEvent::Type::Enter;
+        } else if (event.type == DropEvent::Type::Enter) {
+            asked.type = DropEvent::Type::Move;
+        }
+        if (event.type == DropEvent::Type::Drop) {
+            asked.type = candidate == m_dropTarget ? DropEvent::Type::Move : DropEvent::Type::Enter;
+        }
+        if (candidate->onDrop(asked)) {
+            target = candidate;
+            break;
+        }
+    }
+    if (target != m_dropTarget) {
+        leaveTarget();
+        m_dropTarget = target;
+    }
+    if (event.type != DropEvent::Type::Drop) {
+        return target != nullptr;
+    }
+    m_dropTarget = nullptr;
+    return target && target->onDrop(event);
+}
 
 bool Surface::dispatch(const PointerEvent &event) {
     m_closed.clear();

@@ -7,6 +7,7 @@
 // Threads: plain value types.
 
 #include <cstdint>
+#include <vector>
 
 #include "cfw/core/String.h"
 #include "cfw/core/Vec2.h"
@@ -65,6 +66,18 @@ enum class Cursor : std::uint8_t {
 
 struct TextEvent {
     String text; // UTF-8, already composed (IME commits arrive here too)
+};
+
+// Files dragged over a window from another application (a file manager).
+// Enter comes first, Moves follow as the pointer moves, and it ends with
+// either Leave or Drop.
+struct DropEvent {
+    enum class Type : std::uint8_t { Enter, Move, Leave, Drop };
+    Type type = Type::Move;
+    Vec2 position;
+    // UTF-8 file paths. Always on Drop; on Enter and Move only where the
+    // platform offers them before the drop (Windows), else empty.
+    std::vector<String> paths;
 };
 
 } // namespace cfw

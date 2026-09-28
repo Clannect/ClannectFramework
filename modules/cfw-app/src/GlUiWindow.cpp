@@ -127,6 +127,7 @@ GlUiWindow::GlUiWindow(std::unique_ptr<Window> window, std::unique_ptr<GlContext
     }));
     m_connections.push_back(m_window->key.connect([this](const KeyEvent &e) { m_surface.dispatch(e); }));
     m_connections.push_back(m_window->text.connect([this](const TextEvent &e) { m_surface.dispatch(e); }));
+    m_window->setDropHandler([this](const DropEvent &e) { return m_surface.dispatch(e); });
     m_connections.push_back(m_window->resized.connect([this](Vec2i) { resize(); }));
     m_connections.push_back(m_window->dpiChanged.connect([this](float) { resize(); }));
     m_connections.push_back(m_window->repaintRequested.connect([this] { m_fullRedraw = true; }));

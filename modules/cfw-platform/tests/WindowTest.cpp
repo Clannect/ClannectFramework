@@ -3,12 +3,20 @@
 // another thread, and the clipboard. Skips (and passes) without a display.
 
 #include <chrono>
+#include <cstring>
+#include <string>
+#include <vector>
 #include <cstdio>
 #include <thread>
 
 #include "cfw/image/Image.h"
 #include "cfw/platform/Window.h"
 #include "cfw/test/Check.h"
+
+#if defined(_WIN32)
+// Win32DropPoster.cpp: posts WM_DROPFILES as the shell does.
+bool postFileDrop(void *hwnd, const std::vector<std::u16string> &paths, int x, int y);
+#endif
 
 using namespace cfw;
 using cfw::test::check;
@@ -99,6 +107,28 @@ int main() {
 
     setClipboardText("Clannect ✓");
     checkEqual(clipboardText(), String("Clannect ✓"), "the clipboard round-trips UTF-8");
+
+#if defined(_WIN32)
+    // Files posted as WM_DROPFILES (what the shell sends windows without an
+    // OLE drop target) reach the drop handler with their paths.
+    {
+        std::vector<DropEvent> drops;
+        window->setDropHandler([&](const DropEvent &event) {
+            drops.push_back(event);
+            return true;
+        });
+        check(postFileDrop(window->nativeHandle(), {u"C:\\Assets\\bark \u00e9.png", u"C:\\Assets\\rock.jpg"}, 30, 20),
+              "WM_DROPFILES posted");
+        pumpUntil([&] { return !drops.empty(); });
+        check(drops.size() == 1 && drops[0].type == DropEvent::Type::Drop, "WM_DROPFILES arrives as a Drop");
+        if (!drops.empty()) {
+            check(drops[0].paths == std::vector<String>{"C:\\Assets\\bark \u00e9.png", "C:\\Assets\\rock.jpg"},
+                  "with the dropped paths in UTF-8");
+            check(drops[0].position.x > 0.0f && drops[0].position.y > 0.0f, "at the drop point");
+        }
+        window->setDropHandler({});
+    }
+#endif
 
     // Full screen and back. Only Windows resizes here: the X11 test server
     // has no window manager to honour the request.

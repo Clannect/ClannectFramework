@@ -107,10 +107,16 @@ public:
     // ---- For subclasses and the surface ----
     // Paints the element itself (children are painted after, by the surface).
     virtual void paint(Painter &painter, const Theme &theme);
+    // Paints over the element's children (a drop highlight, a focus ring).
+    virtual void paintOverlay(Painter &painter, const Theme &theme);
     // Input. Return true when handled; unhandled events go to the parent.
     virtual bool onPointer(const PointerEvent &event);
     virtual bool onKey(const KeyEvent &event);
     virtual bool onText(const TextEvent &event);
+    // Files dragged over the element: return true on Enter and Move where it
+    // would take them, and on Drop when it took them. Default: refuses (the
+    // surface then asks the parent).
+    virtual bool onDrop(const DropEvent &event);
     virtual void onHoverChanged(bool hovered);
     virtual void onPressedChanged(bool pressed);
     virtual void onFocusChanged(bool focused);

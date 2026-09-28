@@ -1,6 +1,7 @@
 // Win32 backend: a window class with CS_DBLCLKS, per-monitor DPI (v2 where
 // the OS has it), SetDIBitsToDevice presentation, UTF-16 WM_CHAR text with
-// surrogate pairs, mouse capture while a button is held.
+// surrogate pairs, mouse capture while a button is held, and file drops
+// (an OLE IDropTarget, and WM_DROPFILES from senders that post it).
 
 #include "PixelCopy.h"
 #include "cfw/image/Image.h"
@@ -21,6 +22,8 @@ constexpr Modifier kNoModifier = Modifier::None;
 #endif
 #include <windows.h>
 #include <windowsx.h>
+#include <ole2.h>
+#include <shellapi.h>
 
 #include <algorithm>
 #include <atomic>
@@ -164,6 +167,81 @@ void registerClass() {
     registered = true;
 }
 
+// The file paths in a CF_HDROP.
+std::vector<String> pathsOf(HDROP drop) {
+    std::vector<String> paths;
+    const UINT count = DragQueryFileW(drop, 0xFFFFFFFF, nullptr, 0);
+    for (UINT i = 0; i < count; ++i) {
+        const UINT length = DragQueryFileW(drop, i, nullptr, 0);
+        std::wstring path(length + 1, L'\0');
+        DragQueryFileW(drop, i, path.data(), length + 1);
+        path.resize(length);
+        paths.push_back(utf16ToUtf8Lossy(std::u16string_view(reinterpret_cast<const char16_t *>(path.data()), length)));
+    }
+    return paths;
+}
+
+std::vector<String> pathsOf(IDataObject *data) {
+    FORMATETC format{CF_HDROP, nullptr, DVASPECT_CONTENT, -1, TYMED_HGLOBAL};
+    STGMEDIUM medium{};
+    if (!data || FAILED(data->GetData(&format, &medium))) {
+        return {};
+    }
+    std::vector<String> paths = pathsOf(static_cast<HDROP>(medium.hGlobal));
+    ReleaseStgMedium(&medium);
+    return paths;
+}
+
+class WindowWin32;
+
+// OLE drop target: tells the source whether files would be taken where the
+// pointer is, which is what shows the copy cursor during the drag. COM
+// objects delete themselves in Release, so the interface has no virtual
+// destructor.
+#if defined(__GNUC__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wnon-virtual-dtor"
+#endif
+class DropTarget final : public IDropTarget {
+public:
+    explicit DropTarget(WindowWin32 &window) : m_window(window) {}
+    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void **object) override {
+        if (!object) {
+            return E_POINTER;
+        }
+        if (IsEqualIID(riid, IID_IUnknown) || IsEqualIID(riid, IID_IDropTarget)) {
+            *object = static_cast<IDropTarget *>(this);
+            AddRef();
+            return S_OK;
+        }
+        *object = nullptr;
+        return E_NOINTERFACE;
+    }
+    ULONG STDMETHODCALLTYPE AddRef() override { return ++m_refs; }
+    ULONG STDMETHODCALLTYPE Release() override {
+        const ULONG refs = --m_refs;
+        if (refs == 0) {
+            delete this;
+        }
+        return refs;
+    }
+    HRESULT STDMETHODCALLTYPE DragEnter(IDataObject *data, DWORD, POINTL point, DWORD *effect) override;
+    HRESULT STDMETHODCALLTYPE DragOver(DWORD, POINTL point, DWORD *effect) override;
+    HRESULT STDMETHODCALLTYPE DragLeave() override;
+    HRESULT STDMETHODCALLTYPE Drop(IDataObject *data, DWORD, POINTL point, DWORD *effect) override;
+    void detach() noexcept { m_attached = false; }
+
+private:
+    ~DropTarget() = default;
+    WindowWin32 &m_window;
+    bool m_attached = true;
+    ULONG m_refs = 1;
+    std::vector<String> m_paths;
+};
+#if defined(__GNUC__)
+#pragma GCC diagnostic pop
+#endif
+
 class WindowWin32 final : public Window {
 public:
     explicit WindowWin32(HWND hwnd) : m_hwnd(hwnd) {
@@ -172,11 +250,41 @@ public:
         RECT r{};
         GetClientRect(hwnd, &r);
         m_size = {int(r.right - r.left), int(r.bottom - r.top)};
+        DragAcceptFiles(hwnd, TRUE);
+        // OLE on this thread (S_FALSE: already); without it, WM_DROPFILES
+        // still brings drops, just no feedback while dragging.
+        const HRESULT ole = OleInitialize(nullptr);
+        m_oleInitialized = SUCCEEDED(ole);
+        m_dropTarget = new DropTarget(*this);
+        if (!m_oleInitialized || FAILED(RegisterDragDrop(hwnd, m_dropTarget))) {
+            m_dropTarget->detach();
+            m_dropTarget->Release();
+            m_dropTarget = nullptr;
+        }
     }
 
     ~WindowWin32() override {
+        if (m_dropTarget) {
+            RevokeDragDrop(m_hwnd);
+            m_dropTarget->detach();
+            m_dropTarget->Release();
+        }
         SetWindowLongPtrW(m_hwnd, GWLP_USERDATA, 0);
         DestroyWindow(m_hwnd);
+        if (m_oleInitialized) {
+            OleUninitialize();
+        }
+    }
+
+    // A drag from the drop target, in screen pixels.
+    bool drag(DropEvent::Type type, POINTL screen, std::vector<String> paths) {
+        POINT client{screen.x, screen.y};
+        ScreenToClient(m_hwnd, &client);
+        DropEvent event;
+        event.type = type;
+        event.position = {float(client.x) / m_scale, float(client.y) / m_scale};
+        event.paths = std::move(paths);
+        return handleDrop(event);
     }
 
     void show() override { ShowWindow(m_hwnd, SW_SHOW); }
@@ -326,6 +434,8 @@ private:
     }
 
     HWND m_hwnd;
+    DropTarget *m_dropTarget = nullptr;
+    bool m_oleInitialized = false;
     bool m_fullScreen = false;
     LONG_PTR m_savedStyle = 0;
     WINDOWPLACEMENT m_savedPlacement{};
@@ -359,6 +469,20 @@ LRESULT WindowWin32::handle(UINT message, WPARAM wParam, LPARAM lParam) {
     }
     case WM_ERASEBKGND:
         return 1;
+    case WM_DROPFILES: {
+        const auto drop = reinterpret_cast<HDROP>(wParam);
+        POINT client{};
+        DragQueryPoint(drop, &client);
+        DropEvent event;
+        event.type = DropEvent::Type::Drop;
+        event.position = {float(client.x) / m_scale, float(client.y) / m_scale};
+        event.paths = pathsOf(drop);
+        DragFinish(drop);
+        if (!event.paths.empty()) {
+            handleDrop(event);
+        }
+        return 0;
+    }
     case WM_CLOSE:
         closeRequested.emit();
         return 0;
@@ -455,6 +579,35 @@ LRESULT WindowWin32::handle(UINT message, WPARAM wParam, LPARAM lParam) {
         break;
     }
     return DefWindowProcW(m_hwnd, message, wParam, lParam);
+}
+
+HRESULT DropTarget::DragEnter(IDataObject *data, DWORD, POINTL point, DWORD *effect) {
+    m_paths = pathsOf(data);
+    const bool accepted = m_attached && !m_paths.empty() && m_window.drag(DropEvent::Type::Enter, point, m_paths);
+    *effect = accepted ? DROPEFFECT_COPY : DROPEFFECT_NONE;
+    return S_OK;
+}
+
+HRESULT DropTarget::DragOver(DWORD, POINTL point, DWORD *effect) {
+    const bool accepted = m_attached && !m_paths.empty() && m_window.drag(DropEvent::Type::Move, point, m_paths);
+    *effect = accepted ? DROPEFFECT_COPY : DROPEFFECT_NONE;
+    return S_OK;
+}
+
+HRESULT DropTarget::DragLeave() {
+    if (m_attached && !m_paths.empty()) {
+        m_window.drag(DropEvent::Type::Leave, POINTL{0, 0}, {});
+    }
+    m_paths.clear();
+    return S_OK;
+}
+
+HRESULT DropTarget::Drop(IDataObject *data, DWORD, POINTL point, DWORD *effect) {
+    std::vector<String> paths = pathsOf(data);
+    const bool taken = m_attached && !paths.empty() && m_window.drag(DropEvent::Type::Drop, point, std::move(paths));
+    *effect = taken ? DROPEFFECT_COPY : DROPEFFECT_NONE;
+    m_paths.clear();
+    return S_OK;
 }
 
 LRESULT CALLBACK windowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) {

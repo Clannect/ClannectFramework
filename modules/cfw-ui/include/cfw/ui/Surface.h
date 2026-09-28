@@ -55,6 +55,11 @@ public:
     bool dispatch(const PointerEvent &event);
     bool dispatch(const KeyEvent &event);
     bool dispatch(const TextEvent &event);
+    // Files dragged over the surface: the element under the point, or the
+    // nearest ancestor that takes them, gets the drag. Returns whether it
+    // would take them (Enter, Move) or took them (Drop).
+    bool dispatch(const DropEvent &event);
+    [[nodiscard]] Element *dropTarget() const noexcept { return m_dropTarget; }
 
     // The deepest visible element under `point`.
     [[nodiscard]] Element *hitTest(Vec2 point);
@@ -145,6 +150,7 @@ private:
     Element *m_hovered = nullptr;
     Element *m_pressed = nullptr;
     Element *m_focus = nullptr;
+    Element *m_dropTarget = nullptr;
     String m_clipboard;
     struct Popup {
         std::unique_ptr<Element> element;

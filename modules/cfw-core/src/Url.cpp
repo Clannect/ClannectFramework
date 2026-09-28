@@ -393,6 +393,64 @@ String percentEncode(StringView text, StringView keep) {
     return out;
 }
 
+std::optional<String> fileUrlToPath(StringView url) {
+    constexpr StringView scheme = "file://";
+    if (url.size() < scheme.size()) {
+        return std::nullopt;
+    }
+    for (std::size_t i = 0; i < scheme.size(); ++i) {
+        const char c = url[i];
+        if ((c >= 'A' && c <= 'Z' ? char(c + 32) : c) != scheme[i]) {
+            return std::nullopt;
+        }
+    }
+    StringView rest = url.substr(scheme.size());
+    const std::size_t slash = rest.find('/');
+    if (slash == StringView::npos) {
+        return std::nullopt;
+    }
+    const StringView host = rest.substr(0, slash);
+    if (!host.empty() && host != "localhost") {
+        return std::nullopt;
+    }
+    StringView path = rest.substr(slash);
+    const std::size_t end = path.find_first_of("?#");
+    path = path.substr(0, end);
+    Result<String> decoded = percentDecode(path);
+    if (!decoded) {
+        return std::nullopt;
+    }
+    String out = std::move(decoded).value();
+    // "/C:/x": a Windows drive keeps no leading slash.
+    if (out.size() >= 3 && out[0] == '/' && out[2] == ':' &&
+        ((out[1] >= 'A' && out[1] <= 'Z') || (out[1] >= 'a' && out[1] <= 'z'))) {
+        out.erase(0, 1);
+    }
+    return out;
+}
+
+std::vector<String> pathsFromUriList(StringView list) {
+    std::vector<String> paths;
+    std::size_t start = 0;
+    while (start <= list.size()) {
+        std::size_t end = list.find('\n', start);
+        if (end == StringView::npos) {
+            end = list.size();
+        }
+        StringView line = list.substr(start, end - start);
+        while (!line.empty() && (line.back() == '\r' || line.back() == ' ' || line.back() == '\0')) {
+            line.remove_suffix(1);
+        }
+        if (!line.empty() && line.front() != '#') {
+            if (std::optional<String> path = fileUrlToPath(line)) {
+                paths.push_back(std::move(*path));
+            }
+        }
+        start = end + 1;
+    }
+    return paths;
+}
+
 Result<String> percentDecode(StringView text) {
     String out;
     out.reserve(text.size());

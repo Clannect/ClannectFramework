@@ -19,6 +19,7 @@
 //
 // Threads: windows and processEvents() on one thread; wakeUp() from any.
 
+#include <functional>
 #include <cstdint>
 #include <memory>
 
@@ -93,8 +94,17 @@ public:
     Signal<> repaintRequested;
     Signal<> closeRequested; // the window stays open until it is destroyed
 
+    // Files dragged over the window: the handler says whether they would be
+    // taken where the pointer is (Enter, Move) and takes them (Drop). No
+    // handler: the window refuses drops.
+    void setDropHandler(std::function<bool(const DropEvent &)> handler) { m_dropHandler = std::move(handler); }
+
 protected:
     Window() = default;
+    bool handleDrop(const DropEvent &event) { return m_dropHandler && m_dropHandler(event); }
+
+private:
+    std::function<bool(const DropEvent &)> m_dropHandler;
 };
 
 // Delivers the OS events waiting for every window, first waiting up to

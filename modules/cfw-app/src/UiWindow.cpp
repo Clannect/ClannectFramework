@@ -28,6 +28,7 @@ UiWindow::UiWindow(std::unique_ptr<Window> window, Theme theme) : m_window(std::
     }));
     m_connections.push_back(m_window->key.connect([this](const KeyEvent &e) { m_surface.dispatch(e); }));
     m_connections.push_back(m_window->text.connect([this](const TextEvent &e) { m_surface.dispatch(e); }));
+    m_window->setDropHandler([this](const DropEvent &e) { return m_surface.dispatch(e); });
     m_connections.push_back(m_window->resized.connect([this](Vec2i pixels) { resize(pixels); }));
     m_connections.push_back(m_window->dpiChanged.connect([this](float) { resize(m_window->pixelSize()); }));
     m_connections.push_back(m_window->repaintRequested.connect([this] { m_fullRepaint = true; }));

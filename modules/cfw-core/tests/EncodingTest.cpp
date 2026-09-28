@@ -113,6 +113,16 @@ void percentEncoding() {
     checkEqual(percentEncode("a/b", "/"), String("a/b"), "kept characters");
     checkEqual(percentDecode("a%20b%2fc").value(), String("a b/c"), "decode either case");
     check(!percentDecode("100%").ok(), "lone percent rejected");
+
+    checkEqual(fileUrlToPath("file:///home/me/a%20b.png").value_or(""), String("/home/me/a b.png"), "a file URL");
+    checkEqual(fileUrlToPath("file://localhost/tmp/x").value_or(""), String("/tmp/x"), "localhost is local");
+    checkEqual(fileUrlToPath("FILE:///C:/Users/x%C3%A9.txt").value_or(""), String("C:/Users/xé.txt"),
+               "a Windows drive, UTF-8 escapes");
+    check(!fileUrlToPath("file://server/share/x").has_value(), "another host is not local");
+    check(!fileUrlToPath("https://example.com/x").has_value(), "not a file URL");
+    const std::vector<String> dropped =
+        pathsFromUriList("# from a file manager\r\nfile:///a/one.png\r\nhttp://x/y\r\nfile:///b/two%23.txt\r\n");
+    check(dropped == std::vector<String>{"/a/one.png", "/b/two#.txt"}, "a uri-list gives its local files");
     checkEqual(encodeQuery({{"grant type", "client_credentials"}, {"id", "a&b"}}),
                String("grant%20type=client_credentials&id=a%26b"), "form encoding");
 }

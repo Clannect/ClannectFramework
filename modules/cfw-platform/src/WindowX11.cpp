@@ -1,6 +1,7 @@
 // X11 backend: Xlib, an input method for text (Xutf8LookupString), MIT
 // XPutImage presentation, Xft.dpi for the scale, and the CLIPBOARD
-// selection (ICCCM: TARGETS, UTF8_STRING, STRING; INCR when reading).
+// selection (ICCCM: TARGETS, UTF8_STRING, STRING; INCR when reading), and
+// file drops (XDND version 5, text/uri-list).
 
 #include <poll.h>
 #include <unistd.h>
@@ -17,6 +18,7 @@
 
 #include "PixelCopy.h"
 #include "X11Internal.h"
+#include "cfw/core/Url.h"
 #include "cfw/image/Image.h"
 #include "cfw/platform/Window.h"
 
@@ -55,6 +57,9 @@ struct X11Connection {
     Atom textAtom = 0;
     Atom incr = 0;
     Atom transferProperty = 0;
+    // XDND.
+    Atom xdndAware = 0, xdndEnter = 0, xdndPosition = 0, xdndStatus = 0, xdndLeave = 0, xdndDrop = 0,
+         xdndFinished = 0, xdndSelection = 0, xdndTypeList = 0, xdndActionCopy = 0, uriList = 0, dropProperty = 0;
     String clipboard;
     bool ownsClipboard = false;
 };
@@ -82,6 +87,18 @@ bool connect() {
     c.textAtom = XInternAtom(c.display, "TEXT", False);
     c.incr = XInternAtom(c.display, "INCR", False);
     c.transferProperty = XInternAtom(c.display, "CFW_SELECTION", False);
+    c.xdndAware = XInternAtom(c.display, "XdndAware", False);
+    c.xdndEnter = XInternAtom(c.display, "XdndEnter", False);
+    c.xdndPosition = XInternAtom(c.display, "XdndPosition", False);
+    c.xdndStatus = XInternAtom(c.display, "XdndStatus", False);
+    c.xdndLeave = XInternAtom(c.display, "XdndLeave", False);
+    c.xdndDrop = XInternAtom(c.display, "XdndDrop", False);
+    c.xdndFinished = XInternAtom(c.display, "XdndFinished", False);
+    c.xdndSelection = XInternAtom(c.display, "XdndSelection", False);
+    c.xdndTypeList = XInternAtom(c.display, "XdndTypeList", False);
+    c.xdndActionCopy = XInternAtom(c.display, "XdndActionCopy", False);
+    c.uriList = XInternAtom(c.display, "text/uri-list", False);
+    c.dropProperty = XInternAtom(c.display, "CFW_DROP", False);
     c.im = XOpenIM(c.display, nullptr, nullptr, nullptr);
     if (::pipe(c.wakePipe) != 0) {
         c.wakePipe[0] = c.wakePipe[1] = -1;
@@ -325,6 +342,9 @@ public:
 
     // ---- Event handling (called by processEvents) ----
     void handle(XEvent &event);
+    void handleXdnd(const XClientMessageEvent &message);
+    void finishDrop(bool converted);
+    void sendXdnd(::Window to, Atom type, long l1, long l2, long l3, long l4);
     [[nodiscard]] bool repaintPending() const noexcept { return m_repaint; }
     bool takeRepaint() {
         const bool repaint = m_repaint;
@@ -370,6 +390,12 @@ private:
     bool m_repaint = false;
     bool m_fullScreen = false;
     std::map<unsigned, ::Cursor> m_cursors;
+    // The drag over the window (XDND), if any.
+    ::Window m_dndSource = 0;
+    bool m_dndOffersFiles = false;
+    bool m_dndEntered = false;
+    bool m_dndAccepted = false;
+    Vec2 m_dndPosition;
     // Double-click detection.
     Time m_lastPressTime = 0;
     unsigned m_lastButton = 0;
@@ -396,8 +422,18 @@ void WindowX11::handle(XEvent &event) {
         }
         break;
     case ClientMessage:
-        if (Atom(event.xclient.data.l[0]) == connection().deleteWindow) {
+        if (event.xclient.message_type == connection().xdndEnter ||
+            event.xclient.message_type == connection().xdndPosition ||
+            event.xclient.message_type == connection().xdndLeave ||
+            event.xclient.message_type == connection().xdndDrop) {
+            handleXdnd(event.xclient);
+        } else if (Atom(event.xclient.data.l[0]) == connection().deleteWindow) {
             closeRequested.emit();
+        }
+        break;
+    case SelectionNotify:
+        if (event.xselection.selection == connection().xdndSelection) {
+            finishDrop(event.xselection.property != 0);
         }
         break;
     case FocusIn:
@@ -501,6 +537,135 @@ void WindowX11::handle(XEvent &event) {
     }
 }
 
+void WindowX11::sendXdnd(::Window to, Atom type, long l1, long l2, long l3, long l4) {
+    Display *display = connection().display;
+    XEvent reply{};
+    reply.xclient.type = ClientMessage;
+    reply.xclient.display = display;
+    reply.xclient.window = to;
+    reply.xclient.message_type = type;
+    reply.xclient.format = 32;
+    reply.xclient.data.l[0] = long(m_window);
+    reply.xclient.data.l[1] = l1;
+    reply.xclient.data.l[2] = l2;
+    reply.xclient.data.l[3] = l3;
+    reply.xclient.data.l[4] = l4;
+    XSendEvent(display, to, False, NoEventMask, &reply);
+    XFlush(display);
+}
+
+void WindowX11::handleXdnd(const XClientMessageEvent &message) {
+    X11Connection &c = connection();
+    Display *display = c.display;
+    const auto source = ::Window(message.data.l[0]);
+    if (message.message_type == c.xdndEnter) {
+        m_dndSource = source;
+        m_dndEntered = false;
+        m_dndAccepted = false;
+        m_dndOffersFiles = false;
+        if (message.data.l[1] & 1) {
+            // More than three types: the source lists them in a property.
+            Atom type = 0;
+            int format = 0;
+            unsigned long items = 0, remaining = 0;
+            unsigned char *data = nullptr;
+            if (XGetWindowProperty(display, source, c.xdndTypeList, 0, 1024, False, XA_ATOM, &type, &format, &items,
+                                   &remaining, &data) == Success &&
+                data) {
+                const auto *types = reinterpret_cast<const unsigned long *>(data);
+                for (unsigned long i = 0; i < items; ++i) {
+                    m_dndOffersFiles = m_dndOffersFiles || Atom(types[i]) == c.uriList;
+                }
+                XFree(data);
+            }
+        } else {
+            for (int i = 2; i <= 4; ++i) {
+                m_dndOffersFiles = m_dndOffersFiles || Atom(message.data.l[i]) == c.uriList;
+            }
+        }
+        return;
+    }
+    if (source != m_dndSource) {
+        return; // not the drag we are following
+    }
+    if (message.message_type == c.xdndPosition) {
+        // Root coordinates, packed x << 16 | y.
+        const int rootX = int((message.data.l[2] >> 16) & 0xFFFF);
+        const int rootY = int(message.data.l[2] & 0xFFFF);
+        int x = 0, y = 0;
+        ::Window child = 0;
+        XTranslateCoordinates(display, DefaultRootWindow(display), m_window, rootX, rootY, &x, &y, &child);
+        m_dndPosition = logical(x, y);
+        DropEvent drag;
+        drag.type = m_dndEntered ? DropEvent::Type::Move : DropEvent::Type::Enter;
+        drag.position = m_dndPosition;
+        m_dndEntered = true;
+        m_dndAccepted = m_dndOffersFiles && handleDrop(drag);
+        // Accepted or not, keep sending positions (bit 1): the answer
+        // changes as the pointer crosses elements.
+        sendXdnd(m_dndSource, c.xdndStatus, (m_dndAccepted ? 1 : 0) | 2, 0, 0,
+                 m_dndAccepted ? long(c.xdndActionCopy) : 0);
+    } else if (message.message_type == c.xdndLeave) {
+        if (m_dndEntered) {
+            DropEvent leave;
+            leave.type = DropEvent::Type::Leave;
+            leave.position = m_dndPosition;
+            handleDrop(leave);
+        }
+        m_dndSource = 0;
+        m_dndEntered = false;
+    } else if (message.message_type == c.xdndDrop) {
+        if (!m_dndAccepted) {
+            finishDrop(false);
+            return;
+        }
+        const auto time = Time(message.data.l[2]);
+        XConvertSelection(display, c.xdndSelection, c.uriList, c.dropProperty, m_window, time ? time : CurrentTime);
+        XFlush(display);
+        // finishDrop runs when the SelectionNotify arrives.
+    }
+}
+
+void WindowX11::finishDrop(bool converted) {
+    X11Connection &c = connection();
+    Display *display = c.display;
+    if (!m_dndSource) {
+        return;
+    }
+    std::vector<String> paths;
+    if (converted) {
+        Atom type = 0;
+        int format = 0;
+        unsigned long items = 0, remaining = 0;
+        unsigned char *data = nullptr;
+        if (XGetWindowProperty(display, m_window, c.dropProperty, 0, 0x7fffffff, True, AnyPropertyType, &type, &format,
+                               &items, &remaining, &data) == Success &&
+            data) {
+            if (format == 8) {
+                paths = pathsFromUriList(StringView(reinterpret_cast<const char *>(data), items));
+            }
+            XFree(data);
+        }
+    }
+    bool taken = false;
+    if (!paths.empty()) {
+        DropEvent drop;
+        drop.type = DropEvent::Type::Drop;
+        drop.position = m_dndPosition;
+        drop.paths = std::move(paths);
+        taken = handleDrop(drop);
+    } else if (m_dndEntered) {
+        DropEvent leave;
+        leave.type = DropEvent::Type::Leave;
+        leave.position = m_dndPosition;
+        handleDrop(leave);
+    }
+    sendXdnd(m_dndSource, c.xdndFinished, taken ? 1 : 0, taken ? long(c.xdndActionCopy) : 0, 0, 0);
+    m_dndSource = 0;
+    m_dndEntered = false;
+    m_dndAccepted = false;
+}
+
 } // namespace
 
 Result<std::unique_ptr<Window>> Window::create(const WindowOptions &options) {
@@ -520,6 +685,11 @@ Result<std::unique_ptr<Window>> Window::create(const WindowOptions &options) {
                      ButtonReleaseMask | PointerMotionMask | LeaveWindowMask | FocusChangeMask);
     Atom protocols[] = {c.deleteWindow};
     XSetWMProtocols(display, window, protocols, 1);
+    // Files can be dropped on every window (XDND 5); a window without a drop
+    // handler refuses them.
+    const unsigned long xdndVersion = 5;
+    XChangeProperty(display, window, c.xdndAware, XA_ATOM, 32, PropModeReplace,
+                    reinterpret_cast<const unsigned char *>(&xdndVersion), 1);
     if (!options.resizable) {
         XSizeHints *hints = XAllocSizeHints();
         hints->flags = PMinSize | PMaxSize;

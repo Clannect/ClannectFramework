@@ -163,6 +163,8 @@ void Element::paint(Painter &, const Theme &) {}
 bool Element::onPointer(const PointerEvent &) { return false; }
 bool Element::onKey(const KeyEvent &) { return false; }
 bool Element::onText(const TextEvent &) { return false; }
+bool Element::onDrop(const DropEvent &) { return false; }
+void Element::paintOverlay(Painter &, const Theme &) {}
 void Element::onHoverChanged(bool) {}
 void Element::onPressedChanged(bool) {}
 void Element::onFocusChanged(bool) {}

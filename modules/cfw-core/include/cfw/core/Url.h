@@ -80,6 +80,15 @@ private:
 // Decodes %XX escapes. Fails on a malformed escape; does not treat '+' as space.
 [[nodiscard]] Result<String> percentDecode(StringView text);
 
+// The local path a file: URL names ("file:///home/a%20b" -> "/home/a b",
+// "file:///C:/x" -> "C:/x"); nothing for other schemes, other hosts than
+// "" and "localhost", or a malformed escape. What file managers put in a
+// text/uri-list when files are dragged.
+[[nodiscard]] std::optional<String> fileUrlToPath(StringView url);
+// The file paths in a text/uri-list (RFC 2483: CRLF-separated, '#'
+// comments); URLs that are not local files are skipped.
+[[nodiscard]] std::vector<String> pathsFromUriList(StringView list);
+
 // application/x-www-form-urlencoded body or query: "a=1&b=two%20words".
 [[nodiscard]] String encodeQuery(const std::vector<std::pair<String, String>> &items);
 // The reverse: "a=1&b=two%20words&c" -> {a, 1}, {b, two words}, {c, ""}, in
