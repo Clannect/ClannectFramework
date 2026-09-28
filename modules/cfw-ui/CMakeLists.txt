@@ -7,6 +7,7 @@ cfw_add_module(cfw-ui
         src/Choices.cpp
         src/Chrome.cpp
         src/Controls.cpp
+        src/Dock.cpp
         src/Element.cpp
         src/Icon.cpp
         src/ScrollArea.cpp
@@ -26,4 +27,5 @@ if(CFW_BUILD_TESTS)
     cfw_add_test(cfw-ui ShellTest)
     cfw_add_test(cfw-ui ChromeTest)
     cfw_add_test(cfw-ui TreeEditTest)
+    cfw_add_test(cfw-ui DockTest)
 endif()
