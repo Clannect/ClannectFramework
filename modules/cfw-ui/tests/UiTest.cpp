@@ -8,6 +8,9 @@
 #include "cfw/test/Check.h"
 #include "cfw/ui/Controls.h"
 #include "cfw/ui/Surface.h"
+#include "cfw/ui/Views.h"
+
+#include <chrono>
 
 using namespace cfw;
 using cfw::test::check;
@@ -413,9 +416,123 @@ void choices() {
     check(surface.popupCount() == 1, "painted with a popup open");
 }
 
+// 1000 folders of 100 items: ids 1..1000 are folders, folder f's items are
+// f * 1000 + 1 .. f * 1000 + 100.
+class BigModel : public TreeModel {
+public:
+    std::size_t folders = 1000;
+    std::size_t childCount(Id parent) const override { return parent == kRoot ? folders : parent <= 1000 ? 100 : 0; }
+    Id child(Id parent, std::size_t i) const override { return parent == kRoot ? Id(i + 1) : parent * 1000 + i + 1; }
+    String text(Id node) const override { return (node <= 1000 ? "Folder " : "Part ") + std::to_string(node); }
+};
+
+void views() {
+    Surface surface(Theme::dark().withSystemFonts());
+    surface.setSize({400, 300});
+    Splitter &split = surface.root().add<Splitter>(Stack::Direction::Row, 0.5f);
+    BigModel model;
+    TreeView &tree = static_cast<TreeView &>(split.setFirst(std::make_unique<TreeView>(model)));
+    Stack &right = static_cast<Stack &>(split.setSecond(std::make_unique<Stack>(Stack::Direction::Column)));
+    TabBar &tabs = right.add<TabBar>(std::vector<String>{"Properties", "Attributes"});
+    surface.layout();
+
+    // Splitter
+    checkNear(tree.rect().width, (400.0f - Splitter::kHandle) / 2, 1.0, "the splitter shares the width");
+    const float handleX = tree.rect().right() + 2;
+    surface.dispatch(pointer(PointerEvent::Type::Press, handleX, 100));
+    surface.dispatch(pointer(PointerEvent::Type::Move, 300, 100));
+    surface.dispatch(pointer(PointerEvent::Type::Release, 300, 100));
+    checkNear(tree.rect().right(), 298.0f, 2.0, "dragging the handle resizes the panes");
+    surface.dispatch(pointer(PointerEvent::Type::Press, 298, 100));
+    surface.dispatch(pointer(PointerEvent::Type::Move, 395, 100));
+    surface.dispatch(pointer(PointerEvent::Type::Release, 395, 100));
+    check(right.rect().width >= 40.0f, "a pane keeps its minimum size");
+    split.setRatio(0.5f);
+
+    // TabBar
+    int tab = -1;
+    ScopedConnection c1 = tabs.currentChanged.connect([&](int i) { tab = i; });
+    click(surface, tabs.rect().x + tabs.measure({400, 300}).x - 5, tabs.rect().y + 5);
+    checkEqual(tab, 1, "clicking a tab selects it");
+    surface.dispatch(key(Key::Left));
+    checkEqual(tab, 0, "Left goes to the previous tab");
+
+    // TreeView: a scene of 101,000 instances.
+    checkEqual(tree.rowCount(), std::size_t{1000}, "collapsed folders show one row each");
+    const auto start = std::chrono::steady_clock::now();
+    std::vector<TreeModel::Id> allFolders;
+    for (TreeModel::Id f = 1; f <= 1000; ++f) {
+        allFolders.push_back(f);
+    }
+    tree.setExpanded(allFolders, true);
+    checkEqual(tree.rowCount(), std::size_t{101000}, "expanding everything");
+    Image image = Image::create(400, 300, AlphaMode::Premultiplied).value();
+    RasterPaintBackend backend(image);
+    Painter painter(backend);
+    tree.scrollTo(1e9f);
+    surface.paint(painter);
+    const std::size_t visibleRows = std::size_t(tree.rect().height / tree.rowHeight()) + 2;
+    check(tree.rowsPainted() <= visibleRows, "only the visible rows are painted");
+    check(tree.rowsPainted() > 0, "at the end of 101,000 rows");
+    const double seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
+    std::printf("  101,000-row tree: expand and paint in %.0f ms\n", seconds * 1000);
+
+    // Selection and the keyboard.
+    tree.scrollTo(0);
+    tree.setExpanded(allFolders, false);
+    int changes = 0;
+    ScopedConnection c2 = tree.selectionChanged.connect([&] { ++changes; });
+    std::vector<TreeModel::Id> activatedIds;
+    ScopedConnection c3 = tree.activated.connect([&](TreeModel::Id id) { activatedIds.push_back(id); });
+    const float rowH = tree.rowHeight();
+    const auto rowY = [&](int row) { return tree.rect().y + rowH * float(row) + rowH / 2; };
+    click(surface, tree.rect().x + 60, rowY(1));
+    check(tree.selection() == std::vector<TreeModel::Id>{2}, "clicking a row selects it");
+    check(tree.hasFocus(), "and focuses the tree");
+    PointerEvent shiftClick = pointer(PointerEvent::Type::Press, tree.rect().x + 60, rowY(3));
+    shiftClick.modifiers = Modifier::Shift;
+    surface.dispatch(shiftClick);
+    surface.dispatch(pointer(PointerEvent::Type::Release, tree.rect().x + 60, rowY(3)));
+    check(tree.selection() == std::vector<TreeModel::Id>{2, 3, 4}, "Shift+click selects a range");
+    PointerEvent ctrlClick = pointer(PointerEvent::Type::Press, tree.rect().x + 60, rowY(3));
+    ctrlClick.modifiers = Modifier::Control;
+    surface.dispatch(ctrlClick);
+    surface.dispatch(pointer(PointerEvent::Type::Release, tree.rect().x + 60, rowY(3)));
+    check(tree.selection() == std::vector<TreeModel::Id>{2, 3}, "Ctrl+click toggles one row");
+    surface.dispatch(key(Key::Right));
+    check(tree.isExpanded(4), "Right expands");
+    surface.dispatch(key(Key::Right));
+    checkEqual(tree.current(), TreeModel::Id{4001}, "and then goes to the first child");
+    surface.dispatch(key(Key::Left));
+    checkEqual(tree.current(), TreeModel::Id{4}, "Left goes to the parent");
+    surface.dispatch(key(Key::Left));
+    check(!tree.isExpanded(4), "and then collapses");
+    surface.dispatch(key(Key::Down, Modifier::Shift));
+    check(tree.selection() == std::vector<TreeModel::Id>{4, 5}, "Shift+Down extends");
+    surface.dispatch(key(Key::Enter));
+    check(activatedIds == std::vector<TreeModel::Id>{5}, "Enter activates");
+    PointerEvent twice = pointer(PointerEvent::Type::Press, tree.rect().x + 60, rowY(0));
+    twice.clickCount = 2;
+    surface.dispatch(twice);
+    surface.dispatch(pointer(PointerEvent::Type::Release, tree.rect().x + 60, rowY(0)));
+    check(activatedIds.back() == 1, "a double-click activates");
+    click(surface, tree.rect().x + 4 + 6, rowY(0)); // the disclosure triangle
+    check(tree.isExpanded(1), "clicking the triangle expands");
+    check(changes > 0, "selection changes are reported");
+
+    tree.reveal({7, 7050});
+    checkEqual(tree.current(), TreeModel::Id{1}, "reveal does not change the selection");
+    check(tree.isExpanded(7), "reveal expands the ancestors");
+
+    model.folders = 3;
+    model.changed.emit();
+    checkEqual(tree.rowCount(), std::size_t{3 + 100}, "the view follows model changes");
+}
+
 } // namespace
 
 int main() {
+    views();
     choices();
     textField();
     scrollArea();

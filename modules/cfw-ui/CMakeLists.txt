@@ -10,6 +10,7 @@ cfw_add_module(cfw-ui
         src/ScrollArea.cpp
         src/Surface.cpp
         src/TextField.cpp
+        src/Views.cpp
         src/Theme.cpp
     DEPENDS
         cfw-gfx
