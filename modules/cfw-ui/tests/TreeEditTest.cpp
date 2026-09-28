@@ -1,7 +1,9 @@
 // TreeView editing, headless: filtering, rename in place, drag and drop,
 // context menus, icons and flat lists.
 
+#include <array>
 #include <map>
+#include <string>
 
 #include "cfw/gfx/Painter.h"
 #include "cfw/gfx/RasterPaintBackend.h"
@@ -242,9 +244,96 @@ void flatList() {
     check(f.tree->rowCount() == 6, "a list shows the same rows");
 }
 
+// A log: flat rows with three columns.
+class Log : public TreeModel {
+public:
+    std::vector<std::array<String, 3>> rows;
+    std::size_t childCount(Id parent) const override { return parent == kRoot ? rows.size() : 0; }
+    Id child(Id, std::size_t index) const override { return Id(index + 1); }
+    String text(Id node) const override { return rows[node - 1][0]; }
+    String cellText(Id node, std::size_t column) const override { return rows[node - 1][column]; }
+    CellStyle cellStyle(Id node, std::size_t column) const override {
+        CellStyle style;
+        style.mono = column == 0;
+        if (column == 2 && rows[node - 1][1] == "Error") {
+            style.color = Color{1, 0.6f, 0.6f, 1};
+        }
+        return style;
+    }
+    void append(String time, String type, String message) {
+        rows.push_back({std::move(time), std::move(type), std::move(message)});
+        changed.emit();
+    }
+};
+
+void table() {
+    Log log;
+    Surface surface;
+    surface.setSize({400, 200});
+    TreeView &view = static_cast<TreeView &>(surface.root().add(std::make_unique<TreeView>(log)));
+    view.setShowsExpanders(false);
+    view.setColumns({{"Time", 80}, {"Type", 60}, {"Message", 0}});
+    for (int i = 0; i < 40; ++i) {
+        log.append("12:00:" + std::to_string(10 + i), i % 7 == 0 ? "Error" : "Info", "message " + std::to_string(i));
+    }
+    surface.layout();
+
+    const float header = view.headerHeight();
+    check(header > 0.0f, "titled columns show a header");
+    checkEqual(view.rowRect(0).y, header, "rows start below it");
+    checkEqual(view.columnWidth(2), 400.0f - 140.0f, "the last column takes the rest");
+
+    // Clicking the header selects nothing; clicking the first row selects it.
+    PointerEvent press = pointer(PointerEvent::Type::Press, {200, header / 2.0f});
+    surface.dispatch(press);
+    surface.dispatch(pointer(PointerEvent::Type::Release, {200, header / 2.0f}));
+    check(view.selection().empty(), "the header is not a row");
+    surface.dispatch(pointer(PointerEvent::Type::Press, view.rowRect(0).center()));
+    surface.dispatch(pointer(PointerEvent::Type::Release, view.rowRect(0).center()));
+    surface.dispatch(pointer(PointerEvent::Type::Press, view.rowRect(1).center()));
+    PointerEvent shiftClick = pointer(PointerEvent::Type::Press, view.rowRect(1).center());
+    surface.dispatch(pointer(PointerEvent::Type::Release, view.rowRect(1).center()));
+    shiftClick.modifiers = Modifier::Shift;
+    surface.dispatch(pointer(PointerEvent::Type::Press, view.rowRect(0).center()));
+    surface.dispatch(pointer(PointerEvent::Type::Release, view.rowRect(0).center()));
+    surface.dispatch(shiftClick);
+    surface.dispatch(pointer(PointerEvent::Type::Release, view.rowRect(1).center()));
+    surface.setFocus(&view);
+    surface.dispatch(key(Key::C, Modifier::Control));
+    checkEqual(surface.clipboardText(), String("12:00:10\tError\tmessage 0\n12:00:11\tInfo\tmessage 1\n"),
+               "Ctrl+C copies the rows, cells separated by tabs");
+
+    // Dragging the border between Time and Type resizes Time.
+    surface.dispatch(pointer(PointerEvent::Type::Move, {80, header / 2.0f}));
+    checkEqual(surface.cursor(), Cursor::SizeHorizontal, "a resize cursor over a column border");
+    surface.dispatch(pointer(PointerEvent::Type::Press, {80, header / 2.0f}));
+    surface.dispatch(pointer(PointerEvent::Type::Move, {120, header / 2.0f}));
+    surface.dispatch(pointer(PointerEvent::Type::Release, {120, header / 2.0f}));
+    checkEqual(view.columnWidth(0), 120.0f, "the column follows the border");
+    checkEqual(view.columnWidth(2), 400.0f - 180.0f, "and the last column gives way");
+
+    // A log sticks to the bottom as rows arrive.
+    check(!view.isAtBottom(), "forty rows do not fit");
+    view.scrollToBottom();
+    check(view.isAtBottom(), "scrolled to the end");
+    const bool follow = view.isAtBottom();
+    log.append("12:01:00", "Info", "new");
+    if (follow) {
+        view.scrollToBottom();
+    }
+    check(view.isAtBottom(), "and kept there");
+    check(view.rowRect(view.rowCount() - 1).bottom() <= 200.5f, "the new row is in view");
+
+    Image image = Image::create(400, 200, AlphaMode::Premultiplied).value();
+    RasterPaintBackend backend(image);
+    Painter painter(backend);
+    surface.paint(painter);
+}
+
 } // namespace
 
 int main() {
+    table();
     filtering();
     renaming();
     dragging();

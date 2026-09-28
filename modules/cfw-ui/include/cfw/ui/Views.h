@@ -2,6 +2,7 @@
 
 // Splitter, TabBar and TreeView.
 
+#include <algorithm>
 #include <cstdint>
 #include <functional>
 #include <optional>
@@ -87,6 +88,16 @@ public:
     [[nodiscard]] virtual std::size_t childCount(Id parent) const = 0;
     [[nodiscard]] virtual Id child(Id parent, std::size_t index) const = 0;
     [[nodiscard]] virtual String text(Id node) const = 0;
+    // With columns (TreeView::setColumns): each cell's text and look. Column
+    // 0 is text() unless overridden.
+    struct CellStyle {
+        std::optional<Color> color; // the theme's text colour when unset
+        bool mono = false;          // the theme's monospace font
+    };
+    [[nodiscard]] virtual String cellText(Id node, std::size_t column) const {
+        return column == 0 ? text(node) : String();
+    }
+    [[nodiscard]] virtual CellStyle cellStyle(Id, std::size_t) const { return {}; }
     // Shown before the text (none by default).
     [[nodiscard]] virtual Icon icon(Id) const { return {}; }
     // What the view may do with a node (nothing by default).
@@ -121,6 +132,10 @@ public:
 //
 // A filter shows the nodes it matches with their ancestors, all expanded
 // (the Explorer's search).
+//
+// Columns (setColumns) turn it into a table: a header that stays put, column
+// borders dragged to resize, the last column taking the rest, cells elided
+// with "…". Ctrl+C copies the selected rows, cells separated by tabs.
 class TreeView : public Element {
 public:
     explicit TreeView(TreeModel &model);
@@ -136,6 +151,20 @@ public:
     // Expands the ancestors of `node` (given as a path from the root) and scrolls to it.
     void reveal(const std::vector<TreeModel::Id> &path);
     void setShowsExpanders(bool shows);
+    struct Column {
+        String title;
+        float width = 100.0f; // the last column stretches instead
+    };
+    // No columns (the default): one column, no header.
+    void setColumns(std::vector<Column> columns);
+    [[nodiscard]] std::size_t columnCount() const noexcept { return std::max<std::size_t>(1, m_columns.size()); }
+    [[nodiscard]] float columnWidth(std::size_t column) const;
+    [[nodiscard]] float headerHeight() const;
+    // For a log: stay at the bottom as rows arrive.
+    [[nodiscard]] bool isAtBottom() const;
+    void scrollToBottom();
+    // The selected rows as text: cells joined by tabs, rows by newlines.
+    [[nodiscard]] String selectedText() const;
     // Null: no filter.
     void setFilter(std::function<bool(TreeModel::Id)> matches);
     [[nodiscard]] bool isFiltered() const noexcept { return static_cast<bool>(m_filter); }
@@ -166,12 +195,15 @@ public:
     bool onPointer(const PointerEvent &event) override;
     bool onKey(const KeyEvent &event) override;
     void onFocusChanged(bool) override { invalidatePaint(); }
+    [[nodiscard]] std::optional<Cursor> cursorAt(Vec2 position) const override;
 
 protected:
     Vec2 measureContent(Vec2 available) override;
     void arrangeContent(const RectF &rect) override;
 
 private:
+    [[nodiscard]] RectF body() const;
+    [[nodiscard]] std::ptrdiff_t columnBorderAt(Vec2 position) const;
     struct Row {
         TreeModel::Id id;
         TreeModel::Id parent;
@@ -207,6 +239,9 @@ private:
     float m_scroll = 0.0f;
     std::size_t m_painted = 0;
     bool m_showsExpanders = true;
+    std::vector<Column> m_columns;
+    std::ptrdiff_t m_resizing = -1; // the column whose right border is being dragged
+    float m_resizeFrom = 0.0f;      // pointer x minus that border
 
     std::function<bool(TreeModel::Id)> m_filter;
     std::unordered_map<TreeModel::Id, bool> m_visible; // filtered: node or a descendant matches

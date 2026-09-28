@@ -6,6 +6,8 @@
 //     (add --menu to show the File menu with its submenu open)
 
 #include <algorithm>
+#include <array>
+#include <string>
 #include <chrono>
 #include <cstdio>
 
@@ -32,6 +34,39 @@ public:
     }
 };
 
+// The Output panel's log: time, type, message.
+class LogModel : public TreeModel {
+public:
+    LogModel() {
+        const char *messages[] = {"Place loaded: Baseplate (34 instances)", "Physics world ready", "Script error: attempt to index nil with 'Parent' at Workspace.Door.Script:12",
+                                  "Asset failed to load: asset://7f3a.png", "Saved to /home/player/Clannect/Obby/scene.cescene", "Playtest started"};
+        const char *types[] = {"Info", "Info", "Error", "Warning", "Success", "Info"};
+        for (int i = 0; i < 6; ++i) {
+            rows.push_back({"10:42:0" + std::to_string(i), types[i], messages[i]});
+        }
+    }
+    std::size_t childCount(Id parent) const override { return parent == kRoot ? rows.size() : 0; }
+    Id child(Id, std::size_t index) const override { return Id(index + 1); }
+    String text(Id node) const override { return rows[node - 1][0]; }
+    String cellText(Id node, std::size_t column) const override { return rows[node - 1][column]; }
+    CellStyle cellStyle(Id node, std::size_t column) const override {
+        const String &type = rows[node - 1][1];
+        CellStyle style;
+        style.mono = column == 0;
+        if (column == 0) {
+            style.color = Color::fromRgba8(0x8a, 0x92, 0x9e);
+        } else if (type == "Error") {
+            style.color = Color::fromRgba8(0xff, 0x9d, 0x94);
+        } else if (type == "Warning") {
+            style.color = Color::fromRgba8(0xf0, 0xcd, 0x7d);
+        } else if (type == "Success" && column == 1) {
+            style.color = Color::fromRgba8(0x6c, 0xd4, 0x8a);
+        }
+        return style;
+    }
+    std::vector<std::array<String, 3>> rows;
+};
+
 // A Lucide outline icon (https://lucide.dev, ISC), drawn in the text colour.
 Icon lucide(const char *body) {
     return Icon::fromSvg(String(R"(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" )"
@@ -39,7 +74,7 @@ Icon lucide(const char *body) {
                          body + "</svg>");
 }
 
-void build(Surface &surface, SceneModel &model) {
+void build(Surface &surface, SceneModel &model, LogModel &log) {
     auto &window = static_cast<Stack &>(surface.root().add(std::make_unique<Stack>(Stack::Direction::Column, 0.0f)));
 
     const Icon save = lucide(R"(<path d="M15.2 3a2 2 0 0 1 1.4.6l3.8 3.8a2 2 0 0 1 .6 1.4V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M17 21v-7a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v7"/><path d="M7 3v4a1 1 0 0 0 1 1h7"/>)");
@@ -76,8 +111,12 @@ void build(Surface &surface, SceneModel &model) {
     tools.addSpacer();
     tools.addButton(play, "Play (F5)", [] {});
 
-    auto &split = static_cast<Splitter &>(window.add(std::make_unique<Splitter>(Stack::Direction::Row, 0.34f)));
-    split.setStretch(1);
+    auto &vertical = static_cast<Splitter &>(window.add(std::make_unique<Splitter>(Stack::Direction::Column, 0.72f)));
+    vertical.setStretch(1);
+    auto &split = static_cast<Splitter &>(vertical.setFirst(std::make_unique<Splitter>(Stack::Direction::Row, 0.34f)));
+    auto &output = static_cast<TreeView &>(vertical.setSecond(std::make_unique<TreeView>(log)));
+    output.setShowsExpanders(false);
+    output.setColumns({{"Time", 76}, {"Type", 70}, {"Message", 0}});
     auto &tree = static_cast<TreeView &>(split.setFirst(std::make_unique<TreeView>(model)));
     tree.setExpanded(1, true);
     tree.setSelection({1003});
@@ -142,7 +181,8 @@ int main(int argc, char **argv) {
     }
     std::unique_ptr<UiWindow> ui = std::move(created).value();
     SceneModel model;
-    build(ui->surface(), model);
+    LogModel log;
+    build(ui->surface(), model, log);
     const bool showMenu = std::find(args.begin(), args.end(), "--menu") != args.end();
 
     if (screenshot.empty()) {

@@ -39,6 +39,7 @@ struct Theme {
     float controlHeight = 26.0f;
     // Fonts; null means text is measured as empty and not drawn.
     std::shared_ptr<const FontFace> font;
+    std::shared_ptr<const FontFace> monoFont; // logs, code; null: the font above
     std::shared_ptr<FontDatabase> fonts; // fallback for missing characters
 
     // Clannect's editor palettes. Fonts are left empty; see withSystemFonts().

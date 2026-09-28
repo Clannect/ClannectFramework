@@ -64,6 +64,13 @@ Theme Theme::withSystemFonts() const {
     if (!t.font && !database->faces().empty()) {
         t.font = database->face(0);
     }
+    for (const StringView family : {"Cascadia Mono", "Consolas", "SF Mono", "Menlo", "DejaVu Sans Mono",
+                                    "Noto Sans Mono", "Liberation Mono", "Courier New"}) {
+        if (auto face = database->match(family)) {
+            t.monoFont = std::move(face);
+            break;
+        }
+    }
     t.fonts = std::move(database);
     return t;
 }

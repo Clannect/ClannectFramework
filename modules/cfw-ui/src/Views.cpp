@@ -391,7 +391,76 @@ void TreeView::reveal(const std::vector<TreeModel::Id> &path) {
     }
 }
 
-float TreeView::maxScroll() const { return std::max(0.0f, float(m_rows.size()) * rowHeight() - rect().height); }
+float TreeView::headerHeight() const {
+    const bool titled = std::any_of(m_columns.begin(), m_columns.end(), [](const Column &c) { return !c.title.empty(); });
+    return titled ? rowHeight() : 0.0f;
+}
+
+RectF TreeView::body() const {
+    const float header = headerHeight();
+    return {rect().x, rect().y + header, rect().width, std::max(0.0f, rect().height - header)};
+}
+
+void TreeView::setColumns(std::vector<Column> columns) {
+    m_columns = std::move(columns);
+    invalidateLayout();
+    invalidatePaint();
+}
+
+float TreeView::columnWidth(std::size_t column) const {
+    if (m_columns.size() <= 1) {
+        return rect().width;
+    }
+    if (column + 1 < m_columns.size()) {
+        return m_columns[column].width;
+    }
+    float used = 0.0f;
+    for (std::size_t i = 0; i + 1 < m_columns.size(); ++i) {
+        used += m_columns[i].width;
+    }
+    return std::max(40.0f, rect().width - used); // the last column takes the rest
+}
+
+bool TreeView::isAtBottom() const { return m_scroll >= maxScroll() - 0.5f; }
+
+void TreeView::scrollToBottom() { scrollTo(maxScroll()); }
+
+String TreeView::selectedText() const {
+    String out;
+    for (const TreeModel::Id id : selection()) {
+        for (std::size_t c = 0; c < columnCount(); ++c) {
+            if (c > 0) {
+                out += '\t';
+            }
+            out += m_model.cellText(id, c);
+        }
+        out += '\n';
+    }
+    return out;
+}
+
+std::ptrdiff_t TreeView::columnBorderAt(Vec2 position) const {
+    if (m_columns.size() <= 1 || position.y < rect().y || position.y >= rect().y + headerHeight()) {
+        return -1;
+    }
+    float x = rect().x;
+    for (std::size_t i = 0; i + 1 < m_columns.size(); ++i) {
+        x += m_columns[i].width;
+        if (std::abs(position.x - x) <= 3.0f) {
+            return std::ptrdiff_t(i);
+        }
+    }
+    return -1;
+}
+
+std::optional<Cursor> TreeView::cursorAt(Vec2 position) const {
+    if (m_resizing >= 0 || columnBorderAt(position) >= 0) {
+        return Cursor::SizeHorizontal;
+    }
+    return Element::cursorAt(position);
+}
+
+float TreeView::maxScroll() const { return std::max(0.0f, float(m_rows.size()) * rowHeight() - body().height); }
 
 void TreeView::scrollTo(float offset) {
     offset = std::clamp(offset, 0.0f, maxScroll());
@@ -406,18 +475,21 @@ void TreeView::ensureRowVisible(std::size_t row) {
     const float top = float(row) * rowHeight();
     if (top < m_scroll) {
         scrollTo(top);
-    } else if (top + rowHeight() > m_scroll + rect().height) {
-        scrollTo(top + rowHeight() - rect().height);
+    } else if (top + rowHeight() > m_scroll + body().height) {
+        scrollTo(top + rowHeight() - body().height);
     }
 }
 
 RectF TreeView::rowRect(std::size_t row) const {
     const float h = rowHeight();
-    return {rect().x, std::round(rect().y + float(row) * h - m_scroll), rect().width, h};
+    return {rect().x, std::round(body().y + float(row) * h - m_scroll), rect().width, h};
 }
 
 std::ptrdiff_t TreeView::rowAt(float y) const {
-    const float offset = y - rect().y + m_scroll;
+    if (y < body().y) {
+        return -1; // the header
+    }
+    const float offset = y - body().y + m_scroll;
     if (offset < 0.0f) {
         return -1;
     }
@@ -434,7 +506,7 @@ float TreeView::textX(const Row &row) const {
 }
 
 Vec2 TreeView::measureContent(Vec2 available) {
-    return {std::min(available.x, 200.0f), std::min(available.y, float(m_rows.size()) * rowHeight())};
+    return {std::min(available.x, 200.0f), std::min(available.y, float(m_rows.size()) * rowHeight() + headerHeight())};
 }
 
 void TreeView::arrangeContent(const RectF &) {
@@ -444,7 +516,8 @@ void TreeView::arrangeContent(const RectF &) {
         if (row >= 0) {
             const RectF line = rowRect(std::size_t(row));
             const float x = textX(m_rows[std::size_t(row)]) - 4.0f;
-            m_editor->arrange({x, line.y, std::max(40.0f, rect().right() - x - 2.0f), line.height});
+            const float right = rect().x + columnWidth(0);
+            m_editor->arrange({x, line.y, std::max(40.0f, right - x - 2.0f), line.height});
         }
     }
 }
@@ -590,12 +663,40 @@ void TreeView::paint(Painter &painter, const Theme &theme) {
     const RectF r = rect();
     painter.fillRect(r, theme.panel);
     painter.save();
-    painter.clipRect(r);
+    painter.clipRect(body());
     const float h = rowHeight();
     const std::size_t first = std::size_t(std::max(0.0f, std::floor(m_scroll / h)));
-    const std::size_t last = std::min(m_rows.size(), std::size_t(std::ceil((m_scroll + r.height) / h)));
+    const std::size_t last = std::min(m_rows.size(), std::size_t(std::ceil((m_scroll + body().height) / h)));
     TextLayout layout;
     m_painted = 0;
+    const auto drawCell = [&](StringView text, const TreeModel::CellStyle &style, float x, float right,
+                              const RectF &line) {
+        const float width = right - x - 4.0f;
+        if (width <= 0.0f || text.empty()) {
+            return;
+        }
+        Theme cellTheme = theme;
+        if (style.mono && theme.monoFont) {
+            cellTheme.font = theme.monoFont;
+        }
+        if (!cellTheme.font) {
+            return;
+        }
+        TextStyle textStyle;
+        textStyle.font = cellTheme.font;
+        textStyle.pixelSize = theme.fontSize;
+        textStyle.fallback = theme.fonts.get();
+        TextLayoutOptions options;
+        options.maxWidth = width;
+        options.wrap = false;
+        options.elide = true;
+        options.maxLines = 1;
+        layout.setText(text);
+        layout.layout(textStyle, options);
+        const Vec2 origin = centredOrigin(layout, line);
+        painter.drawText(layout, {x, origin.y},
+                         !isEnabled() ? theme.textDisabled : style.color.value_or(theme.text));
+    };
     for (std::size_t i = first; i < last; ++i) {
         const Row &row = m_rows[i];
         const RectF line = rowRect(i);
@@ -624,9 +725,14 @@ void TreeView::paint(Painter &painter, const Theme &theme) {
             icon.paint(painter, {x, std::round(line.y + (h - kIconSize) / 2.0f), kIconSize, kIconSize}, theme.text);
             x += kIconSize + 4.0f;
         }
-        if (row.id != m_renaming && layoutIn(layout, m_model.text(row.id), theme, kInfinity, false, TextAlign::Start)) {
-            const Vec2 origin = centredOrigin(layout, line);
-            painter.drawText(layout, {x, origin.y}, isEnabled() ? theme.text : theme.textDisabled);
+        if (row.id != m_renaming) {
+            drawCell(m_model.cellText(row.id, 0), m_model.cellStyle(row.id, 0), x, r.x + columnWidth(0), line);
+        }
+        float cellX = r.x + columnWidth(0);
+        for (std::size_t c = 1; c < columnCount(); ++c) {
+            const float right = cellX + columnWidth(c);
+            drawCell(m_model.cellText(row.id, c), m_model.cellStyle(row.id, c), cellX + 6.0f, right, line);
+            cellX = right;
         }
         ++m_painted;
     }
@@ -645,10 +751,52 @@ void TreeView::paint(Painter &painter, const Theme &theme) {
         painter.drawLine({x, std::round(y) + 0.5f}, {r.right() - 4.0f, std::round(y) + 0.5f}, Pen(theme.accent, 2.0f));
     }
     painter.restore();
+
+    if (headerHeight() > 0.0f) {
+        const RectF header{r.x, r.y, r.width, headerHeight()};
+        painter.fillRect(header, theme.window);
+        painter.drawLine({r.x, header.bottom() - 0.5f}, {r.right(), header.bottom() - 0.5f}, Pen(theme.border, 1.0f));
+        float x = r.x;
+        for (std::size_t c = 0; c < m_columns.size(); ++c) {
+            const float w = columnWidth(c);
+            drawCell(m_columns[c].title, {theme.textMuted, false}, x + 6.0f, x + w, header);
+            if (c + 1 < m_columns.size()) {
+                painter.drawLine({x + w - 0.5f, header.y + 4.0f}, {x + w - 0.5f, header.bottom() - 4.0f},
+                                 Pen(theme.border, 1.0f));
+            }
+            x += w;
+        }
+    }
 }
 
 bool TreeView::onPointer(const PointerEvent &event) {
     const RectF r = rect();
+    if (m_resizing >= 0) {
+        if (event.type == PointerEvent::Type::Move) {
+            float left = r.x;
+            for (std::ptrdiff_t i = 0; i < m_resizing; ++i) {
+                left += m_columns[std::size_t(i)].width;
+            }
+            m_columns[std::size_t(m_resizing)].width = std::max(30.0f, event.position.x - m_resizeFrom - left);
+            invalidatePaint();
+        } else if (event.type == PointerEvent::Type::Release) {
+            m_resizing = -1;
+        }
+        return true;
+    }
+    if (event.type == PointerEvent::Type::Press && event.position.y < body().y) {
+        // The header: its borders resize columns; the rest does nothing.
+        const std::ptrdiff_t border = columnBorderAt(event.position);
+        if (border >= 0 && event.button == PointerButton::Left) {
+            float x = r.x;
+            for (std::ptrdiff_t i = 0; i <= border; ++i) {
+                x += m_columns[std::size_t(i)].width;
+            }
+            m_resizing = border;
+            m_resizeFrom = event.position.x - x;
+        }
+        return event.button == PointerButton::Left;
+    }
     switch (event.type) {
     case PointerEvent::Type::Wheel: {
         const float before = m_scroll;
@@ -673,7 +821,7 @@ bool TreeView::onPointer(const PointerEvent &event) {
             m_selectOnRelease = false;
         }
         // Near the edges the view scrolls towards the pointer.
-        if (event.position.y < r.y + rowHeight() / 2.0f) {
+        if (event.position.y < body().y + rowHeight() / 2.0f) {
             scrollTo(m_scroll - rowHeight() / 2.0f);
         } else if (event.position.y > r.bottom() - rowHeight() / 2.0f) {
             scrollTo(m_scroll + rowHeight() / 2.0f);
@@ -778,7 +926,13 @@ bool TreeView::onKey(const KeyEvent &event) {
     const std::ptrdiff_t at = rowOf(m_current);
     const std::size_t row = at < 0 ? 0 : std::size_t(at);
     const bool shift = hasModifier(event.modifiers, Modifier::Shift);
-    const std::size_t page = std::max<std::size_t>(1, std::size_t(rect().height / rowHeight()) - 1);
+    const std::size_t page = std::max<std::size_t>(1, std::size_t(body().height / rowHeight()) - 1);
+    if (event.key == Key::C && hasModifier(event.modifiers, Modifier::Control) && !m_selected.empty()) {
+        if (Surface *s = surface()) {
+            s->setClipboardText(selectedText());
+        }
+        return true;
+    }
     switch (event.key) {
     case Key::Down: setCurrentRow(at < 0 ? 0 : row + 1, shift, false); return true;
     case Key::Up: setCurrentRow(row > 0 ? row - 1 : 0, shift, false); return true;
