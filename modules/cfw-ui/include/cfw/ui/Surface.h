@@ -19,8 +19,10 @@
 #include <memory>
 #include <vector>
 
+#include "cfw/core/Clock.h"
 #include "cfw/core/Rect.h"
 #include "cfw/ui/Element.h"
+#include "cfw/ui/Shortcut.h"
 #include "cfw/ui/Theme.h"
 
 namespace cfw {
@@ -71,9 +73,46 @@ public:
     // not passed on); Escape closes the topmost. `onClosed` runs when a
     // popup closes for any reason.
     Element &openPopup(std::unique_ptr<Element> popup, Vec2 position, std::function<void()> onClosed = {});
+    struct PopupOptions {
+        // A dialog: the surface under it is dimmed and gets no input, a press
+        // outside does not close it, Tab stays inside it, and its first
+        // focusable element takes the focus.
+        bool modal = false;
+        // Centred in the surface (the position is ignored).
+        bool centred = false;
+        // False for tooltips: never hit, never focused.
+        bool takesInput = true;
+    };
+    Element &openPopup(std::unique_ptr<Element> popup, Vec2 position, const PopupOptions &options,
+                       std::function<void()> onClosed = {});
     void closePopup(Element &popup);
     void closePopups();
     [[nodiscard]] std::size_t popupCount() const noexcept { return m_popups.size(); }
+
+    // ---- Timers ----
+    // Timers run on the surface's thread, from runTimers(), which the host
+    // calls every time round its loop; nextTimer() says how long it may
+    // sleep. The clock is Clock::now() unless a test supplies one.
+    using TimerId = std::uint64_t;
+    TimerId startTimer(Duration delay, std::function<void()> callback, bool repeat = false);
+    void stopTimer(TimerId id);
+    void runTimers();
+    [[nodiscard]] std::optional<TimePoint> nextTimer() const;
+    std::function<TimePoint()> clock;
+    [[nodiscard]] TimePoint now() const { return clock ? clock() : Clock::now(); }
+
+    // ---- Shortcuts ----
+    // A key press that the focused element (and its ancestors) did not take
+    // runs the shortcut with its chord, unless a modal popup is open.
+    using ShortcutId = std::uint64_t;
+    ShortcutId addShortcut(KeyChord chord, std::function<void()> action);
+    void removeShortcut(ShortcutId id);
+
+    // The pointer's shape at the last pointer position.
+    [[nodiscard]] Cursor cursor();
+    // How long the pointer rests before a tooltip shows.
+    static constexpr Duration kToolTipDelay = std::chrono::milliseconds(700);
+    [[nodiscard]] Element *toolTip() const noexcept { return m_toolTip; }
 
     // The clipboard, supplied by the platform window (text only for now).
     // Unset, copy and paste stay inside this surface.
@@ -89,6 +128,10 @@ private:
     void elementRemoved(Element &element);
     void setHovered(Element *element);
     void paintTree(Painter &painter, Element &element);
+    [[nodiscard]] std::ptrdiff_t topModal() const noexcept;
+    [[nodiscard]] bool acceptsInput(const Element *element) const noexcept;
+    void hideToolTip();
+    void scheduleToolTip();
 
     Theme m_theme;
     std::unique_ptr<Element> m_root;
@@ -103,11 +146,36 @@ private:
         std::unique_ptr<Element> element;
         Vec2 position;
         std::function<void()> onClosed;
+        PopupOptions options;
     };
     std::vector<Popup> m_popups;
     // Closed popups live until the next event or layout: a popup is often
     // closed from inside one of its own callbacks.
     std::vector<std::unique_ptr<Element>> m_closed;
+
+    struct Timer {
+        TimerId id;
+        TimePoint due;
+        Duration interval;
+        bool repeat;
+        std::function<void()> callback;
+    };
+    std::vector<Timer> m_timers;
+    TimerId m_nextTimer = 1;
+    struct Shortcut {
+        ShortcutId id;
+        KeyChord chord;
+        std::function<void()> action;
+    };
+    std::vector<Shortcut> m_shortcuts;
+    ShortcutId m_nextShortcut = 1;
+
+    Vec2 m_pointer;
+    bool m_pointerInside = false;
+    Element *m_toolTip = nullptr;    // the open tooltip popup
+    Element *m_toolTipFor = nullptr; // the element it describes
+    TimerId m_toolTipTimer = 0;
+    TimePoint m_toolTipHidden{};     // for the quick fall-through to a neighbour
 };
 
 } // namespace cfw

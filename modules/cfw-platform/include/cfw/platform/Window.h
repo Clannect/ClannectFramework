@@ -33,10 +33,6 @@ namespace cfw {
 
 class Image;
 
-enum class Cursor : std::uint8_t {
-    Arrow, IBeam, Hand, Wait, Crosshair, SizeHorizontal, SizeVertical, SizeDiagonal, SizeAntiDiagonal, SizeAll,
-    NotAllowed, Hidden,
-};
 
 struct WindowOptions {
     String title = "Clannect";

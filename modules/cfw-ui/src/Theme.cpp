@@ -28,6 +28,7 @@ Theme Theme::dark() {
     t.text = hex(0xf2f4f7);
     t.textMuted = hex(0x8a929e);
     t.textDisabled = hex(0x5a616b);
+    t.scrim = Color{0.0f, 0.0f, 0.0f, 0.45f};
     return t;
 }
 
@@ -45,6 +46,7 @@ Theme Theme::light() {
     t.text = hex(0x1b1e24);
     t.textMuted = hex(0x5a616b);
     t.textDisabled = hex(0xa4aab3);
+    t.scrim = Color{0.0f, 0.0f, 0.0f, 0.25f};
     return t;
 }
 

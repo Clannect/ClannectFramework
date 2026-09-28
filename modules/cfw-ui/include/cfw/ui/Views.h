@@ -30,6 +30,7 @@ public:
     void paint(Painter &painter, const Theme &theme) override;
     bool onPointer(const PointerEvent &event) override;
     void onHoverChanged(bool) override { invalidatePaint(); }
+    [[nodiscard]] std::optional<Cursor> cursorAt(Vec2 position) const override;
 
 protected:
     void arrangeContent(const RectF &rect) override;

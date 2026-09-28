@@ -25,6 +25,7 @@ struct Theme {
     Color border;
     Color accent;        // focus rings, selection, primary buttons
     Color accentText;    // text on accent
+    Color scrim;         // over the window behind a modal dialog
     // Text
     Color text;
     Color textMuted;

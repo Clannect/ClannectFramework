@@ -86,6 +86,18 @@ public:
     void setClipsChildren(bool clips) noexcept { m_clips = clips; }
     [[nodiscard]] bool clipsChildren() const noexcept { return m_clips; }
 
+    // ---- Pointer shape and tooltip ----
+    // The pointer's shape over this element (unset: the parent's, and Arrow
+    // at the root).
+    void setCursor(std::optional<Cursor> cursor) noexcept { m_cursor = cursor; }
+    // The shape over `position`; controls with parts (a splitter's handle)
+    // override it.
+    [[nodiscard]] virtual std::optional<Cursor> cursorAt(Vec2 position) const;
+    // Shown after the pointer rests on the element (empty: none; a child
+    // without one shows its parent's).
+    void setToolTip(String text) { m_toolTip = std::move(text); }
+    [[nodiscard]] const String &toolTip() const noexcept { return m_toolTip; }
+
     // ---- Accessibility ----
     void setRole(Role role) noexcept { m_role = role; }
     [[nodiscard]] Role role() const noexcept { return m_role; }
@@ -126,6 +138,8 @@ private:
     Vec2 m_measured;
     Role m_role = Role::None;
     String m_accessibleName;
+    String m_toolTip;
+    std::optional<Cursor> m_cursor;
     bool m_visible = true;
     bool m_enabled = true;
     bool m_focusable = false;

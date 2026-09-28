@@ -4,6 +4,7 @@
 #include <vector>
 
 #include "cfw/gfx/Painter.h"
+#include "cfw/ui/Controls.h"
 
 namespace cfw {
 
@@ -45,6 +46,42 @@ Element *hitTestIn(Element &element, Vec2 point) {
     return &element;
 }
 
+// The small panel a tooltip is: one muted-border box with the text.
+class ToolTipBox : public Element {
+public:
+    explicit ToolTipBox(String text) {
+        auto &label = add<Label>(std::move(text));
+        label.setWrap(true);
+        setRole(Role::Label);
+    }
+    void paint(Painter &painter, const Theme &theme) override {
+        PainterPath box;
+        box.addRoundedRect(rect(), theme.radius, theme.radius);
+        painter.fillPath(box, theme.panel);
+        Pen pen(theme.border, 1.0f);
+        PainterPath outline;
+        outline.addRoundedRect({rect().x + 0.5f, rect().y + 0.5f, rect().width - 1.0f, rect().height - 1.0f},
+                               theme.radius, theme.radius);
+        painter.strokePath(outline, pen);
+    }
+
+protected:
+    Vec2 measureContent(Vec2 available) override {
+        constexpr float kMaxWidth = 360.0f;
+        const float pad = theme().spacing;
+        const Vec2 text = children()[0]->measure({std::min(available.x, kMaxWidth) - 2 * pad, available.y});
+        return {text.x + 2 * pad, text.y + pad};
+    }
+    void arrangeContent(const RectF &r) override {
+        const float pad = theme().spacing;
+        children()[0]->arrange({r.x + pad, r.y + pad / 2, r.width - 2 * pad, r.height - pad});
+    }
+};
+
+// A quick second tooltip: moving to a neighbour soon after one closed shows
+// its tooltip at once, as Qt does.
+constexpr Duration kToolTipFallThrough = std::chrono::milliseconds(500);
+
 } // namespace
 
 Surface::Surface(Theme theme) : m_theme(std::move(theme)) { setRoot(std::make_unique<Element>()); }
@@ -53,6 +90,7 @@ Surface::~Surface() {
     // Popups first: their owners (still in the tree) are told they closed.
     closePopups();
     m_closed.clear();
+    m_timers.clear();
     m_root.reset();
 }
 
@@ -80,6 +118,9 @@ void Surface::setTheme(Theme theme) {
     m_theme = std::move(theme);
     // Everything measures from the theme, so everything is invalid.
     std::vector<Element *> stack{m_root.get()};
+    for (Popup &popup : m_popups) {
+        stack.push_back(popup.element.get());
+    }
     while (!stack.empty()) {
         Element *e = stack.back();
         stack.pop_back();
@@ -104,22 +145,48 @@ void Surface::layout() {
         const Vec2 size = popup.element->measure(m_size);
         const float w = std::min(size.x, m_size.x);
         const float h = std::min(size.y, m_size.y);
-        const float x = std::clamp(popup.position.x, 0.0f, std::max(0.0f, m_size.x - w));
-        // Below the anchor if it fits, else above it (as dropdowns do).
+        float x = popup.position.x;
         float y = popup.position.y;
+        if (popup.options.centred) {
+            x = std::round((m_size.x - w) / 2.0f);
+            y = std::round((m_size.y - h) / 2.0f);
+        }
+        x = std::clamp(x, 0.0f, std::max(0.0f, m_size.x - w));
+        // Below the anchor if it fits, else as low as it fits.
         if (y + h > m_size.y) {
             y = std::max(0.0f, m_size.y - h);
         }
         popup.element->arrange({x, y, w, h});
+        addDamage(popup.element->rect());
     }
 }
 
 Element &Surface::openPopup(std::unique_ptr<Element> popup, Vec2 position, std::function<void()> onClosed) {
+    return openPopup(std::move(popup), position, PopupOptions{}, std::move(onClosed));
+}
+
+Element &Surface::openPopup(std::unique_ptr<Element> popup, Vec2 position, const PopupOptions &options,
+                            std::function<void()> onClosed) {
+    if (options.takesInput) {
+        hideToolTip();
+    }
     popup->setSurface(this);
-    m_popups.push_back({std::move(popup), position, std::move(onClosed)});
+    m_popups.push_back({std::move(popup), position, std::move(onClosed), options});
     m_layoutDirty = true;
     Element &element = *m_popups.back().element;
     element.invalidateLayout();
+    if (options.modal) {
+        addDamage({0, 0, m_size.x, m_size.y}); // the scrim
+        std::vector<Element *> focusable;
+        collectFocusable(element, focusable);
+        setFocus(focusable.empty() ? nullptr : focusable.front());
+        if (m_pressed && !contains(element, m_pressed)) {
+            Element *released = m_pressed;
+            m_pressed = nullptr;
+            released->onPressedChanged(false);
+        }
+        setHovered(nullptr);
+    }
     return element;
 }
 
@@ -131,10 +198,15 @@ void Surface::closePopup(Element &popup) {
     }
     Popup closing = std::move(*it);
     m_popups.erase(it);
+    if (closing.element.get() == m_toolTip) {
+        m_toolTip = nullptr;
+        m_toolTipFor = nullptr;
+    }
     elementRemoved(*closing.element);
-    addDamage(closing.element->rect());
+    addDamage(closing.options.modal ? RectF{0, 0, m_size.x, m_size.y} : closing.element->rect());
     closing.element->setSurface(nullptr);
     m_closed.push_back(std::move(closing.element));
+    m_layoutDirty = true;
     if (closing.onClosed) {
         closing.onClosed();
     }
@@ -146,11 +218,36 @@ void Surface::closePopups() {
     }
 }
 
+std::ptrdiff_t Surface::topModal() const noexcept {
+    for (std::size_t i = m_popups.size(); i-- > 0;) {
+        if (m_popups[i].options.modal) {
+            return std::ptrdiff_t(i);
+        }
+    }
+    return -1;
+}
+
+bool Surface::acceptsInput(const Element *element) const noexcept {
+    const std::ptrdiff_t modal = topModal();
+    if (modal < 0) {
+        return true;
+    }
+    for (std::size_t i = std::size_t(modal); i < m_popups.size(); ++i) {
+        if (contains(*m_popups[i].element, element)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 void Surface::paint(Painter &painter) {
     layout();
     painter.fillRect({0, 0, m_size.x, m_size.y}, m_theme.window);
     paintTree(painter, *m_root);
     for (Popup &popup : m_popups) {
+        if (popup.options.modal) {
+            painter.fillRect({0, 0, m_size.x, m_size.y}, m_theme.scrim);
+        }
         paintTree(painter, *popup.element);
     }
 }
@@ -201,13 +298,33 @@ void Surface::elementRemoved(Element &element) {
     if (contains(element, m_focus)) {
         m_focus = nullptr;
     }
+    if (m_toolTipFor && contains(element, m_toolTipFor)) {
+        m_toolTipFor = nullptr;
+        if (m_toolTip) {
+            // Deferred: the tooltip is a popup, and this may be mid-close.
+            Element *tip = m_toolTip;
+            m_toolTip = nullptr;
+            const auto it = std::find_if(m_popups.begin(), m_popups.end(),
+                                         [tip](const Popup &p) { return p.element.get() == tip; });
+            if (it != m_popups.end() && it->element.get() != &element) {
+                closePopup(*tip);
+            }
+        }
+    }
 }
 
 Element *Surface::hitTest(Vec2 point) {
     layout();
+    const std::ptrdiff_t modal = topModal();
     for (std::size_t i = m_popups.size(); i-- > 0;) {
+        if (!m_popups[i].options.takesInput) {
+            continue;
+        }
         if (Element *hit = hitTestIn(*m_popups[i].element, point)) {
             return hit;
+        }
+        if (std::ptrdiff_t(i) == modal) {
+            return nullptr; // nothing under a dialog is reachable
         }
     }
     return hitTestIn(*m_root, point);
@@ -243,7 +360,8 @@ void Surface::setFocus(Element *element) {
 
 void Surface::focusNext(bool backwards) {
     std::vector<Element *> order;
-    collectFocusable(*m_root, order);
+    const std::ptrdiff_t modal = topModal();
+    collectFocusable(modal >= 0 ? *m_popups[std::size_t(modal)].element : *m_root, order);
     if (order.empty()) {
         return;
     }
@@ -258,17 +376,165 @@ void Surface::focusNext(bool backwards) {
     setFocus(order[index]);
 }
 
+// ---- Timers ------------------------------------------------------------------
+
+Surface::TimerId Surface::startTimer(Duration delay, std::function<void()> callback, bool repeat) {
+    const TimerId id = m_nextTimer++;
+    m_timers.push_back({id, now() + delay, delay, repeat, std::move(callback)});
+    return id;
+}
+
+void Surface::stopTimer(TimerId id) {
+    std::erase_if(m_timers, [id](const Timer &t) { return t.id == id; });
+}
+
+void Surface::runTimers() {
+    const TimePoint time = now();
+    // Callbacks may start and stop timers: collect the due ones first, and
+    // run each only if it is still there.
+    std::vector<TimerId> due;
+    for (const Timer &timer : m_timers) {
+        if (timer.due <= time) {
+            due.push_back(timer.id);
+        }
+    }
+    for (const TimerId id : due) {
+        const auto it = std::find_if(m_timers.begin(), m_timers.end(), [id](const Timer &t) { return t.id == id; });
+        if (it == m_timers.end()) {
+            continue;
+        }
+        std::function<void()> callback;
+        if (it->repeat) {
+            // Keep the cadence without piling up after a stall.
+            it->due = std::max(it->due + it->interval, time);
+            callback = it->callback;
+        } else {
+            callback = std::move(it->callback);
+            m_timers.erase(it);
+        }
+        callback();
+    }
+    m_closed.clear();
+}
+
+std::optional<TimePoint> Surface::nextTimer() const {
+    std::optional<TimePoint> next;
+    for (const Timer &timer : m_timers) {
+        if (!next || timer.due < *next) {
+            next = timer.due;
+        }
+    }
+    return next;
+}
+
+// ---- Shortcuts, cursor, tooltips ----------------------------------------------
+
+Surface::ShortcutId Surface::addShortcut(KeyChord chord, std::function<void()> action) {
+    const ShortcutId id = m_nextShortcut++;
+    m_shortcuts.push_back({id, chord, std::move(action)});
+    return id;
+}
+
+void Surface::removeShortcut(ShortcutId id) {
+    std::erase_if(m_shortcuts, [id](const Shortcut &s) { return s.id == id; });
+}
+
+Cursor Surface::cursor() {
+    Element *under = m_pressed;
+    if (!under && m_pointerInside) {
+        under = hitTest(m_pointer);
+    }
+    for (const Element *e = under; e; e = e->parent()) {
+        if (const std::optional<Cursor> shape = e->cursorAt(m_pointer)) {
+            return *shape;
+        }
+    }
+    return Cursor::Arrow;
+}
+
+void Surface::hideToolTip() {
+    if (m_toolTipTimer) {
+        stopTimer(m_toolTipTimer);
+        m_toolTipTimer = 0;
+    }
+    if (m_toolTip) {
+        Element *tip = m_toolTip;
+        m_toolTip = nullptr;
+        m_toolTipHidden = now();
+        closePopup(*tip);
+    }
+    m_toolTipFor = nullptr;
+}
+
+void Surface::scheduleToolTip() {
+    Element *owner = nullptr;
+    for (Element *e = m_hovered; e; e = e->parent()) {
+        if (!e->toolTip().empty()) {
+            owner = e;
+            break;
+        }
+    }
+    if (owner == m_toolTipFor && (m_toolTip || m_toolTipTimer)) {
+        return; // already showing, or about to, for this element
+    }
+    const bool quick = m_toolTip != nullptr || (m_toolTipHidden != TimePoint{} &&
+                                                now() - m_toolTipHidden < kToolTipFallThrough);
+    hideToolTip();
+    if (!owner) {
+        return;
+    }
+    m_toolTipFor = owner;
+    const auto show = [this] {
+        m_toolTipTimer = 0;
+        if (!m_toolTipFor || m_pressed) {
+            return;
+        }
+        PopupOptions options;
+        options.takesInput = false;
+        m_toolTip = &openPopup(std::make_unique<ToolTipBox>(m_toolTipFor->toolTip()),
+                               {m_pointer.x, m_pointer.y + 20.0f}, options);
+    };
+    if (quick) {
+        show();
+    } else {
+        m_toolTipTimer = startTimer(kToolTipDelay, show);
+    }
+}
+
+// ---- Input ---------------------------------------------------------------------
+
 bool Surface::dispatch(const PointerEvent &event) {
     m_closed.clear();
     layout();
+    if (event.type == PointerEvent::Type::Leave) {
+        m_pointerInside = false;
+    } else {
+        m_pointer = event.position;
+        m_pointerInside = true;
+    }
+    if (event.type != PointerEvent::Type::Move) {
+        hideToolTip();
+    }
     Element *hit = event.type == PointerEvent::Type::Leave ? nullptr : hitTest(event.position);
     if (event.type == PointerEvent::Type::Press && !m_pressed && !m_popups.empty()) {
-        const bool inPopup = std::any_of(m_popups.begin(), m_popups.end(),
-                                         [hit](const Popup &p) { return contains(*p.element, hit); });
-        if (!inPopup) {
-            closePopups(); // the press only dismisses
-            setHovered(hitTest(event.position));
-            return true;
+        std::ptrdiff_t inPopup = -1;
+        for (std::size_t i = 0; i < m_popups.size(); ++i) {
+            if (m_popups[i].options.takesInput && contains(*m_popups[i].element, hit)) {
+                inPopup = std::ptrdiff_t(i);
+            }
+        }
+        const std::ptrdiff_t modal = topModal();
+        if (inPopup < 0) {
+            // The press only dismisses: every popup above the top dialog.
+            bool closed = false;
+            while (!m_popups.empty() && std::ptrdiff_t(m_popups.size()) - 1 > modal) {
+                closePopup(*m_popups.back().element);
+                closed = true;
+            }
+            if (closed || modal >= 0) {
+                setHovered(hitTest(event.position));
+                return true;
+            }
         }
     }
     // Disabled elements are hover- and click-transparent to their enabled parent.
@@ -281,6 +547,9 @@ bool Surface::dispatch(const PointerEvent &event) {
         // While a button is held only the pressed element can be hovered, so
         // dragging off a button and releasing does not click it.
         setHovered(contains(*m_pressed, hit) ? m_pressed : nullptr);
+    }
+    if (event.type == PointerEvent::Type::Move && !m_pressed) {
+        scheduleToolTip();
     }
 
     // While a button is held, the pressed element gets everything.
@@ -301,7 +570,7 @@ bool Surface::dispatch(const PointerEvent &event) {
         handler = handled ? e : nullptr;
     }
 
-    if (event.type == PointerEvent::Type::Press && handler && !m_pressed) {
+    if (event.type == PointerEvent::Type::Press && handler && !m_pressed && handler->surface() == this) {
         m_pressed = handler;
         handler->onPressedChanged(true);
     } else if (event.type == PointerEvent::Type::Release && m_pressed) {
@@ -315,19 +584,33 @@ bool Surface::dispatch(const PointerEvent &event) {
 
 bool Surface::dispatch(const KeyEvent &event) {
     m_closed.clear();
+    if (event.type == KeyEvent::Type::Press) {
+        hideToolTip();
+    }
     for (Element *e = m_focus; e; e = e->parent()) {
         if (e->onKey(event)) {
             return true;
         }
     }
-    if (!m_popups.empty() && event.type == KeyEvent::Type::Press && event.key == Key::Escape) {
+    if (event.type != KeyEvent::Type::Press) {
+        return false;
+    }
+    if (!m_popups.empty() && event.key == Key::Escape) {
         closePopup(*m_popups.back().element);
         return true;
     }
-    if (event.type == KeyEvent::Type::Press && event.key == Key::Tab &&
-        !hasModifier(event.modifiers, Modifier::Control)) {
+    if (event.key == Key::Tab && !hasModifier(event.modifiers, Modifier::Control)) {
         focusNext(hasModifier(event.modifiers, Modifier::Shift));
         return true;
+    }
+    if (topModal() < 0) {
+        for (const Shortcut &shortcut : m_shortcuts) {
+            if (shortcut.chord.matches(event)) {
+                const std::function<void()> action = shortcut.action; // may remove itself
+                action();
+                return true;
+            }
+        }
     }
     return false;
 }

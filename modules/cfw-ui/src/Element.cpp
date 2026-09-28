@@ -157,6 +157,8 @@ const Theme &Element::theme() const {
     return fallback;
 }
 
+std::optional<Cursor> Element::cursorAt(Vec2) const { return m_cursor; }
+
 void Element::paint(Painter &, const Theme &) {}
 bool Element::onPointer(const PointerEvent &) { return false; }
 bool Element::onKey(const KeyEvent &) { return false; }

@@ -53,8 +53,7 @@ void UiWindow::resize(Vec2i pixels) {
 }
 
 void UiWindow::updateCursor() {
-    const Element *under = m_surface.pressed() ? m_surface.pressed() : m_surface.hovered();
-    const Cursor wanted = under && under->role() == Role::TextField ? Cursor::IBeam : Cursor::Arrow;
+    const Cursor wanted = m_surface.cursor();
     if (wanted != m_cursor) {
         m_cursor = wanted;
         m_window->setCursor(wanted);
@@ -62,6 +61,8 @@ void UiWindow::updateCursor() {
 }
 
 bool UiWindow::frame() {
+    m_surface.runTimers();
+    updateCursor();
     m_surface.layout();
     const RectF damage = m_surface.takeDamage();
     if (!m_fullRepaint && damage.isEmpty()) {
@@ -86,7 +87,12 @@ bool UiWindow::frame() {
 void runUntilClosed(UiWindow &window) {
     while (window.isOpen()) {
         window.frame();
-        processEvents(std::chrono::milliseconds(250));
+        // Sleep until input, or until the surface's next timer is due.
+        Duration wait = std::chrono::milliseconds(250);
+        if (const std::optional<TimePoint> next = window.surface().nextTimer()) {
+            wait = std::clamp(std::chrono::duration_cast<Duration>(*next - Clock::now()), Duration::zero(), wait);
+        }
+        processEvents(wait);
     }
 }
 

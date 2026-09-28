@@ -41,6 +41,14 @@ Splitter::Splitter(Stack::Direction direction, float ratio) : m_direction(direct
     setRole(Role::Group);
 }
 
+std::optional<Cursor> Splitter::cursorAt(Vec2 position) const {
+    const RectF h = handle();
+    if (m_dragging || (position.x >= h.x && position.y >= h.y && position.x < h.right() && position.y < h.bottom())) {
+        return m_direction == Stack::Direction::Row ? Cursor::SizeHorizontal : Cursor::SizeVertical;
+    }
+    return Element::cursorAt(position);
+}
+
 Element *Splitter::pane(std::size_t index) const { return index == 0 ? m_first : m_second; }
 
 Element &Splitter::setFirst(std::unique_ptr<Element> pane) {

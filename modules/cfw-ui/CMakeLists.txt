@@ -8,6 +8,7 @@ cfw_add_module(cfw-ui
         src/Controls.cpp
         src/Element.cpp
         src/ScrollArea.cpp
+        src/Shortcut.cpp
         src/Surface.cpp
         src/TextField.cpp
         src/Views.cpp
@@ -20,4 +21,5 @@ cfw_add_module(cfw-ui
 # Tests (only when CFW builds them: not as a subproject).
 if(CFW_BUILD_TESTS)
     cfw_add_test(cfw-ui UiTest)
+    cfw_add_test(cfw-ui ShellTest)
 endif()

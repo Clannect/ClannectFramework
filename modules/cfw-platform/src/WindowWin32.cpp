@@ -99,6 +99,18 @@ Key keyOf(WPARAM vk) {
     case VK_END: return Key::End;
     case VK_PRIOR: return Key::PageUp;
     case VK_NEXT: return Key::PageDown;
+    case VK_OEM_3: return Key::Backquote;
+    case VK_OEM_MINUS: return Key::Minus;
+    case VK_OEM_PLUS: return Key::Equal;
+    case VK_OEM_4: return Key::BracketLeft;
+    case VK_OEM_6: return Key::BracketRight;
+    case VK_OEM_5: return Key::Backslash;
+    case VK_OEM_1: return Key::Semicolon;
+    case VK_OEM_7: return Key::Quote;
+    case VK_OEM_COMMA: return Key::Comma;
+    case VK_OEM_PERIOD: return Key::Period;
+    case VK_OEM_2: return Key::Slash;
+    case VK_INSERT: return Key::Insert;
     case VK_SHIFT: return Key::Shift;
     case VK_CONTROL: return Key::Control;
     case VK_MENU: return Key::Alt;

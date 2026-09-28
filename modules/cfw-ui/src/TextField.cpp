@@ -41,6 +41,7 @@ bool ctrl(const KeyEvent &e) { return hasModifier(e.modifiers, Modifier::Control
 TextField::TextField(String text) : m_text(decode(text)) {
     setRole(Role::TextField);
     setFocusable(true);
+    setCursor(Cursor::IBeam);
     m_caret = m_anchor = m_text.size();
 }
 

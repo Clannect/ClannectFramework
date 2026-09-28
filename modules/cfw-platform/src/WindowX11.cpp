@@ -122,6 +122,18 @@ Key keyOf(KeySym sym) {
     case XK_End: case XK_KP_End: return Key::End;
     case XK_Page_Up: case XK_KP_Page_Up: return Key::PageUp;
     case XK_Page_Down: case XK_KP_Page_Down: return Key::PageDown;
+    case XK_grave: case XK_asciitilde: return Key::Backquote;
+    case XK_minus: case XK_underscore: return Key::Minus;
+    case XK_equal: case XK_plus: return Key::Equal;
+    case XK_bracketleft: case XK_braceleft: return Key::BracketLeft;
+    case XK_bracketright: case XK_braceright: return Key::BracketRight;
+    case XK_backslash: case XK_bar: return Key::Backslash;
+    case XK_semicolon: case XK_colon: return Key::Semicolon;
+    case XK_apostrophe: case XK_quotedbl: return Key::Quote;
+    case XK_comma: case XK_less: return Key::Comma;
+    case XK_period: case XK_greater: return Key::Period;
+    case XK_slash: case XK_question: return Key::Slash;
+    case XK_Insert: case XK_KP_Insert: return Key::Insert;
     case XK_Shift_L: case XK_Shift_R: return Key::Shift;
     case XK_Control_L: case XK_Control_R: return Key::Control;
     case XK_Alt_L: case XK_Alt_R: return Key::Alt;
