@@ -202,9 +202,119 @@ void damageAndPaint() {
     check(button.measure({200, 80}).y == surface.theme().controlHeight, "buttons are the theme's height");
 }
 
+TextEvent typed(StringView text) { return TextEvent{String(text)}; }
+
+KeyEvent ctrlKey(Key k, Modifier extra = Modifier::None) { return key(k, Modifier::Control | extra); }
+
+void textField() {
+    Surface surface(Theme::dark().withSystemFonts());
+    surface.setSize({300, 40});
+    TextField &field = surface.root().add<TextField>();
+    surface.layout();
+    int changes = 0;
+    int finished = 0;
+    ScopedConnection c1 = field.textChanged.connect([&](const String &) { ++changes; });
+    ScopedConnection c2 = field.editingFinished.connect([&] { ++finished; });
+
+    surface.setFocus(&field);
+    surface.dispatch(typed("héllo"));
+    checkEqual(field.text(), String("héllo"), "typing inserts UTF-8 text");
+    checkEqual(field.caret(), std::size_t{5}, "the caret counts code points");
+    surface.dispatch(typed("\n\t"));
+    checkEqual(field.text(), String("héllo"), "control characters are not inserted");
+
+    surface.dispatch(key(Key::Left, Modifier::Shift));
+    surface.dispatch(key(Key::Left, Modifier::Shift));
+    checkEqual(field.selectedText(), String("lo"), "Shift+Left selects");
+    surface.dispatch(ctrlKey(Key::C));
+    surface.dispatch(key(Key::Backspace));
+    checkEqual(field.text(), String("hél"), "Backspace deletes the selection");
+    surface.dispatch(key(Key::Home));
+    surface.dispatch(ctrlKey(Key::V));
+    checkEqual(field.text(), String("lohél"), "paste at the caret");
+    surface.dispatch(ctrlKey(Key::Z));
+    checkEqual(field.text(), String("hél"), "undo");
+    surface.dispatch(ctrlKey(Key::Z));
+    checkEqual(field.text(), String("héllo"), "undo again");
+    surface.dispatch(ctrlKey(Key::Y));
+    checkEqual(field.text(), String("hél"), "redo");
+    surface.dispatch(ctrlKey(Key::A));
+    surface.dispatch(ctrlKey(Key::X));
+    checkEqual(field.text(), String(), "cut everything");
+    checkEqual(surface.clipboardText(), String("hél"), "cut goes to the clipboard");
+    surface.dispatch(key(Key::Delete));
+    checkEqual(field.text(), String(), "Delete on empty text does nothing");
+    check(changes >= 5, "every edit reports a change");
+
+    field.setMaxLength(3);
+    surface.dispatch(typed("abcdef"));
+    checkEqual(field.text(), String("abc"), "the length limit holds");
+    surface.dispatch(key(Key::Enter));
+    checkEqual(finished, 1, "Enter finishes editing");
+    surface.setFocus(nullptr);
+    checkEqual(finished, 1, "losing focus without an edit does not finish again");
+
+    // Pointer: clicking at the far right puts the caret at the end; a
+    // double-click selects all.
+    if (surface.theme().font) {
+        surface.dispatch(pointer(PointerEvent::Type::Press, 290, 20));
+        surface.dispatch(pointer(PointerEvent::Type::Release, 290, 20));
+        check(field.hasFocus(), "clicking focuses the field");
+        checkEqual(field.caret(), std::size_t{3}, "the caret goes where the pointer is");
+        surface.dispatch(pointer(PointerEvent::Type::Press, 3, 20));
+        checkEqual(field.caret(), std::size_t{0}, "the start of the text");
+        surface.dispatch(pointer(PointerEvent::Type::Move, 290, 20));
+        surface.dispatch(pointer(PointerEvent::Type::Release, 290, 20));
+        checkEqual(field.selectedText(), String("abc"), "dragging selects");
+    }
+}
+
+void scrollArea() {
+    Surface surface;
+    surface.setSize({200, 100});
+    ScrollArea &area = surface.root().add<ScrollArea>();
+    Stack &list = area.setContent<Stack>(Stack::Direction::Column, 0.0f);
+    std::vector<Probe *> rows;
+    for (int i = 0; i < 10; ++i) {
+        rows.push_back(&list.add<Probe>(Vec2{50, 30}));
+    }
+    surface.layout();
+    checkEqual(area.maxOffset().y, 200.0f, "300 of content in 100 of view");
+    checkEqual(rows[0]->rect().width, 200.0f - ScrollArea::kBarWidth, "content leaves room for the bar");
+
+    PointerEvent wheel = pointer(PointerEvent::Type::Wheel, 50, 50);
+    wheel.wheelDelta = {0, -40};
+    surface.dispatch(wheel);
+    checkEqual(area.offset().y, 40.0f, "the wheel scrolls");
+    checkEqual(rows[0]->rect().y, -40.0f, "and moves the content");
+    wheel.wheelDelta = {0, -1000};
+    surface.dispatch(wheel);
+    checkEqual(area.offset().y, 200.0f, "never past the end");
+
+    area.ensureVisible(rows[1]->rect());
+    checkEqual(rows[1]->rect().y, 0.0f, "ensureVisible brings a row into view");
+
+    // Dragging the thumb (at the top) to the bottom scrolls to the end.
+    area.scrollTo({});
+    surface.dispatch(pointer(PointerEvent::Type::Press, 195, 5));
+    surface.dispatch(pointer(PointerEvent::Type::Move, 195, 500));
+    surface.dispatch(pointer(PointerEvent::Type::Release, 195, 500));
+    checkEqual(area.offset().y, 200.0f, "dragging the thumb scrolls");
+
+    // Content that fits needs no bar and no scrolling.
+    for (int i = 0; i < 8; ++i) {
+        static_cast<void>(list.remove(*rows[std::size_t(i)]));
+    }
+    surface.layout();
+    checkEqual(area.maxOffset().y, 0.0f, "short content does not scroll");
+    checkEqual(rows[9]->rect().width, 200.0f, "and gets the full width");
+}
+
 } // namespace
 
 int main() {
+    textField();
+    scrollArea();
     stacksLayOut();
     pointerRouting();
     keyboard();

@@ -15,6 +15,7 @@
 //
 // Threads: one thread.
 
+#include <functional>
 #include <memory>
 
 #include "cfw/core/Rect.h"
@@ -61,6 +62,13 @@ public:
     // Tab order: focusable, enabled, visible elements in tree order.
     void focusNext(bool backwards = false);
 
+    // The clipboard, supplied by the platform window (text only for now).
+    // Unset, copy and paste stay inside this surface.
+    std::function<String()> readClipboard;
+    std::function<void(StringView)> writeClipboard;
+    [[nodiscard]] String clipboardText() const;
+    void setClipboardText(StringView text);
+
 private:
     friend class Element;
     void layoutInvalidated() noexcept { m_layoutDirty = true; }
@@ -77,6 +85,7 @@ private:
     Element *m_hovered = nullptr;
     Element *m_pressed = nullptr;
     Element *m_focus = nullptr;
+    String m_clipboard;
 };
 
 } // namespace cfw

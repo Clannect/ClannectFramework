@@ -120,6 +120,16 @@ void Surface::paintTree(Painter &painter, Element &element) {
     painter.restore();
 }
 
+String Surface::clipboardText() const { return readClipboard ? readClipboard() : m_clipboard; }
+
+void Surface::setClipboardText(StringView text) {
+    if (writeClipboard) {
+        writeClipboard(text);
+    } else {
+        m_clipboard = String(text);
+    }
+}
+
 RectF Surface::takeDamage() {
     const RectF damage = m_damage.intersected({0, 0, m_size.x, m_size.y});
     m_damage = {};
