@@ -450,6 +450,17 @@ void choices() {
     surface.dispatch(copy);
     check(copied == "nothing", "a masked field is not copied");
     checkEqual(refused.text(), String("abc"), "but keeps its text");
+    // Plain keys that type belong to the field, not to window shortcuts.
+    int zooms = 0;
+    const auto zoom = surface.addShortcut(KeyChord::parse("F").value(), [&] { ++zooms; });
+    refused.setMasked(false);
+    surface.setFocus(&refused);
+    surface.dispatch(key(Key::F));
+    checkEqual(zooms, 0, "typing F in a field is not the F shortcut");
+    surface.setFocus(nullptr);
+    surface.dispatch(key(Key::F));
+    checkEqual(zooms, 1, "elsewhere it is");
+    surface.removeShortcut(zoom);
     column.remove(refused).reset();
 
     // Painting everything with a popup open does not fail.

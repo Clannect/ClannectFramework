@@ -289,7 +289,14 @@ bool TextField::onKey(const KeyEvent &event) {
         break;
     }
     if (!ctrl(event)) {
-        return false;
+        // A key that types (letters, digits, punctuation, space) belongs to
+        // the field, its text arriving as a TextEvent: a window shortcut on
+        // a plain key must not fire while typing.
+        const bool plain = !hasModifier(event.modifiers, Modifier::Alt) &&
+                           !hasModifier(event.modifiers, Modifier::Meta);
+        const bool typing = (event.key >= Key::A && event.key <= Key::Digit9) ||
+                            (event.key >= Key::Backquote && event.key <= Key::Slash) || event.key == Key::Space;
+        return plain && typing && !m_readOnly;
     }
     Surface *s = surface();
     switch (event.key) {
