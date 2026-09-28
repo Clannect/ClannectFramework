@@ -8,6 +8,7 @@ cfw_add_module(cfw-image
         src/ImageFile.cpp
         src/JpegDecoder.cpp
         src/JpegEncoder.cpp
+        src/Orientation.cpp
         src/Png.cpp
         src/Rasterizer.cpp
         src/RectPacker.cpp

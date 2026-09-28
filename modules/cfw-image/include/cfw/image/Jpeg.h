@@ -13,7 +13,8 @@
 // integer IDCT, "fancy" (triangle-filter) chroma upsampling and fixed-point
 // colour conversion, so pixels are identical to what libjpeg-based tools
 // show. CMYK is converted the way Qt did (Adobe's inverted CMYK, each channel
-// multiplied by K). EXIF orientation is not applied.
+// multiplied by K). EXIF orientation is not applied here; see Orientation.h
+// and decodeImage(..., ImageOrientation::ApplyExif).
 //
 // Hostile input fails cleanly: the size is checked against ImageLimits
 // before allocating, table and scan parameters are validated, progressive

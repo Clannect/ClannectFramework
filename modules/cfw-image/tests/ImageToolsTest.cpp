@@ -5,6 +5,7 @@
 
 #include "cfw/image/ImageFile.h"
 #include "cfw/image/Jpeg.h"
+#include "cfw/image/Orientation.h"
 #include "cfw/image/Png.h"
 #include "cfw/image/RectPacker.h"
 #include "cfw/image/Resize.h"
@@ -51,6 +52,89 @@ void detectsFormatsFromContent() {
     const Result<Image> r = decodeImage(Span<const std::byte>(reinterpret_cast<const std::byte *>(gif.data()), gif.size()));
     check(!r && r.error().code() == ErrorCode::Unsupported, "an unknown format is Unsupported");
     checkEqual(imageFormatName(ImageFormat::WebP), StringView("WebP"), "format names");
+}
+
+// A 3x2 image whose pixels are numbered 1-6 (in the red channel), row by row.
+Image numbered() {
+    Image image = Image::create(3, 2).value();
+    for (std::uint8_t i = 0; i < 6; ++i) {
+        image.pixels()[std::size_t{i} * 4] = std::uint8_t(i + 1);
+        image.pixels()[std::size_t{i} * 4 + 3] = 255;
+    }
+    return image;
+}
+
+std::vector<int> numbersOf(const Image &image) {
+    std::vector<int> out;
+    for (std::size_t i = 0; i < image.pixels().size(); i += 4) {
+        out.push_back(image.pixels()[i]);
+    }
+    return out;
+}
+
+// An APP1 EXIF segment holding one Orientation entry.
+std::vector<std::byte> exifSegment(int orientation, bool bigEndian) {
+    std::vector<std::uint8_t> tiff = bigEndian ? std::vector<std::uint8_t>{'M', 'M', 0, 42, 0, 0, 0, 8, 0, 1, 0x01, 0x12, 0, 3,
+                                                                              0, 0, 0, 1, 0, std::uint8_t(orientation), 0, 0, 0, 0, 0, 0}
+                                               : std::vector<std::uint8_t>{'I', 'I', 42, 0, 8, 0, 0, 0, 1, 0, 0x12, 0x01, 3, 0,
+                                                                           1, 0, 0, 0, std::uint8_t(orientation), 0, 0, 0, 0, 0, 0, 0};
+    std::vector<std::uint8_t> segment = {0xFF, 0xE1, 0, 0, 'E', 'x', 'i', 'f', 0, 0};
+    segment.insert(segment.end(), tiff.begin(), tiff.end());
+    const std::size_t length = segment.size() - 2;
+    segment[2] = std::uint8_t(length >> 8);
+    segment[3] = std::uint8_t(length);
+    std::vector<std::byte> out;
+    for (const std::uint8_t b : segment) {
+        out.push_back(std::byte{b});
+    }
+    return out;
+}
+
+void appliesExifOrientation() {
+    const Image source = numbered();
+    const std::vector<std::vector<int>> expected = {
+        {1, 2, 3, 4, 5, 6}, {3, 2, 1, 6, 5, 4}, {6, 5, 4, 3, 2, 1}, {4, 5, 6, 1, 2, 3},
+        {1, 4, 2, 5, 3, 6}, {4, 1, 5, 2, 6, 3}, {6, 3, 5, 2, 4, 1}, {3, 6, 2, 5, 1, 4},
+    };
+    for (int orientation = 1; orientation <= 8; ++orientation) {
+        const Image turned = orientImage(source, orientation).value();
+        check(turned.width() == (orientation >= 5 ? 2u : 3u), "orientation swaps sides from 5 on");
+        check(numbersOf(turned) == expected[std::size_t(orientation - 1)], "orientation maps pixels");
+    }
+
+    // A photo 16x8, red on the left and blue on the right, stored sideways
+    // (orientation 6: turn it 90 degrees clockwise to show it).
+    Image photo = Image::create(16, 8).value();
+    for (std::uint32_t y = 0; y < 8; ++y) {
+        for (std::uint32_t x = 0; x < 16; ++x) {
+            std::uint8_t *p = photo.row(y).data() + std::size_t{x} * 4;
+            p[0] = x < 8 ? 255 : 0;
+            p[2] = x < 8 ? 0 : 255;
+            p[3] = 255;
+        }
+    }
+    const std::vector<std::byte> plain = encodeJpeg(photo, {95, false}).value();
+    for (const bool bigEndian : {false, true}) {
+        std::vector<std::byte> jpeg(plain.begin(), plain.begin() + 2);
+        const std::vector<std::byte> exif = exifSegment(6, bigEndian);
+        jpeg.insert(jpeg.end(), exif.begin(), exif.end());
+        jpeg.insert(jpeg.end(), plain.begin() + 2, plain.end());
+        check(jpegExifOrientation(jpeg) == 6, "orientation read from EXIF");
+
+        const Image stored = decodeImage(jpeg).value();
+        check(stored.width() == 16, "decoded as stored by default");
+        const Image shown = decodeImage(jpeg, {}, ImageOrientation::ApplyExif).value();
+        check(shown.width() == 8 && shown.height() == 16, "turned on request");
+        check(pixel(shown, 4, 3)[0] > 200 && pixel(shown, 4, 12)[2] > 200, "left side ends up on top");
+
+        // Every truncation of the EXIF block is rejected cleanly.
+        for (std::size_t cut = 2; cut < exif.size(); ++cut) {
+            std::vector<std::byte> broken(plain.begin(), plain.begin() + 2);
+            broken.insert(broken.end(), exif.begin(), exif.begin() + std::ptrdiff_t(cut));
+            (void)jpegExifOrientation(broken);
+        }
+    }
+    check(!jpegExifOrientation(plain), "no EXIF, no orientation");
 }
 
 void premultipliesAndBack() {
@@ -181,6 +265,7 @@ void packsRectangles() {
 
 int main() {
     detectsFormatsFromContent();
+    appliesExifOrientation();
     premultipliesAndBack();
     resizes();
     packsRectangles();

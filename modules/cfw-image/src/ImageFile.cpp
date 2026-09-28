@@ -1,6 +1,7 @@
 #include "cfw/image/ImageFile.h"
 
 #include "cfw/image/Jpeg.h"
+#include "cfw/image/Orientation.h"
 #include "cfw/image/Png.h"
 #include "cfw/image/WebP.h"
 
@@ -39,6 +40,18 @@ Result<Image> decodeImage(Span<const std::byte> data, const ImageLimits &limits)
     case ImageFormat::WebP: return decodeWebP(data, limits);
     }
     return Error(ErrorCode::Unsupported, "unknown image format");
+}
+
+Result<Image> decodeImage(Span<const std::byte> data, const ImageLimits &limits, ImageOrientation orientation) {
+    auto image = decodeImage(data, limits);
+    if (!image || orientation == ImageOrientation::AsStored || !isJpeg(data)) {
+        return image;
+    }
+    const std::optional<int> exif = jpegExifOrientation(data);
+    if (!exif || *exif == 1) {
+        return image;
+    }
+    return orientImage(image.value(), *exif, limits);
 }
 
 } // namespace cfw
