@@ -4,6 +4,7 @@
 
 cfw_add_module(cfw-ui
     SOURCES
+        src/Choices.cpp
         src/Controls.cpp
         src/Element.cpp
         src/ScrollArea.cpp

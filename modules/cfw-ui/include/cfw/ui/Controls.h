@@ -7,6 +7,8 @@
 #include <string>
 #include <vector>
 
+#include <functional>
+
 #include "cfw/core/Signal.h"
 #include "cfw/text/TextLayout.h"
 #include "cfw/ui/Element.h"
@@ -176,6 +178,135 @@ private:
     Vec2 m_contentSize;
     Vec2 m_offset;
     std::optional<float> m_dragFrom; // pointer y minus thumb top, while dragging
+};
+
+} // namespace cfw
+
+namespace cfw {
+
+// A check box with a label: click or Space toggles it.
+class CheckBox : public Element {
+public:
+    explicit CheckBox(String text = {}, bool checked = false);
+    void setChecked(bool checked); // does not emit toggled
+    [[nodiscard]] bool isChecked() const noexcept { return m_checked; }
+    Signal<bool> toggled;
+
+    void paint(Painter &painter, const Theme &theme) override;
+    bool onPointer(const PointerEvent &event) override;
+    bool onKey(const KeyEvent &event) override;
+    void onHoverChanged(bool) override { invalidatePaint(); }
+    void onFocusChanged(bool) override { invalidatePaint(); }
+
+protected:
+    Vec2 measureContent(Vec2 available) override;
+
+private:
+    void toggle();
+    String m_text;
+    TextLayout m_layout;
+    bool m_laidOut = false;
+    bool m_checked = false;
+};
+
+// A numeric field (QDoubleSpinBox): type a value, or step it with Up/Down
+// (Shift: 10 steps) and the wheel while focused. Values are clamped to the
+// range and rounded to `decimals`; text that does not parse restores the
+// last value when editing finishes.
+class NumberField : public TextField {
+public:
+    explicit NumberField(double value = 0.0, int decimals = 2);
+    void setRange(double minimum, double maximum);
+    void setStep(double step) noexcept { m_step = step; }
+    void setDecimals(int decimals);
+    void setValue(double value); // does not emit valueChanged
+    [[nodiscard]] double value() const noexcept { return m_value; }
+    Signal<double> valueChanged;
+
+    bool onKey(const KeyEvent &event) override;
+    bool onPointer(const PointerEvent &event) override;
+
+private:
+    void commit(double value);
+    void showValue();
+    double m_value = 0.0;
+    double m_minimum = -1e300;
+    double m_maximum = 1e300;
+    double m_step = 1.0;
+    int m_decimals = 2;
+    ScopedConnection m_finished;
+};
+
+// A list of items shown in a popup (Qt's QComboBox): click or Space/Enter
+// opens it; Up/Down change the selection directly.
+class Dropdown : public Element {
+public:
+    explicit Dropdown(std::vector<String> items = {}, int current = 0);
+    ~Dropdown() override;
+    void setItems(std::vector<String> items);
+    [[nodiscard]] const std::vector<String> &items() const noexcept { return m_items; }
+    void setCurrentIndex(int index); // does not emit currentChanged
+    [[nodiscard]] int currentIndex() const noexcept { return m_current; }
+    [[nodiscard]] String currentText() const;
+    [[nodiscard]] bool isOpen() const noexcept { return m_popup != nullptr; }
+    void open();
+    Signal<int> currentChanged;
+
+    void paint(Painter &painter, const Theme &theme) override;
+    bool onPointer(const PointerEvent &event) override;
+    bool onKey(const KeyEvent &event) override;
+    void onHoverChanged(bool) override { invalidatePaint(); }
+    void onFocusChanged(bool) override { invalidatePaint(); }
+
+protected:
+    Vec2 measureContent(Vec2 available) override;
+
+private:
+    void choose(int index);
+    std::vector<String> m_items;
+    int m_current = 0;
+    Element *m_popup = nullptr;
+    Surface *m_popupSurface = nullptr;
+};
+
+// One row of a popup menu or dropdown list: text, optional shortcut text,
+// highlighted under the pointer, activates on release or Enter.
+class MenuItem : public Element {
+public:
+    explicit MenuItem(String text, String shortcut = {});
+    [[nodiscard]] const String &text() const noexcept { return m_text; }
+    void setChecked(bool checked) { m_checked = checked; invalidatePaint(); }
+    Signal<> activated;
+
+    void paint(Painter &painter, const Theme &theme) override;
+    bool onPointer(const PointerEvent &event) override;
+    bool onKey(const KeyEvent &event) override;
+    void onHoverChanged(bool) override { invalidatePaint(); }
+    void onFocusChanged(bool) override { invalidatePaint(); }
+
+protected:
+    Vec2 measureContent(Vec2 available) override;
+
+private:
+    String m_text;
+    String m_shortcut;
+    TextLayout m_layout;
+    TextLayout m_shortcutLayout;
+    bool m_checked = false;
+};
+
+// A popup menu: a column of MenuItems on a panel. Up/Down move between
+// items; activating one closes the menu.
+class Menu : public Stack {
+public:
+    Menu();
+    MenuItem &addItem(String text, std::function<void()> action, String shortcut = {});
+    void addSeparator();
+    // Opens this menu as a popup of `surface` at `position`.
+    static Menu &popup(Surface &surface, std::unique_ptr<Menu> menu, Vec2 position);
+
+    void paint(Painter &painter, const Theme &theme) override;
+    bool onKey(const KeyEvent &event) override;
 };
 
 } // namespace cfw

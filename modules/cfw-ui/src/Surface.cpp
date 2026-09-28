@@ -49,7 +49,12 @@ Element *hitTestIn(Element &element, Vec2 point) {
 
 Surface::Surface(Theme theme) : m_theme(std::move(theme)) { setRoot(std::make_unique<Element>()); }
 
-Surface::~Surface() = default;
+Surface::~Surface() {
+    // Popups first: their owners (still in the tree) are told they closed.
+    closePopups();
+    m_closed.clear();
+    m_root.reset();
+}
 
 void Surface::setRoot(std::unique_ptr<Element> root) {
     if (m_root) {
@@ -88,18 +93,66 @@ void Surface::setTheme(Theme theme) {
 }
 
 void Surface::layout() {
+    m_closed.clear();
     if (!m_layoutDirty) {
         return;
     }
     m_layoutDirty = false;
     static_cast<void>(m_root->measure(m_size));
     m_root->arrange({0, 0, m_size.x, m_size.y});
+    for (Popup &popup : m_popups) {
+        const Vec2 size = popup.element->measure(m_size);
+        const float w = std::min(size.x, m_size.x);
+        const float h = std::min(size.y, m_size.y);
+        const float x = std::clamp(popup.position.x, 0.0f, std::max(0.0f, m_size.x - w));
+        // Below the anchor if it fits, else above it (as dropdowns do).
+        float y = popup.position.y;
+        if (y + h > m_size.y) {
+            y = std::max(0.0f, m_size.y - h);
+        }
+        popup.element->arrange({x, y, w, h});
+    }
+}
+
+Element &Surface::openPopup(std::unique_ptr<Element> popup, Vec2 position, std::function<void()> onClosed) {
+    popup->setSurface(this);
+    m_popups.push_back({std::move(popup), position, std::move(onClosed)});
+    m_layoutDirty = true;
+    Element &element = *m_popups.back().element;
+    element.invalidateLayout();
+    return element;
+}
+
+void Surface::closePopup(Element &popup) {
+    const auto it = std::find_if(m_popups.begin(), m_popups.end(),
+                                 [&popup](const Popup &p) { return p.element.get() == &popup; });
+    if (it == m_popups.end()) {
+        return;
+    }
+    Popup closing = std::move(*it);
+    m_popups.erase(it);
+    elementRemoved(*closing.element);
+    addDamage(closing.element->rect());
+    closing.element->setSurface(nullptr);
+    m_closed.push_back(std::move(closing.element));
+    if (closing.onClosed) {
+        closing.onClosed();
+    }
+}
+
+void Surface::closePopups() {
+    while (!m_popups.empty()) {
+        closePopup(*m_popups.back().element);
+    }
 }
 
 void Surface::paint(Painter &painter) {
     layout();
     painter.fillRect({0, 0, m_size.x, m_size.y}, m_theme.window);
     paintTree(painter, *m_root);
+    for (Popup &popup : m_popups) {
+        paintTree(painter, *popup.element);
+    }
 }
 
 void Surface::paintTree(Painter &painter, Element &element) {
@@ -152,6 +205,11 @@ void Surface::elementRemoved(Element &element) {
 
 Element *Surface::hitTest(Vec2 point) {
     layout();
+    for (std::size_t i = m_popups.size(); i-- > 0;) {
+        if (Element *hit = hitTestIn(*m_popups[i].element, point)) {
+            return hit;
+        }
+    }
     return hitTestIn(*m_root, point);
 }
 
@@ -201,8 +259,18 @@ void Surface::focusNext(bool backwards) {
 }
 
 bool Surface::dispatch(const PointerEvent &event) {
+    m_closed.clear();
     layout();
-    Element *hit = event.type == PointerEvent::Type::Leave ? nullptr : hitTestIn(*m_root, event.position);
+    Element *hit = event.type == PointerEvent::Type::Leave ? nullptr : hitTest(event.position);
+    if (event.type == PointerEvent::Type::Press && !m_pressed && !m_popups.empty()) {
+        const bool inPopup = std::any_of(m_popups.begin(), m_popups.end(),
+                                         [hit](const Popup &p) { return contains(*p.element, hit); });
+        if (!inPopup) {
+            closePopups(); // the press only dismisses
+            setHovered(hitTest(event.position));
+            return true;
+        }
+    }
     // Disabled elements are hover- and click-transparent to their enabled parent.
     while (hit && !hit->isEnabled()) {
         hit = hit->parent();
@@ -246,10 +314,15 @@ bool Surface::dispatch(const PointerEvent &event) {
 }
 
 bool Surface::dispatch(const KeyEvent &event) {
+    m_closed.clear();
     for (Element *e = m_focus; e; e = e->parent()) {
         if (e->onKey(event)) {
             return true;
         }
+    }
+    if (!m_popups.empty() && event.type == KeyEvent::Type::Press && event.key == Key::Escape) {
+        closePopup(*m_popups.back().element);
+        return true;
     }
     if (event.type == KeyEvent::Type::Press && event.key == Key::Tab &&
         !hasModifier(event.modifiers, Modifier::Control)) {
@@ -260,6 +333,7 @@ bool Surface::dispatch(const KeyEvent &event) {
 }
 
 bool Surface::dispatch(const TextEvent &event) {
+    m_closed.clear();
     for (Element *e = m_focus; e; e = e->parent()) {
         if (e->onText(event)) {
             return true;

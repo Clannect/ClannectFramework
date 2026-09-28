@@ -17,6 +17,7 @@
 
 #include <functional>
 #include <memory>
+#include <vector>
 
 #include "cfw/core/Rect.h"
 #include "cfw/ui/Element.h"
@@ -62,6 +63,18 @@ public:
     // Tab order: focusable, enabled, visible elements in tree order.
     void focusNext(bool backwards = false);
 
+    // Popups: menus, dropdown lists and tooltips are layers inside the
+    // surface, above the root (not separate OS windows; one decision for all
+    // platforms). They are measured at their preferred size, placed at
+    // `position` and kept inside the surface, painted and hit-tested above
+    // everything else. A press outside every popup closes them all (and is
+    // not passed on); Escape closes the topmost. `onClosed` runs when a
+    // popup closes for any reason.
+    Element &openPopup(std::unique_ptr<Element> popup, Vec2 position, std::function<void()> onClosed = {});
+    void closePopup(Element &popup);
+    void closePopups();
+    [[nodiscard]] std::size_t popupCount() const noexcept { return m_popups.size(); }
+
     // The clipboard, supplied by the platform window (text only for now).
     // Unset, copy and paste stay inside this surface.
     std::function<String()> readClipboard;
@@ -86,6 +99,15 @@ private:
     Element *m_pressed = nullptr;
     Element *m_focus = nullptr;
     String m_clipboard;
+    struct Popup {
+        std::unique_ptr<Element> element;
+        Vec2 position;
+        std::function<void()> onClosed;
+    };
+    std::vector<Popup> m_popups;
+    // Closed popups live until the next event or layout: a popup is often
+    // closed from inside one of its own callbacks.
+    std::vector<std::unique_ptr<Element>> m_closed;
 };
 
 } // namespace cfw

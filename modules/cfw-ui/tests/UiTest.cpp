@@ -12,6 +12,7 @@
 using namespace cfw;
 using cfw::test::check;
 using cfw::test::checkEqual;
+using cfw::test::checkNear;
 
 namespace {
 
@@ -310,9 +311,112 @@ void scrollArea() {
     checkEqual(rows[9]->rect().width, 200.0f, "and gets the full width");
 }
 
+void choices() {
+    Surface surface(Theme::dark().withSystemFonts());
+    surface.setSize({400, 300});
+    Stack &column = static_cast<Stack &>(surface.root().add(std::make_unique<Stack>(Stack::Direction::Column, 4.0f, 10.0f)));
+
+    // CheckBox
+    CheckBox &box = column.add<CheckBox>("Anchored");
+    std::vector<bool> toggles;
+    ScopedConnection c1 = box.toggled.connect([&](bool on) { toggles.push_back(on); });
+    surface.layout();
+    click(surface, box.rect().x + 5, box.rect().y + 5);
+    surface.dispatch(key(Key::Space));
+    check(toggles == std::vector<bool>{true, false}, "click and Space toggle the check box");
+
+    // NumberField
+    NumberField &number = column.add<NumberField>(1.0, 2);
+    number.setRange(-10.0, 10.0);
+    number.setStep(0.5);
+    std::vector<double> values;
+    ScopedConnection c2 = number.valueChanged.connect([&](double v) { values.push_back(v); });
+    surface.layout();
+    checkEqual(number.text(), String("1.00"), "the value is shown with its decimals");
+    surface.setFocus(&number);
+    number.selectAll();
+    surface.dispatch(typed("3.14159"));
+    surface.dispatch(key(Key::Enter));
+    checkNear(number.value(), 3.14, 1e-9, "typing and Enter commits, rounded");
+    number.selectAll();
+    surface.dispatch(typed("99"));
+    surface.dispatch(key(Key::Enter));
+    checkNear(number.value(), 10.0, 1e-9, "clamped to the range");
+    surface.dispatch(key(Key::Down));
+    checkNear(number.value(), 9.5, 1e-9, "Down steps");
+    number.selectAll();
+    surface.dispatch(typed("abc"));
+    surface.dispatch(key(Key::Enter));
+    checkNear(number.value(), 9.5, 1e-9, "text that is not a number is refused");
+    checkEqual(number.text(), String("9.50"), "and the last value comes back");
+    checkEqual(values.size(), std::size_t{3}, "each change reported once");
+
+    // Dropdown
+    Dropdown &drop = column.add<Dropdown>(std::vector<String>{"Stretch", "Fit", "Crop", "Tile"}, 0);
+    std::vector<int> chosen;
+    ScopedConnection c3 = drop.currentChanged.connect([&](int i) { chosen.push_back(i); });
+    surface.layout();
+    const RectF dropRect = drop.rect();
+    click(surface, dropRect.x + 10, dropRect.y + 10);
+    check(drop.isOpen() && surface.popupCount() == 1, "clicking opens the list");
+    surface.dispatch(key(Key::Down));
+    surface.dispatch(key(Key::Down));
+    surface.dispatch(key(Key::Enter));
+    check(chosen == std::vector<int>{2}, "arrow keys then Enter choose");
+    check(!drop.isOpen() && surface.popupCount() == 0, "choosing closes the list");
+    checkEqual(drop.currentText(), String("Crop"), "the choice is shown");
+
+    click(surface, dropRect.x + 10, dropRect.y + 10);
+    surface.layout();
+    click(surface, 390, 290); // outside
+    check(!drop.isOpen(), "a click outside closes the list");
+    checkEqual(chosen.size(), std::size_t{1}, "without choosing");
+    click(surface, dropRect.x + 10, dropRect.y + 10);
+    surface.dispatch(key(Key::Escape));
+    check(!drop.isOpen(), "Escape closes the list");
+
+    // Pointer choice: the list sits below the dropdown; its second item.
+    click(surface, dropRect.x + 10, dropRect.y + 10);
+    surface.layout();
+    const float itemY = dropRect.bottom() + 2.0f + 4.0f + surface.theme().controlHeight * 1.5f;
+    click(surface, dropRect.x + 20, itemY);
+    checkEqual(drop.currentText(), String("Fit"), "clicking an item chooses it");
+
+    // A context menu runs its action and closes.
+    int copies = 0;
+    auto menu = std::make_unique<Menu>();
+    menu->addItem("Copy", [&] { ++copies; }, "Ctrl+C");
+    menu->addSeparator();
+    menu->addItem("Delete", nullptr);
+    Menu &opened = Menu::popup(surface, std::move(menu), {200, 100});
+    surface.layout();
+    const RectF first = opened.children()[0]->rect();
+    click(surface, first.x + 10, first.y + 5);
+    checkEqual(copies, 1, "a menu item runs its action");
+    checkEqual(surface.popupCount(), std::size_t{0}, "and closes the menu");
+
+    // Destroying a dropdown with its list open is safe.
+    click(surface, dropRect.x + 10, dropRect.y + 10);
+    std::unique_ptr<Element> gone = column.remove(drop);
+    gone.reset();
+    checkEqual(surface.popupCount(), std::size_t{0}, "its list goes with it");
+    surface.dispatch(key(Key::Down));
+
+    // Painting everything with a popup open does not fail.
+    Dropdown &again = column.add<Dropdown>(std::vector<String>{"A", "B"}, 0);
+    surface.layout();
+    again.open();
+    Image image = Image::create(400, 300, AlphaMode::Premultiplied).value();
+    RasterPaintBackend backend(image);
+    Painter painter(backend);
+    surface.paint(painter);
+    check(surface.popupCount() == 1, "painted with a popup open");
+}
+
 } // namespace
 
 int main() {
+    choices();
     textField();
     scrollArea();
     stacksLayOut();
