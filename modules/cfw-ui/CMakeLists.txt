@@ -7,6 +7,7 @@ cfw_add_module(cfw-ui
         src/Choices.cpp
         src/Chrome.cpp
         src/Controls.cpp
+        src/Dialog.cpp
         src/Dock.cpp
         src/Element.cpp
         src/Icon.cpp
@@ -30,4 +31,5 @@ if(CFW_BUILD_TESTS)
     cfw_add_test(cfw-ui TreeEditTest)
     cfw_add_test(cfw-ui DockTest)
     cfw_add_test(cfw-ui PropertyGridTest)
+    cfw_add_test(cfw-ui DialogTest)
 endif()

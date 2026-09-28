@@ -593,7 +593,12 @@ bool Surface::dispatch(const KeyEvent &event) {
     if (event.type == KeyEvent::Type::Press) {
         hideToolTip();
     }
-    for (Element *e = m_focus; e; e = e->parent()) {
+    // With nothing focused, a dialog still hears its keys (Enter, Escape).
+    Element *start = m_focus;
+    if (!start && topModal() >= 0) {
+        start = m_popups[std::size_t(topModal())].element.get();
+    }
+    for (Element *e = start; e; e = e->parent()) {
         if (e->onKey(event)) {
             return true;
         }

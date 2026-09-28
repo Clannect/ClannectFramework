@@ -2,11 +2,23 @@
 
 #include <array>
 #include <cstdint>
+#include <optional>
 #include <ostream>
+#include <string>
+#include <string_view>
 
 namespace cfw {
 
 struct LinearColor;
+
+// Hue in degrees [0, 360), saturation and value in [0, 1], straight alpha:
+// how colour pickers present a colour. A grey has hue 0.
+struct Hsv {
+    float h = 0.0f;
+    float s = 0.0f;
+    float v = 0.0f;
+    float a = 1.0f;
+};
 
 // A colour as creators see it: sRGB-encoded channels in [0, 1] with straight
 // (not premultiplied) alpha. This is what the Properties panel edits and what
@@ -34,6 +46,16 @@ struct Color {
     [[nodiscard]] std::array<std::uint8_t, 4> toRgba8() const noexcept;
 
     [[nodiscard]] LinearColor toLinear() const noexcept;
+
+    // HSV of the sRGB channels (no colour management: what pickers show).
+    [[nodiscard]] Hsv toHsv() const noexcept;
+    [[nodiscard]] static Color fromHsv(const Hsv &hsv) noexcept;
+
+    // "#rrggbb" or "#rrggbbaa" (alpha only when not opaque), lower case.
+    [[nodiscard]] std::string toHex() const;
+    // "#rgb", "#rrggbb" or "#rrggbbaa", with or without the '#'; nothing for
+    // anything else.
+    [[nodiscard]] static std::optional<Color> fromHex(std::string_view text) noexcept;
 
     friend constexpr bool operator==(Color x, Color y) noexcept = default;
 

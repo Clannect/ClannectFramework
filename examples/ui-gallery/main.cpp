@@ -3,7 +3,7 @@
 //
 //     cfw-ui-gallery                      interactive
 //     cfw-ui-gallery --screenshot out.png paints one frame, saves it, exits
-//     (add --menu to show the File menu with its submenu open)
+//     (add --menu to show the File menu with its submenu open, --dialog the colour picker)
 
 #include <algorithm>
 #include <array>
@@ -17,6 +17,7 @@
 #include "cfw/io/FileSystem.h"
 #include "cfw/ui/Chrome.h"
 #include "cfw/ui/Controls.h"
+#include "cfw/ui/Dialog.h"
 #include "cfw/ui/Views.h"
 
 using namespace cfw;
@@ -184,6 +185,9 @@ int main(int argc, char **argv) {
     LogModel log;
     build(ui->surface(), model, log);
     const bool showMenu = std::find(args.begin(), args.end(), "--menu") != args.end();
+    if (std::find(args.begin(), args.end(), "--dialog") != args.end()) {
+        ColorPicker::open(ui->surface(), Color::fromRgba8(0xfe, 0x41, 0x33), "Select Color", [](Color) {});
+    }
 
     if (screenshot.empty()) {
         runUntilClosed(*ui);
