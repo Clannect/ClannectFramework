@@ -1,6 +1,8 @@
 # Clannect Framework (CFW)
 
-A permissively licensed C++20 application framework that replaces Qt inside Clannect. The full brief is
+A C++20 application framework, written from scratch with no third-party code, that replaced Qt inside Clannect.
+The Clannect Engine (the editor, the game client `clannect-player` and the headless Runtime) now runs on it
+alone: no Qt is built, linked or shipped. The full brief is
 [prompt.md](prompt.md). The project was first named Clannect Engineering (CE); the original brief in the
 Clannect Engine repository (`docs/engineering/CLANNECT_ENGINEERING.md`) still uses that name. This README
 covers only what is built here and how to work on it.
@@ -9,11 +11,13 @@ covers only what is built here and how to work on it.
 
 | Milestone | State |
 |---|---|
-| M0 — seams in Clannect | **Not started.** Everything it needs from CFW (`String`, `Variant`, property system, JSON) exists. |
-| M1 — cfw-core + cfw-io | **Both modules done, benchmarked.** Exit still needs the Runtime building without Qt (engine-side work). |
-| M2 — cfw-net + cfw-image | **CFW side done.** cfw-net: event loop, TCP, WebSocket client and server, HTTP client, and **TLS** through the OS (Schannel; system OpenSSL on Linux) for `https://` and `wss://`. It is on par with Qt and interoperates with it. cfw-image: own PNG, JPEG and WebP codecs, pixel-exact against the reference decoders. `Locale` for number formatting. The exit criteria need the engine port. |
-| M3 — cfw-gfx + cfw-text | **In progress; the libraries are done.** The 2D renderer (`Painter`, CPU backend) is checked against Qt, and so are the SVG icons (`SvgImage`, replacing QSvgRenderer). cfw-text covers Unicode (every conformance case passes), fonts, shaping (equal to HarfBuzz on every test font), layout (wrapping, bidi, ellipsis, carets, fallback) and a glyph atlas checked against FreeType. `Painter::drawText` draws text. Every §7 budget measured so far is met: rounded rects 0.2× Qt, cached text about 1.0×, shaping about 1.0×, and 0 allocations per frame. Left: rendering the engine's interfaces through CFW and diffing them against Qt, which needs the ClannectEngine port. Of the complex-script shaping engines, Hangul and the Universal Shaping Engine are done; Indic, Khmer and Myanmar are outstanding. The GPU backend comes with M4's GL context. |
-| M4 – M6 | Not started. |
+| M0 — seams in Clannect | **Done, then superseded:** the engine moved straight onto CFW types instead of keeping Qt behind interfaces. |
+| M1 — cfw-core + cfw-io | **Done.** The Runtime builds and passes its tests with no Qt; scene files round-trip byte for byte with the Qt build. |
+| M2 — cfw-net + cfw-image | **Done.** The Runtime serves multiplayer sessions over CFW's WebSocket server; the asset cache downloads, decodes and stores through CFW. |
+| M3 — cfw-gfx + cfw-text | **Done**, except the Indic, Khmer and Myanmar shaping engines. Every interface renders through CFW and was pixel-diffed against Qt; the §7 budgets are met. The GPU paint backend is not written (the CPU backend is fast enough so far). |
+| M4 — cfw-platform + cfw-app | **Done on Windows and Linux (X11).** The viewport and `clannect-player` run in CFW windows with CFW input and GL contexts. |
+| M5 — cfw-ui + editor port | **Done.** The editor runs on CFW with feature parity, on Windows and Linux; the Qt editor is deleted. |
+| M6 — hardening and platforms | **In progress.** Done: Linux builds, Qt gone from every build system and the licence register, fuzzing corpora, the system clipboard on X11, full screen. Open: macOS (Cocoa), IME composition, accessibility, drag and drop, soak tests. |
 
 **cfw-core contents:**
 
@@ -65,7 +69,7 @@ CRC-32/Adler-32. Real zlib decodes everything it writes, at zlib's speed and rat
 - **`RasterPaintBackend`:** the CPU backend behind the `PaintBackend` seam. It uses Qt's raster arithmetic
   and allocates nothing per frame.
 
-**cfw-text contents so far** ([0015](docs/decisions/0015-cfw-text-own-unicode-fonts-shaping.md)): Unicode 18
+**cfw-text contents** ([0015](docs/decisions/0015-cfw-text-own-unicode-fonts-shaping.md)): Unicode 18
 character properties, generated from the UCD into about 110 KB of tables. It has grapheme clusters (UAX #29),
 line breaking (UAX #14) and the bidi algorithm (UAX #9, with isolates, brackets and reordering), and passes
 all 882,000 cases of the Unicode conformance tests. `FontFace` reads TrueType, CFF (name-keyed and CID) and
@@ -95,37 +99,49 @@ handles **205,000 messages/s against Qt's ~200,000**, and opens the connections 
 interoperates with Qt's WebSocket stack in both directions
 ([0010](docs/decisions/0010-cfw-net-design.md)).
 
+**cfw-platform contents:**
+
+- **`Window`:** native windows on Win32 and X11 (a stub elsewhere, so headless servers link): title, size, full
+  screen, per-monitor DPI, cursors, pointer warping, presenting CPU-painted pixels and capturing them back.
+  Pointer (with click counts), key (physical codes), text (UTF-16 surrogates on Win32, the X input method on
+  X11), resize, DPI, focus, repaint and close signals. `processEvents(maxWait)` idles at zero CPU and
+  `wakeUp()` works from any thread.
+- **Clipboard:** the system clipboard on both platforms. On X11 that is the `CLIPBOARD` selection, both ways,
+  with incremental (INCR) transfers.
+- **OpenGL:** `GlContext` (WGL; GLX with libGL loaded at run time), CFW's own GL 3.3 core types and function
+  table (`Gl.h`, no third-party headers or loaders), and `GlBuffer`, `GlVertexArray` and `GlShaderProgram`.
+
+**cfw-ui contents:** an element tree hosted by a `Surface` (layout, focus, keyboard and pointer routing,
+capture, damage-driven painting, timers, shortcuts, popups, modal dialogs, tooltips and cursors). Controls:
+`Label`, `Button`, `TextField` (selection, undo, masking, clipboard), `CheckBox`, `NumberField`, `Dropdown`
+(searchable), `Menu` and `MenuBar` with submenus, `ScrollArea`, `Splitter`, `TabBar` (icons, badges),
+`TreeView` (virtualised; columns, filtering, rename in place, drag and drop, context menus), `DockLayout` and
+`DockPanel` (docking, resizing, saved layouts), `PropertyGrid` (sections, name scrubbing), `Dialog`,
+`MessageBox`, `ColorPicker`, `Slider`, `ProgressBar`, and SVG `Icon`s. `examples/ui-gallery` shows them.
+
+**cfw-app contents:** `UiWindow` (a surface in a native window, painted on the CPU, idle when nothing
+changes) and `GlUiWindow` (the same with OpenGL views such as a 3D viewport, the interface composited over
+them), with close handlers for "save your changes?". `Desktop.h`: the system's file picker (the Win32 common
+dialog; zenity or kdialog on Linux), showing a folder in the file manager, and opening a link in the browser.
+`cfw_embed_resources` (CMake) builds files into a binary and finds them by path.
+
 **Benchmarks** ([docs/benchmarks](docs/benchmarks/README.md)): a 5 MB scene parses in **0.62×** and writes in
 **0.33×** Qt's time on the same machine. Property access, signals, arena frames, hashing and math run with
 zero allocations. That allocation budget is a CTest test in every build, and `--baseline` flags >5%
 regressions.
 
-**Scene round-trip:** a real scene saved by the Qt engine, parsed and re-written by CFW, is byte-identical.
+**Scene round-trip:** a real scene saved by the Qt build of the engine, parsed and re-written by CFW, is byte-identical.
 So are two Qt-written edge-case documents. `FuzzSmokeTest` runs 45,000 hostile inputs through the parsers on
 every build.
 
-**CI** ([0011](docs/decisions/0011-linux-ci-and-fuzzing.md), [0013](docs/decisions/0013-tls-through-the-os-and-windows-ci.md)): GCC and Clang builds, a Windows (MinGW-w64)
-cross build whose tests run under Wine plus a Schannel↔OpenSSL interop check, ASan+UBSan+LSan over every
-test, TSan over cfw-net, and five libFuzzer targets (JSON, binary reader, URL/UTF-8, WebSocket frames,
-HTTP) fuzzed on every push. The committed corpus (`fuzz/corpus/`) replays as CTest tests on every toolchain,
-MinGW included. Nine targets now cover every parser, including inflate, PNG, JPEG and WebP. The first runs found five
-bugs, all fixed with regression inputs:
-
-- a send stall on Linux;
-- a JSON round-trip inequality;
-- code that did not compile with Clang;
-- an out-of-bounds write in the JPEG Huffman table builder;
-- integer overflow on hostile VP8 coefficients.
-
-UBSan is fatal in every sanitizer build.
-
-**Still open for M1/M2 (engine side):**
-
-- **No Qt in the Runtime and non-GUI targets:** this is the M0/M1/M2 engine work (moving `clannect_core`, the
-  Runtime and the asset cache onto CFW).
-- **Blocked:** the engine repository on GitHub holds only a July snapshot (13,800 lines, no Runtime and no
-  `clannect_core`). The engine this spec was measured against exists only on the development machine, so
-  it has to be pushed before it can be ported.
+**CI** ([0011](docs/decisions/0011-linux-ci-and-fuzzing.md), [0013](docs/decisions/0013-tls-through-the-os-and-windows-ci.md)): on every push, GCC and Clang debug builds, a release build,
+a Windows (MinGW-w64) cross build whose tests run under Wine plus a Schannel↔OpenSSL interop check,
+ASan+UBSan+LSan over every test, TSan over cfw-net, and 14 libFuzzer targets covering every parser (JSON,
+binary reader, URL/UTF-8, WebSocket frames, HTTP, inflate, PNG, JPEG, WebP, painting, text, fonts, shaping
+and SVG), fuzzed for 45 s each. The committed corpus (`fuzz/corpus/`) replays as CTest tests on every
+toolchain, MinGW included. Window and GL tests run against Xvfb on Linux and skip (passing) without a display.
+UBSan is fatal in every sanitizer build. Fuzzing has found, among others, an out-of-bounds write in the JPEG
+Huffman table builder and integer overflow on hostile VP8 coefficients; each fix has a regression input.
 
 **No Qt:** the `NoQt` CTest test fails the build if a Qt header, macro, CMake package or linked Qt library
 appears anywhere in CFW's sources, build files or binaries. Where CFW must behave exactly like Qt (Euler angles,
@@ -134,17 +150,18 @@ appears anywhere in CFW's sources, build files or binaries. Where CFW must behav
 
 ## Building
 
-This needs CMake ≥ 3.25, Ninja and a C++20 compiler. The reference toolchain is MinGW-w64 GCC 13.1. On the
-current dev machine, that compiler happens to be the copy Qt's installer put under `C:\Qt\Tools`. It is plain
-GCC with no Qt in it, but uninstalling Qt would remove it, so a standalone MinGW-w64 GCC 13 (e.g. WinLibs)
-should replace it before Qt is removed:
+This needs CMake ≥ 3.25, Ninja and a C++20 compiler: GCC 13 or Clang 18 on Linux, MinGW-w64 GCC 13 on Windows
+(a standalone build such as WinLibs; nothing from Qt is needed). On Linux the window system backend needs the
+X11 development headers (`libx11-dev`); without them cfw-platform builds its headless stub.
 
 ```sh
-export PATH="/c/Qt/Tools/mingw1310_64/bin:$PATH"     # Git Bash; or add it to PATH in your shell
-cmake --preset debug -DCMAKE_CXX_COMPILER=g++
+cmake --preset debug
 cmake --build --preset debug
 ctest --preset debug
 ```
+
+To build for Windows from Linux: `cmake -S . -B build/windows -G Ninja
+-DCMAKE_TOOLCHAIN_FILE=cmake/toolchains/mingw-w64-cross.cmake`, then run the tests under Wine.
 
 | Preset | What it is |
 |---|---|
@@ -175,9 +192,14 @@ calls.
 ## Third-party dependencies
 
 **None, by design** ([0012](docs/decisions/0012-cfw-is-independent-own-codecs.md)). Clannect Framework is a
-framework in its own right: compression, image codecs, and later fonts, rasterisation and the platform
-layer are all written here. CFW links only the C++ standard library and the OS: Win32
-`shell32`/`ole32` for known folders, `ws2_32` for sockets, and POSIX elsewhere.
+framework in its own right: compression, image codecs, Unicode, fonts, shaping, rasterisation, networking,
+TLS plumbing, the platform layer and the widgets are all written here. CFW links only the C++ standard library
+and the operating system:
+
+- **Windows:** `user32`, `gdi32`, `opengl32`, `shell32`, `ole32`, `comdlg32`, `ws2_32`, and `secur32`/`crypt32`/`ncrypt`
+  (Schannel TLS).
+- **Linux:** POSIX, Xlib, and at run time `libGL` and the system OpenSSL (both loaded with `dlopen`), plus
+  `zenity`/`kdialog` and `xdg-open` for the file picker and links when they are installed.
 
 Reference implementations (zlib, libjpeg-turbo, libwebp, Pillow, and Qt 6.11 for 2D rendering via
 `testing/qt-oracle`) are run outside the build to produce the expected outputs that tests compare against. They are never built or linked. The only third-party
