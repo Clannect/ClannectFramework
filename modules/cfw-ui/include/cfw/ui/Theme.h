@@ -26,6 +26,7 @@ struct Theme {
     Color accent;        // focus rings, selection, primary buttons
     Color accentText;    // text on accent
     Color scrim;         // over the window behind a modal dialog
+    Color error;         // a field whose text is not accepted
     // Text
     Color text;
     Color textMuted;

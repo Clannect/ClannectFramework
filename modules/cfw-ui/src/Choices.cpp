@@ -56,11 +56,18 @@ CheckBox::CheckBox(String text, bool checked) : m_text(std::move(text)), m_check
 
 void CheckBox::setChecked(bool checked) {
     m_checked = checked;
+    m_partial = false;
+    invalidatePaint();
+}
+
+void CheckBox::setPartial(bool partial) {
+    m_partial = partial;
     invalidatePaint();
 }
 
 void CheckBox::toggle() {
-    m_checked = !m_checked;
+    m_checked = m_partial || !m_checked;
+    m_partial = false;
     invalidatePaint();
     toggled.emit(m_checked);
 }
@@ -78,7 +85,12 @@ void CheckBox::paint(Painter &painter, const Theme &theme) {
     PainterPath shape;
     shape.addRoundedRect(box, 3.0f, 3.0f);
     const bool enabled = isEnabled();
-    if (m_checked) {
+    if (m_partial) {
+        painter.fillPath(shape, enabled ? theme.accent : theme.controlDisabled);
+        Pen pen(theme.accentText, 1.8f);
+        pen.cap = CapStyle::Round;
+        painter.drawLine({box.x + 4.0f, box.y + kBox / 2.0f}, {box.right() - 4.0f, box.y + kBox / 2.0f}, pen);
+    } else if (m_checked) {
         painter.fillPath(shape, enabled ? theme.accent : theme.controlDisabled);
         PainterPath tick;
         tick.moveTo({box.x + 3.5f, box.y + 7.5f});
@@ -511,12 +523,22 @@ void Dropdown::setItems(std::vector<String> items) {
 }
 
 void Dropdown::setCurrentIndex(int index) {
-    m_current = m_items.empty() ? -1 : std::clamp(index, 0, int(m_items.size()) - 1);
+    m_current = m_items.empty() || index < 0 ? -1 : std::min(index, int(m_items.size()) - 1);
     setAccessibleName(currentText());
     invalidatePaint();
 }
 
 String Dropdown::currentText() const { return m_current >= 0 ? m_items[std::size_t(m_current)] : String(); }
+
+void Dropdown::setPlaceholder(String placeholder) {
+    m_placeholder = std::move(placeholder);
+    invalidatePaint();
+}
+
+void Dropdown::setSearchable(bool searchable, String placeholder) {
+    m_searchable = searchable;
+    m_searchPlaceholder = std::move(placeholder);
+}
 
 void Dropdown::choose(int index) {
     if (index == m_current || index < 0 || index >= int(m_items.size())) {
@@ -548,11 +570,13 @@ void Dropdown::paint(Painter &painter, const Theme &theme) {
         focusRing(painter, r, theme);
     }
     TextLayout layout;
-    if (layoutIn(layout, currentText(), theme, kInfinity, false, TextAlign::Start)) {
+    const bool placeholder = m_current < 0;
+    if (layoutIn(layout, placeholder ? m_placeholder : currentText(), theme, kInfinity, false, TextAlign::Start)) {
         painter.save();
         painter.clipRect(r.grownBy(-theme.padding, 0, -theme.padding - 16.0f, 0));
         const Vec2 origin = centredOrigin(layout, r);
-        painter.drawText(layout, {r.x + theme.padding, origin.y}, enabled ? theme.text : theme.textDisabled);
+        painter.drawText(layout, {r.x + theme.padding, origin.y},
+                         !enabled ? theme.textDisabled : placeholder ? theme.textMuted : theme.text);
         painter.restore();
     }
     chevron(painter, {r.right() - theme.padding - 4.0f, r.y + r.height / 2.0f}, enabled ? theme.textMuted : theme.textDisabled);
@@ -564,9 +588,16 @@ void Dropdown::open() {
         return;
     }
     auto list = std::make_unique<Menu>();
+    TextField *search = nullptr;
+    if (m_searchable) {
+        search = &list->add<TextField>();
+        search->setPlaceholder(m_searchPlaceholder);
+    }
+    std::vector<MenuItem *> items;
     for (std::size_t i = 0; i < m_items.size(); ++i) {
         MenuItem &item = list->addItem(m_items[i], [this, i] { choose(int(i)); });
         item.setChecked(int(i) == m_current);
+        items.push_back(&item);
     }
     list->setFixedSize({rect().width, 0.0f});
     m_popupSurface = s;
@@ -574,10 +605,26 @@ void Dropdown::open() {
         m_popup = nullptr;
         invalidatePaint();
     });
-    // Focus the current item, so the keyboard continues in the list.
-    const auto children = m_popup->children();
-    if (m_current >= 0 && std::size_t(m_current) < children.size()) {
-        s->setFocus(children[std::size_t(m_current)].get());
+    if (search) {
+        // Typing hides what does not match; Enter takes the first match.
+        static_cast<void>(search->textChanged.connect([items](const String &text) {
+            const String needle = toLowerAscii(trim(text));
+            for (MenuItem *item : items) {
+                item->setVisible(needle.empty() || toLowerAscii(item->text()).find(needle) != String::npos);
+            }
+        }));
+        static_cast<void>(search->submitted.connect([items](const String &) {
+            for (MenuItem *item : items) {
+                if (item->isVisible()) {
+                    item->activated.emit();
+                    return;
+                }
+            }
+        }));
+        s->setFocus(search);
+    } else if (m_current >= 0 && std::size_t(m_current) < items.size()) {
+        // Focus the current item, so the keyboard continues in the list.
+        s->setFocus(items[std::size_t(m_current)]);
     }
     invalidatePaint();
 }

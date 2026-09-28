@@ -156,13 +156,21 @@ void TextField::changed() {
     textChanged.emit(text());
 }
 
+void TextField::setInvalid(bool invalid) {
+    if (m_invalid != invalid) {
+        m_invalid = invalid;
+        invalidatePaint();
+    }
+}
+
 void TextField::paint(Painter &painter, const Theme &theme) {
     relayout();
     PainterPath shape;
     shape.addRoundedRect(rect(), theme.radius, theme.radius);
     painter.fillPath(shape, isEnabled() ? theme.panel : theme.controlDisabled);
     const bool focused = hasFocus();
-    painter.strokePath(shape, Pen(focused ? theme.accent : theme.border, focused ? theme.focusRingWidth : 1.0f));
+    const Color edge = m_invalid ? theme.error : focused ? theme.accent : theme.border;
+    painter.strokePath(shape, Pen(edge, focused || m_invalid ? theme.focusRingWidth : 1.0f));
     if (!theme.font) {
         return;
     }

@@ -107,6 +107,10 @@ public:
     [[nodiscard]] String text() const;
     void setPlaceholder(String placeholder);
     void setReadOnly(bool readOnly) noexcept { m_readOnly = readOnly; }
+    // Marks the text as not accepted (the border turns the error colour)
+    // until cleared; editing does not clear it.
+    void setInvalid(bool invalid);
+    [[nodiscard]] bool isInvalid() const noexcept { return m_invalid; }
     // Longest text allowed, in code points (0: no limit).
     void setMaxLength(std::size_t maxLength) noexcept { m_maxLength = maxLength; }
 
@@ -151,6 +155,7 @@ private:
     std::size_t m_maxLength = 0;
     float m_scroll = 0.0f; // horizontal, pixels
     bool m_readOnly = false;
+    bool m_invalid = false;
     bool m_dirty = false;  // edited since focus or last Enter
     bool m_layoutValid = false;
     TextLayout m_layout;
@@ -210,8 +215,12 @@ namespace cfw {
 class CheckBox : public Element {
 public:
     explicit CheckBox(String text = {}, bool checked = false);
-    void setChecked(bool checked); // does not emit toggled
+    void setChecked(bool checked); // does not emit toggled; clears partial
     [[nodiscard]] bool isChecked() const noexcept { return m_checked; }
+    // Neither checked nor not (several objects that disagree): a dash. A
+    // click makes it checked.
+    void setPartial(bool partial);
+    [[nodiscard]] bool isPartial() const noexcept { return m_partial; }
     Signal<bool> toggled;
 
     void paint(Painter &painter, const Theme &theme) override;
@@ -229,6 +238,7 @@ private:
     TextLayout m_layout;
     bool m_laidOut = false;
     bool m_checked = false;
+    bool m_partial = false;
 };
 
 // A numeric field (QDoubleSpinBox): type a value, or step it with Up/Down
@@ -267,7 +277,13 @@ public:
     ~Dropdown() override;
     void setItems(std::vector<String> items);
     [[nodiscard]] const std::vector<String> &items() const noexcept { return m_items; }
-    void setCurrentIndex(int index); // does not emit currentChanged
+    // -1 chooses nothing (the placeholder shows); does not emit currentChanged.
+    void setCurrentIndex(int index);
+    // Shown, muted, while nothing is chosen.
+    void setPlaceholder(String placeholder);
+    // A search field at the top of the list filters it as one types; Enter
+    // chooses the first match.
+    void setSearchable(bool searchable, String placeholder = "Search...");
     [[nodiscard]] int currentIndex() const noexcept { return m_current; }
     [[nodiscard]] String currentText() const;
     [[nodiscard]] bool isOpen() const noexcept { return m_popup != nullptr; }
@@ -287,6 +303,9 @@ private:
     void choose(int index);
     std::vector<String> m_items;
     int m_current = 0;
+    String m_placeholder;
+    bool m_searchable = false;
+    String m_searchPlaceholder;
     Element *m_popup = nullptr;
     Surface *m_popupSurface = nullptr;
 };

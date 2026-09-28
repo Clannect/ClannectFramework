@@ -405,6 +405,43 @@ void choices() {
     checkEqual(surface.popupCount(), std::size_t{0}, "its list goes with it");
     surface.dispatch(key(Key::Down));
 
+    // Nothing chosen shows the placeholder; a searchable list filters.
+    Dropdown &materials = column.add<Dropdown>(std::vector<String>{"Plastic", "Wood", "Brick", "Wood Planks"}, 0);
+    materials.setPlaceholder("Mixed");
+    materials.setCurrentIndex(-1);
+    checkEqual(materials.currentIndex(), -1, "-1 chooses nothing");
+    checkEqual(materials.currentText(), String(), "so there is no current text");
+    materials.setSearchable(true, "Search materials...");
+    std::vector<int> picked;
+    ScopedConnection c4 = materials.currentChanged.connect([&](int i) { picked.push_back(i); });
+    surface.layout();
+    materials.open();
+    check(surface.focus() && dynamic_cast<TextField *>(surface.focus()), "the search field has the focus");
+    surface.dispatch(typed("wood"));
+    int shown = 0;
+    for (const auto &child : surface.focus()->parent()->children()) {
+        shown += dynamic_cast<MenuItem *>(child.get()) && child->isVisible() ? 1 : 0;
+    }
+    checkEqual(shown, 2, "typing hides what does not match");
+    surface.dispatch(key(Key::Enter));
+    check(picked == std::vector<int>{1}, "Enter chooses the first match");
+    check(!materials.isOpen(), "and closes the list");
+    column.remove(materials).reset();
+
+    // Mixed check boxes and refused text.
+    CheckBox &mixed = column.add<CheckBox>("Anchored");
+    mixed.setPartial(true);
+    std::vector<bool> mixedToggles;
+    ScopedConnection c5 = mixed.toggled.connect([&](bool on) { mixedToggles.push_back(on); });
+    surface.setFocus(&mixed);
+    surface.dispatch(key(Key::Space));
+    check(mixedToggles == std::vector<bool>{true} && !mixed.isPartial(), "a mixed box becomes checked");
+    column.remove(mixed).reset();
+    TextField &refused = column.add<TextField>("abc");
+    refused.setInvalid(true);
+    check(refused.isInvalid(), "a field can be marked invalid");
+    column.remove(refused).reset();
+
     // Painting everything with a popup open does not fail.
     Dropdown &again = column.add<Dropdown>(std::vector<String>{"A", "B"}, 0);
     surface.layout();
