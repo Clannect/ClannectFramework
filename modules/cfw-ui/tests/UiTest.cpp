@@ -440,6 +440,16 @@ void choices() {
     TextField &refused = column.add<TextField>("abc");
     refused.setInvalid(true);
     check(refused.isInvalid(), "a field can be marked invalid");
+    String copied = "nothing";
+    surface.writeClipboard = [&](StringView text) { copied = String(text); };
+    refused.setMasked(true);
+    surface.setFocus(&refused);
+    refused.selectAll();
+    KeyEvent copy = key(Key::C);
+    copy.modifiers = Modifier::Control;
+    surface.dispatch(copy);
+    check(copied == "nothing", "a masked field is not copied");
+    checkEqual(refused.text(), String("abc"), "but keeps its text");
     column.remove(refused).reset();
 
     // Painting everything with a popup open does not fail.

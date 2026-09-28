@@ -110,6 +110,10 @@ public:
     // Marks the text as not accepted (the border turns the error colour)
     // until cleared; editing does not clear it.
     void setInvalid(bool invalid);
+    // Shows each character as a dot and refuses to copy or cut (a password
+    // or an access token).
+    void setMasked(bool masked);
+    [[nodiscard]] bool isMasked() const noexcept { return m_masked; }
     [[nodiscard]] bool isInvalid() const noexcept { return m_invalid; }
     // Longest text allowed, in code points (0: no limit).
     void setMaxLength(std::size_t maxLength) noexcept { m_maxLength = maxLength; }
@@ -156,6 +160,7 @@ private:
     float m_scroll = 0.0f; // horizontal, pixels
     bool m_readOnly = false;
     bool m_invalid = false;
+    bool m_masked = false;
     bool m_dirty = false;  // edited since focus or last Enter
     bool m_layoutValid = false;
     TextLayout m_layout;

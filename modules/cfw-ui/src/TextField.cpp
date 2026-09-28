@@ -93,7 +93,12 @@ void TextField::relayout() {
         style.fallback = t.fonts.get();
         TextLayoutOptions options;
         options.wrap = false;
-        m_layout.setText(Span<const char32_t>(m_text.data(), m_text.size()));
+        if (m_masked) {
+            const std::u32string dots(m_text.size(), U'\u2022');
+            m_layout.setText(Span<const char32_t>(dots.data(), dots.size()));
+        } else {
+            m_layout.setText(Span<const char32_t>(m_text.data(), m_text.size()));
+        }
         m_layout.layout(style, options);
         m_placeholderLayout.setText(m_placeholder);
         m_placeholderLayout.layout(style, options);
@@ -154,6 +159,14 @@ void TextField::changed() {
     relayout();
     invalidatePaint();
     textChanged.emit(text());
+}
+
+void TextField::setMasked(bool masked) {
+    if (m_masked != masked) {
+        m_masked = masked;
+        m_layoutValid = false;
+        invalidatePaint();
+    }
 }
 
 void TextField::setInvalid(bool invalid) {
@@ -284,12 +297,12 @@ bool TextField::onKey(const KeyEvent &event) {
         selectAll();
         return true;
     case Key::C:
-        if (hasSelection && s) {
+        if (hasSelection && s && !m_masked) {
             s->setClipboardText(selectedText());
         }
         return true;
     case Key::X:
-        if (hasSelection && s && !m_readOnly) {
+        if (hasSelection && s && !m_readOnly && !m_masked) {
             s->setClipboardText(selectedText());
             replaceSelection({});
         }
