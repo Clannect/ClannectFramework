@@ -148,8 +148,8 @@ binary reader, URL/UTF-8, WebSocket frames, HTTP, inflate, PNG, JPEG, WebP, pain
 and SVG), fuzzed for 45 s each. The committed corpus (`fuzz/corpus/`) replays as CTest tests on every
 toolchain, MinGW included. Window and GL tests run against Xvfb on Linux and skip (passing) without a display.
 UBSan is fatal in every sanitizer build. The soak tests (`SoakNetTest`, `SoakUiTest`) run for 2 s in every
-build; `CFW_SOAK_SECONDS` runs them longer and `CFW_SOAK_SEED` replays a run. A `macos` workflow builds and
-tests on GitHub's macOS runners. Fuzzing has found, among others, an out-of-bounds write in the JPEG
+build; `CFW_SOAK_SECONDS` runs them longer and `CFW_SOAK_SEED` replays a run. A `macos` workflow (manual only;
+macOS is best-effort) builds and tests on GitHub's macOS runners. Fuzzing has found, among others, an out-of-bounds write in the JPEG
 Huffman table builder and integer overflow on hostile VP8 coefficients; each fix has a regression input.
 
 **No Qt:** the `NoQt` CTest test fails the build if a Qt header, macro, CMake package or linked Qt library

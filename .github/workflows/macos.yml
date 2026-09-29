@@ -1,12 +1,14 @@
 # macOS CI: the Cocoa window, GL, clipboard and desktop backends
 # (docs/decisions/0016). GitHub's macOS runners have a logged-in desktop
 # session, so the window, GL and clipboard tests run for real.
+#
+# Manual only (Actions tab, "Run workflow"): macOS is best-effort and the
+# backend has never been compiled, so it does not gate pushes.
 
 name: macos
 
 on:
-  push:
-  pull_request:
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
