@@ -38,5 +38,8 @@ if(CFW_BUILD_TESTS)
     cfw_add_test(cfw-net WebSocketTest)
     cfw_add_test(cfw-net HttpTest)
     cfw_add_test(cfw-net TlsTest)
+    # A few seconds by default; CFW_SOAK_SECONDS makes it as long as wanted.
+    cfw_add_test(cfw-net SoakNetTest)
+    set_tests_properties(SoakNetTest PROPERTIES LABELS "cfw-net;soak" TIMEOUT 600)
     target_link_libraries(TlsTest PRIVATE cfw-io)
 endif()
