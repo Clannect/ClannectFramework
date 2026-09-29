@@ -28,10 +28,11 @@ jobs:
       - uses: actions/checkout@v4
       - name: Install tools
         # Xvfb gives the window, GL, clipboard and drop tests a display;
-        # uim-xim is a real input method for the IME test.
+        # uim-xim is a real input method for the IME test; the AT-SPI registry
+        # and pyatspi read the windows as a screen reader does.
         run: >
           sudo apt-get update && sudo apt-get install -y ninja-build libx11-dev xvfb
-          uim-xim uim-anthy
+          uim-xim uim-anthy at-spi2-core python3-pyatspi dbus
       - name: Configure
         run: cmake --preset ${{ matrix.preset }} -DCMAKE_CXX_COMPILER=${{ matrix.compiler }}
       - name: Build

@@ -1,11 +1,11 @@
 # cfw-app: the application layer (spec §4.9): UiWindow, a native window
 # showing a cfw-ui surface, and GlUiWindow, the same with OpenGL views in it.
 
-# Assistive technology: MSAA on Windows; AT-SPI on Linux comes next.
+# Assistive technology: MSAA on Windows, AT-SPI on Linux.
 if(WIN32)
     set(CFW_APP_ACCESSIBILITY src/AccessibilityWin32.cpp)
 elseif(UNIX AND NOT APPLE)
-    set(CFW_APP_ACCESSIBILITY src/linux/DBus.cpp src/AccessibilityNone.cpp)
+    set(CFW_APP_ACCESSIBILITY src/linux/DBus.cpp src/linux/AccessibilityAtspi.cpp)
 else()
     set(CFW_APP_ACCESSIBILITY src/AccessibilityNone.cpp)
 endif()
@@ -31,6 +31,9 @@ if(CFW_BUILD_TESTS)
     cfw_add_test(cfw-app DesktopTest)
     if(UNIX AND NOT APPLE)
         cfw_add_test(cfw-app DBusTest)
+        cfw_add_test(cfw-app AtspiTest)
+        target_compile_definitions(AtspiTest PRIVATE
+            CFW_ATSPI_ORACLE="${CMAKE_CURRENT_SOURCE_DIR}/tests/data/atspi_oracle.py")
     endif()
     if(WIN32)
         cfw_add_test(cfw-app AccessibilityWin32Test)
