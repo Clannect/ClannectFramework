@@ -394,7 +394,8 @@ public:
     bool isFullScreen() const override { return m_fullScreen; }
 
     void applyFullScreen() {
-        if (!m_fullScreenTransition && m_fullScreen != m_inFullScreen) {
+        const bool inFullScreen = ([m_window styleMask] & NSWindowStyleMaskFullScreen) != 0;
+        if (!m_fullScreenTransition && m_fullScreen != inFullScreen) {
             m_fullScreenTransition = true;
             [m_window toggleFullScreen:nil];
         }
@@ -407,14 +408,13 @@ public:
         }
         m_fullScreenTransition = true;
     }
+    // The next request waits a turn of the run loop: from inside the "did"
+    // notification AppKit still refuses it ("not in fullscreen state").
     void fullScreenDidChange(bool fullScreen, bool failed) {
         m_fullScreenTransition = false;
         if (failed) {
-            m_fullScreen = m_inFullScreen; // do not retry forever
-        } else {
-            m_inFullScreen = fullScreen;
+            m_fullScreen = !fullScreen; // do not retry forever
         }
-        applyFullScreen();
     }
 
     void setTextInputArea(const std::optional<RectF> &caret) override {
@@ -663,7 +663,6 @@ private:
     bool m_cursorHidden = false;
     bool m_repaint = true;
     bool m_fullScreen = false;           // asked for
-    bool m_inFullScreen = false;         // what AppKit last finished
     bool m_fullScreenTransition = false; // an animation is running
     std::vector<PointerEvent> m_pendingPointer;
 };
@@ -831,17 +830,24 @@ using cfw::PointerEvent;
 - (void)windowWillExitFullScreen:(NSNotification *)n {
     if (self.owner) self.owner->fullScreenWillChange(false);
 }
+- (void)fullScreenDidChange:(BOOL)fullScreen failed:(BOOL)failed {
+    if (!self.owner) return;
+    self.owner->fullScreenDidChange(fullScreen, failed);
+    dispatch_async(dispatch_get_main_queue(), ^{
+      if (self.owner) self.owner->applyFullScreen();
+    });
+}
 - (void)windowDidEnterFullScreen:(NSNotification *)n {
-    if (self.owner) self.owner->fullScreenDidChange(true, false);
+    [self fullScreenDidChange:YES failed:NO];
 }
 - (void)windowDidExitFullScreen:(NSNotification *)n {
-    if (self.owner) self.owner->fullScreenDidChange(false, false);
+    [self fullScreenDidChange:NO failed:NO];
 }
 - (void)windowDidFailToEnterFullScreen:(NSWindow *)window {
-    if (self.owner) self.owner->fullScreenDidChange(true, true);
+    [self fullScreenDidChange:YES failed:YES];
 }
 - (void)windowDidFailToExitFullScreen:(NSWindow *)window {
-    if (self.owner) self.owner->fullScreenDidChange(false, true);
+    [self fullScreenDidChange:NO failed:YES];
 }
 @end
 

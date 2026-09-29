@@ -157,7 +157,9 @@ int main() {
     Vec2 pointer{450, 300};
     bool pressed = false;
     const auto start = std::chrono::steady_clock::now();
-    while (std::chrono::steady_clock::now() - start < duration) {
+    // At least kMinSteps, however slow the build (macOS ASan manages ~150/s).
+    constexpr std::size_t kMinSteps = 1000;
+    while (std::chrono::steady_clock::now() - start < duration || steps < kMinSteps) {
         ++steps;
         now += std::chrono::milliseconds(random() % 50);
         const auto choice = random() % 1000;
@@ -242,7 +244,7 @@ int main() {
         }
     }
     std::printf("SoakUiTest: %zu steps, at most %zu popups, %d shortcut runs\n", steps, maxPopups, shortcuts);
-    check(steps > 1000, "the soak did real work");
+    check(steps >= kMinSteps, "the soak did real work");
     check(!badFocus, "focus is always on an element in the surface");
     check(!duplicateIds, "accessible ids are unique");
     return cfw::test::finish("SoakUiTest");
