@@ -41,7 +41,9 @@ public:
     // number of faces added.
     Result<std::size_t> addFile(const Path &file);
     Result<std::size_t> addData(FontFace::Data data);
-    // Registers the installed fonts; returns how many faces were added.
+    // Registers the installed fonts; returns how many faces were added. The
+    // font folders are listed on the first call in the process only: later
+    // calls (from any database) reuse that list.
     std::size_t addSystemFonts();
     // Registers the fonts under a directory (recursively).
     std::size_t addDirectory(const Path &directory);
@@ -63,6 +65,7 @@ public:
 
 private:
     std::size_t addFaces(const FontFace::Data &data, const Path &file);
+    std::size_t addSystemFontsUncached();
     [[nodiscard]] int distance(const FaceInfo &info, int weight, bool italic) const;
 
     std::vector<FaceInfo> m_faces;

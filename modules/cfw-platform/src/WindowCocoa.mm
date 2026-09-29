@@ -383,14 +383,39 @@ public:
         m_pendingPointer.push_back(e);
     }
 
+    // AppKit animates into and out of full screen, and ignores a toggle made
+    // during the animation ("not in fullscreen state"). So m_fullScreen is
+    // the state asked for, and a request made mid-transition is applied when
+    // the transition ends.
     void setFullScreen(bool fullScreen) override {
-        if (fullScreen != m_fullScreen) {
-            m_fullScreen = fullScreen;
+        m_fullScreen = fullScreen;
+        applyFullScreen();
+    }
+    bool isFullScreen() const override { return m_fullScreen; }
+
+    void applyFullScreen() {
+        if (!m_fullScreenTransition && m_fullScreen != m_inFullScreen) {
+            m_fullScreenTransition = true;
             [m_window toggleFullScreen:nil];
         }
     }
-    bool isFullScreen() const override { return m_fullScreen; }
-    void fullScreenChanged(bool fullScreen) { m_fullScreen = fullScreen; }
+    // A transition begins: ours, or the user's (the green button), which
+    // then becomes the state asked for.
+    void fullScreenWillChange(bool fullScreen) {
+        if (!m_fullScreenTransition) {
+            m_fullScreen = fullScreen;
+        }
+        m_fullScreenTransition = true;
+    }
+    void fullScreenDidChange(bool fullScreen, bool failed) {
+        m_fullScreenTransition = false;
+        if (failed) {
+            m_fullScreen = m_inFullScreen; // do not retry forever
+        } else {
+            m_inFullScreen = fullScreen;
+        }
+        applyFullScreen();
+    }
 
     void setTextInputArea(const std::optional<RectF> &caret) override {
         m_caret = caret;
@@ -637,7 +662,9 @@ private:
     Cursor m_cursor = Cursor::Arrow;
     bool m_cursorHidden = false;
     bool m_repaint = true;
-    bool m_fullScreen = false;
+    bool m_fullScreen = false;           // asked for
+    bool m_inFullScreen = false;         // what AppKit last finished
+    bool m_fullScreenTransition = false; // an animation is running
     std::vector<PointerEvent> m_pendingPointer;
 };
 
@@ -798,11 +825,23 @@ using cfw::PointerEvent;
 - (void)windowDidResignKey:(NSNotification *)n {
     if (self.owner) self.owner->focus(false);
 }
+- (void)windowWillEnterFullScreen:(NSNotification *)n {
+    if (self.owner) self.owner->fullScreenWillChange(true);
+}
+- (void)windowWillExitFullScreen:(NSNotification *)n {
+    if (self.owner) self.owner->fullScreenWillChange(false);
+}
 - (void)windowDidEnterFullScreen:(NSNotification *)n {
-    if (self.owner) self.owner->fullScreenChanged(true);
+    if (self.owner) self.owner->fullScreenDidChange(true, false);
 }
 - (void)windowDidExitFullScreen:(NSNotification *)n {
-    if (self.owner) self.owner->fullScreenChanged(false);
+    if (self.owner) self.owner->fullScreenDidChange(false, false);
+}
+- (void)windowDidFailToEnterFullScreen:(NSWindow *)window {
+    if (self.owner) self.owner->fullScreenDidChange(true, true);
+}
+- (void)windowDidFailToExitFullScreen:(NSWindow *)window {
+    if (self.owner) self.owner->fullScreenDidChange(false, true);
 }
 @end
 

@@ -116,13 +116,20 @@ void checkFont(StringView key, const JsonValue &expected) {
         index = static_cast<std::uint32_t>(std::stoul(file.substr(hash + 1)));
         file.resize(hash);
     }
-    const Result<std::shared_ptr<const FontFace>> loaded = FontFace::load(readFont(file), index);
+    const FontFace::Data data = readFont(file);
+    const Result<std::shared_ptr<const FontFace>> loaded = FontFace::load(data, index);
     check(loaded.ok(), "the test font loads");
     if (!loaded) {
         return;
     }
     const FontFace &face = *loaded.value();
     const String what = String(key) + ": ";
+    // The database lists fonts with describe(), which must say what load() does.
+    const Result<FontFace::Description> described = FontFace::describe(*data, index);
+    check(described.ok() && described.value().family == face.familyName() &&
+              described.value().style == face.styleName() && described.value().weight == face.weight() &&
+              described.value().italic == face.isItalic(),
+          (what + "describe() agrees with load()").c_str());
     checkEqual(face.glyphCount(), static_cast<std::uint32_t>(expected["glyphs"].toDouble(0)), (what + "glyph count").c_str());
     checkEqual(face.familyName(), String(expected["family"].toString("")), (what + "family name").c_str());
     checkEqual(face.styleName(), String(expected["style"].toString("")), (what + "style name").c_str());
@@ -196,12 +203,15 @@ void hostileData() {
     for (const char *name : {"CfwTestCff.otf", "CfwTestComposite.ttf", "CfwTestCid.otf"}) {
         const FontFace::Data good = readFont(name);
         PainterPath p;
+        int describeMissed = 0;
         std::size_t loaded = 0;
         for (std::size_t length = 0; length < good->size(); length += 97) {
             auto cut = std::make_shared<const std::vector<std::byte>>(good->begin(),
                                                                         good->begin() + static_cast<std::ptrdiff_t>(length));
+            const Result<FontFace::Description> described = FontFace::describe(*cut);
             if (const Result<std::shared_ptr<const FontFace>> f = FontFace::load(cut)) {
                 ++loaded;
+                describeMissed += described.ok() ? 0 : 1;
                 for (GlyphId g = 0; g < f.value()->glyphCount(); ++g) {
                     (void)f.value()->glyphOutline(g, p);
                     (void)f.value()->advanceWidth(g);
@@ -215,8 +225,10 @@ void hostileData() {
             for (int k = 0; k < 20; ++k) {
                 bad[rng() % bad.size()] = static_cast<std::byte>(rng());
             }
-            if (const Result<std::shared_ptr<const FontFace>> f =
-                    FontFace::load(std::make_shared<const std::vector<std::byte>>(std::move(bad)))) {
+            const auto badData = std::make_shared<const std::vector<std::byte>>(std::move(bad));
+            const Result<FontFace::Description> described = FontFace::describe(*badData);
+            if (const Result<std::shared_ptr<const FontFace>> f = FontFace::load(badData)) {
+                describeMissed += described.ok() ? 0 : 1;
                 for (GlyphId g = 0; g < f.value()->glyphCount(); ++g) {
                     (void)f.value()->glyphOutline(g, p);
                 }
@@ -226,6 +238,7 @@ void hostileData() {
             }
         }
         check(true, "truncated and corrupted fonts do not crash");
+        checkEqual(describeMissed, 0, "describe() accepts every font load() does");
         (void)loaded;
     }
 }

@@ -26,8 +26,8 @@ using cfw::test::checkEqual;
 namespace {
 
 // Pumps events until `done` or about two seconds pass.
-template <class F> bool pumpUntil(F done) {
-    const auto end = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+template <class F> bool pumpUntil(F done, std::chrono::seconds limit = std::chrono::seconds(2)) {
+    const auto end = std::chrono::steady_clock::now() + limit;
     while (!done()) {
         if (std::chrono::steady_clock::now() > end) {
             return false;
@@ -151,7 +151,8 @@ int main() {
 #endif
 
     // Full screen and back. Only Windows resizes here: the X11 test server
-    // has no window manager to honour the request.
+    // has no window manager to honour the request, and macOS only once its
+    // animation ends.
     const Vec2i windowed = window->pixelSize();
     window->setFullScreen(true);
     check(window->isFullScreen(), "full screen on");
@@ -161,7 +162,8 @@ int main() {
 #endif
     window->setFullScreen(false);
     check(!window->isFullScreen(), "full screen off");
-    pumpUntil([&] { return window->pixelSize() == windowed; });
+    // macOS animates in and then out (the second request waits for the first).
+    pumpUntil([&] { return window->pixelSize() == windowed; }, std::chrono::seconds(6));
     check(window->pixelSize() == windowed, "leaving full screen restores the size");
 
     window->setTitle("Renamed ✓");

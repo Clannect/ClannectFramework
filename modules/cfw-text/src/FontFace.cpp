@@ -776,7 +776,98 @@ String decodeName(Reader &r, std::uint32_t at, std::uint32_t length, bool utf16)
     return out;
 }
 
+// name: family and style, preferring Windows Unicode English names, and the
+// typographic names over the legacy ones.
+void readNames(Reader &r, std::uint32_t o, std::uint32_t length, String &family, String &style) {
+    if (length < 6) {
+        return;
+    }
+    const std::uint16_t records = r.u16(o + 2);
+    const std::uint32_t strings = o + r.u16(o + 4);
+    int bestFamily = -1;
+    int bestStyle = -1;
+    for (std::uint32_t i = 0; i < records && r.has(o + 6 + i * 12, 12); ++i) {
+        const std::uint32_t rec = o + 6 + i * 12;
+        const std::uint16_t platform = r.u16(rec);
+        const std::uint16_t encoding = r.u16(rec + 2);
+        const std::uint16_t language = r.u16(rec + 4);
+        const std::uint16_t id = r.u16(rec + 6);
+        int score = 0;
+        if (platform == 3 && (encoding == 1 || encoding == 10)) {
+            score = language == 0x409 ? 40 : 30;
+        } else if (platform == 0) {
+            score = 20;
+        } else if (platform == 1 && encoding == 0) {
+            score = 10;
+        } else {
+            continue;
+        }
+        const bool utf16 = platform != 1;
+        const int typographic = (id == 16 || id == 17) ? 5 : 0;
+        if ((id == 1 || id == 16) && score + typographic > bestFamily) {
+            bestFamily = score + typographic;
+            family = decodeName(r, strings + r.u16(rec + 10), r.u16(rec + 8), utf16);
+        } else if ((id == 2 || id == 17) && score + typographic > bestStyle) {
+            bestStyle = score + typographic;
+            style = decodeName(r, strings + r.u16(rec + 10), r.u16(rec + 8), utf16);
+        }
+    }
+}
+
 } // namespace
+
+Result<FontFace::Description> FontFace::describe(Span<const std::byte> data, std::uint32_t index) {
+    Reader r(data);
+    const Result<std::uint32_t> count = faceCount(data);
+    if (!count) {
+        return count.error();
+    }
+    if (index >= count.value()) {
+        return Error(ErrorCode::NotFound, "font: no face with that index in the file");
+    }
+    const std::uint32_t dir = r.u32(0) == tag("ttcf") ? r.u32(12 + 4 * static_cast<std::size_t>(index)) : 0;
+    const std::uint16_t tableCount = r.u16(dir + 4);
+    if (!r.ok || !r.has(dir + 12, static_cast<std::size_t>(tableCount) * 16)) {
+        return malformed("bad table directory");
+    }
+    TableEntry head{}, maxp{}, hhea{}, hmtx{}, os2{}, name{};
+    for (std::uint32_t i = 0; i < tableCount; ++i) {
+        const std::uint32_t rec = dir + 12 + i * 16;
+        const TableEntry e{r.u32(rec), r.u32(rec + 8), r.u32(rec + 12)};
+        if (!r.has(e.offset, e.length)) {
+            continue; // as parse() does
+        }
+        TableEntry *slot = e.tag == tag("head")   ? &head
+                           : e.tag == tag("maxp") ? &maxp
+                           : e.tag == tag("hhea") ? &hhea
+                           : e.tag == tag("hmtx") ? &hmtx
+                           : e.tag == tag("OS/2") ? &os2
+                           : e.tag == tag("name") ? &name
+                                                  : nullptr;
+        if (slot && slot->tag == 0) {
+            *slot = e; // the first entry wins, as in parse()
+        }
+    }
+    if (head.tag == 0 || maxp.tag == 0 || hhea.tag == 0 || hmtx.tag == 0 || head.length < 54 || maxp.length < 6 ||
+        hhea.length < 36) {
+        return malformed("missing or short head/maxp/hhea/hmtx");
+    }
+    const std::uint16_t unitsPerEm = r.u16(head.offset + 18);
+    const std::uint16_t hMetricCount = r.u16(hhea.offset + 34);
+    if (unitsPerEm < 16 || unitsPerEm > 16384 || hMetricCount == 0 ||
+        static_cast<std::uint64_t>(hMetricCount) * 4 > hmtx.length) {
+        return malformed("bad head or hmtx");
+    }
+    Description out;
+    if (os2.tag != 0 && os2.length >= 78) {
+        out.weight = r.u16(os2.offset + 4);
+        out.italic = (r.u16(os2.offset + 62) & 1) != 0;
+    }
+    if (name.tag != 0) {
+        readNames(r, name.offset, name.length, out.family, out.style);
+    }
+    return out;
+}
 
 Result<void> FontFace::parse(std::uint32_t index) {
     Reader r(*m_data);
@@ -857,39 +948,8 @@ Result<void> FontFace::parse(std::uint32_t index) {
         m_fixedPitch = r.u32(post->offset + 12) != 0;
     }
 
-    // name: family and style, preferring Windows Unicode English names.
-    if (const TableEntry *name = entry("name"); name && name->length >= 6) {
-        const std::uint32_t o = name->offset;
-        const std::uint16_t records = r.u16(o + 2);
-        const std::uint32_t strings = o + r.u16(o + 4);
-        int bestFamily = -1;
-        int bestStyle = -1;
-        for (std::uint32_t i = 0; i < records && r.has(o + 6 + i * 12, 12); ++i) {
-            const std::uint32_t rec = o + 6 + i * 12;
-            const std::uint16_t platform = r.u16(rec);
-            const std::uint16_t encoding = r.u16(rec + 2);
-            const std::uint16_t language = r.u16(rec + 4);
-            const std::uint16_t id = r.u16(rec + 6);
-            int score = 0;
-            if (platform == 3 && (encoding == 1 || encoding == 10)) {
-                score = language == 0x409 ? 40 : 30;
-            } else if (platform == 0) {
-                score = 20;
-            } else if (platform == 1 && encoding == 0) {
-                score = 10;
-            } else {
-                continue;
-            }
-            const bool utf16 = platform != 1;
-            const int typographic = (id == 16 || id == 17) ? 5 : 0;
-            if ((id == 1 || id == 16) && score + typographic > bestFamily) {
-                bestFamily = score + typographic;
-                m_family = decodeName(r, strings + r.u16(rec + 10), r.u16(rec + 8), utf16);
-            } else if ((id == 2 || id == 17) && score + typographic > bestStyle) {
-                bestStyle = score + typographic;
-                m_style = decodeName(r, strings + r.u16(rec + 10), r.u16(rec + 8), utf16);
-            }
-        }
+    if (const TableEntry *name = entry("name")) {
+        readNames(r, name->offset, name->length, m_family, m_style);
     }
 
     // cmap: the best Unicode subtable, and variation sequences.

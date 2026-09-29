@@ -3,9 +3,11 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdlib>
+#include <mutex>
 #include <numeric>
 
 #include "cfw/io/FileSystem.h"
+#include "cfw/io/MappedFile.h"
 
 namespace cfw {
 
@@ -54,12 +56,35 @@ std::size_t FontDatabase::addFaces(const FontFace::Data &data, const Path &file)
     return added;
 }
 
+// Only the names and styles are read here, from a mapping: the pages of the
+// table directory and the head, OS/2 and name tables. Reading whole files
+// made listing a Mac's fonts (1-2 GB) take seconds.
 Result<std::size_t> FontDatabase::addFile(const Path &file) {
-    Result<std::vector<std::byte>> bytes = readFile(file, 256u << 20);
-    if (!bytes) {
-        return bytes.error();
+    Result<MappedFile> mapped = MappedFile::open(file, 256u << 20);
+    if (!mapped) {
+        return mapped.error();
     }
-    return addFaces(std::make_shared<const std::vector<std::byte>>(std::move(bytes.value())), file);
+    const Span<const std::byte> bytes = mapped.value().bytes();
+    const Result<std::uint32_t> count = FontFace::faceCount(bytes);
+    if (!count) {
+        return count.error();
+    }
+    std::size_t added = 0;
+    for (std::uint32_t i = 0; i < count.value() && i < 256; ++i) {
+        Result<FontFace::Description> d = FontFace::describe(bytes, i);
+        if (!d || d.value().family.empty()) {
+            continue;
+        }
+        m_faces.push_back({std::move(d.value().family), std::move(d.value().style), d.value().weight,
+                           d.value().italic, file, i});
+        m_loaded.push_back(nullptr);
+        m_data.push_back(nullptr);
+        ++added;
+    }
+    if (added) {
+        m_fallback.clear();
+    }
+    return added;
 }
 
 Result<std::size_t> FontDatabase::addData(FontFace::Data data) {
@@ -93,6 +118,29 @@ std::size_t FontDatabase::addDirectory(const Path &directory) {
 }
 
 std::size_t FontDatabase::addSystemFonts() {
+    // Listed once per process: every UI theme asks for the system fonts.
+    static std::mutex mutex;
+    static std::vector<FaceInfo> cached;
+    static bool listed = false;
+    const std::lock_guard<std::mutex> lock(mutex);
+    if (!listed) {
+        FontDatabase scan;
+        scan.addSystemFontsUncached();
+        cached = std::move(scan.m_faces);
+        listed = true;
+    }
+    for (const FaceInfo &info : cached) {
+        m_faces.push_back(info);
+        m_loaded.push_back(nullptr);
+        m_data.push_back(nullptr);
+    }
+    if (!cached.empty()) {
+        m_fallback.clear();
+    }
+    return cached.size();
+}
+
+std::size_t FontDatabase::addSystemFontsUncached() {
     std::vector<Path> dirs;
 #if defined(_WIN32)
     if (const Path windir = fromEnvironment("WINDIR"); !windir.empty()) {

@@ -1,6 +1,7 @@
 // The desktop services, with stand-ins for the programs they run: the picker
 // hands back what was chosen (or nothing when cancelled), and folders and
-// links go to xdg-open. On Windows only that nothing fails to link.
+// links go to xdg-open. On Windows and macOS only that nothing fails to link:
+// there the picker is the system's own panel, which waits for a person.
 
 #include <cstdlib>
 
@@ -10,7 +11,7 @@
 #include "cfw/io/TemporaryDirectory.h"
 #include "cfw/test/Check.h"
 
-#ifndef _WIN32
+#if !defined(_WIN32) && !defined(__APPLE__)
 #include <sys/stat.h>
 #endif
 
@@ -20,7 +21,7 @@ using cfw::test::checkEqual;
 
 namespace {
 
-#ifndef _WIN32
+#if !defined(_WIN32) && !defined(__APPLE__)
 
 void writeScript(const Path &path, StringView body) {
     check(bool(writeFileAtomic(path, "#!/bin/sh\n" + String(body))), "a stand-in script");
@@ -73,7 +74,7 @@ void standIns() {
 } // namespace
 
 int main() {
-#ifndef _WIN32
+#if !defined(_WIN32) && !defined(__APPLE__)
     standIns();
 #endif
     return cfw::test::finish("DesktopTest");

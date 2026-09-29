@@ -42,6 +42,17 @@ public:
     [[nodiscard]] static Result<std::uint32_t> faceCount(Span<const std::byte> data);
     [[nodiscard]] static Result<std::shared_ptr<const FontFace>> load(Data data, std::uint32_t index = 0);
 
+    // A face's names and style, read from its head, OS/2 and name tables
+    // alone: cheap enough to list every installed font. Fails where load()
+    // would fail for a missing or bad head/maxp/hhea/hmtx.
+    struct Description {
+        String family;
+        String style;
+        int weight = 400;
+        bool italic = false;
+    };
+    [[nodiscard]] static Result<Description> describe(Span<const std::byte> data, std::uint32_t index = 0);
+
     // A 4-byte table tag, e.g. tag("GSUB").
     [[nodiscard]] static constexpr std::uint32_t tag(const char (&t)[5]) noexcept {
         return static_cast<std::uint32_t>(static_cast<unsigned char>(t[0])) << 24 |
