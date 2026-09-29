@@ -15,9 +15,9 @@ covers only what is built here and how to work on it.
 | M1 — cfw-core + cfw-io | **Done.** The Runtime builds and passes its tests with no Qt; scene files round-trip byte for byte with the Qt build. |
 | M2 — cfw-net + cfw-image | **Done.** The Runtime serves multiplayer sessions over CFW's WebSocket server; the asset cache downloads, decodes and stores through CFW. |
 | M3 — cfw-gfx + cfw-text | **Done**, except the Indic, Khmer and Myanmar shaping engines. Every interface renders through CFW and was pixel-diffed against Qt; the §7 budgets are met. The GPU paint backend is not written (the CPU backend is fast enough so far). |
-| M4 — cfw-platform + cfw-app | **Done on Windows and Linux (X11).** The viewport and `clannect-player` run in CFW windows with CFW input and GL contexts. |
+| M4 — cfw-platform + cfw-app | **Done on Windows and Linux (X11); written for macOS (AppKit) but not yet compiled there** (see M6). The viewport and `clannect-player` run in CFW windows with CFW input and GL contexts. |
 | M5 — cfw-ui + editor port | **Done.** The editor runs on CFW with feature parity, on Windows and Linux; the Qt editor is deleted. |
-| M6 — hardening and platforms | **In progress.** Done: Linux builds, Qt gone from every build system and the licence register, fuzzing corpora, the system clipboard on X11, full screen. Open: macOS (Cocoa), IME composition, accessibility, drag and drop, soak tests. |
+| M6 — hardening and platforms | **Done except verifying macOS.** Done: Linux builds; Qt gone from every build system and the licence register; fuzzing corpora; the system clipboard on X11; full screen; IME composition (XIM, IMM32); accessibility (AT-SPI on Linux, MSAA on Windows, each tested with a real client); file drag and drop (XDND, OLE); soak tests (network churn, a UI monkey, and the engine's editor soak, which found three memory bugs). **macOS:** the AppKit window, GL, clipboard, IME, drop and file-picker backends are written, with a CI job, but no Mac or macOS SDK was available, so none of it has been compiled ([0016](docs/decisions/0016-macos-backend.md)). macOS accessibility is not written. |
 
 **cfw-core contents:**
 
@@ -101,15 +101,19 @@ interoperates with Qt's WebSocket stack in both directions
 
 **cfw-platform contents:**
 
-- **`Window`:** native windows on Win32 and X11 (a stub elsewhere, so headless servers link): title, size, full
-  screen, per-monitor DPI, cursors, pointer warping, presenting CPU-painted pixels and capturing them back.
-  Pointer (with click counts), key (physical codes), text (UTF-16 surrogates on Win32, the X input method on
-  X11), resize, DPI, focus, repaint and close signals. `processEvents(maxWait)` idles at zero CPU and
-  `wakeUp()` works from any thread.
-- **Clipboard:** the system clipboard on both platforms. On X11 that is the `CLIPBOARD` selection, both ways,
+- **`Window`:** native windows on Win32, X11 and AppKit (a stub elsewhere, so headless servers link): title,
+  size, full screen, per-monitor DPI, cursors, pointer warping, presenting CPU-painted pixels and capturing
+  them back. Pointer (with click counts), key (physical codes), text, resize, DPI, focus, repaint and close
+  signals. `processEvents(maxWait)` idles at zero CPU and `wakeUp()` works from any thread.
+- **Input methods:** composition events with the caret placed for the candidate window (XIM on-the-spot
+  preedit, IMM32, `NSTextInputClient`). Tested on X11 with a real input method (uim with Anthy: "nihonn"
+  becomes にほん) and on Windows under Wine.
+- **File drops:** `DropEvent`s from XDND 5, OLE `IDropTarget` and `WM_DROPFILES`, and AppKit dragging.
+- **Clipboard:** the system clipboard everywhere. On X11 that is the `CLIPBOARD` selection, both ways,
   with incremental (INCR) transfers.
-- **OpenGL:** `GlContext` (WGL; GLX with libGL loaded at run time), CFW's own GL 3.3 core types and function
-  table (`Gl.h`, no third-party headers or loaders), and `GlBuffer`, `GlVertexArray` and `GlShaderProgram`.
+- **OpenGL:** `GlContext` (WGL; GLX with libGL loaded at run time; `NSOpenGLContext`), CFW's own GL 3.3 core
+  types and function table (`Gl.h`, no third-party headers or loaders), and `GlBuffer`, `GlVertexArray` and
+  `GlShaderProgram`.
 
 **cfw-ui contents:** an element tree hosted by a `Surface` (layout, focus, keyboard and pointer routing,
 capture, damage-driven painting, timers, shortcuts, popups, modal dialogs, tooltips and cursors). Controls:
@@ -121,8 +125,11 @@ capture, damage-driven painting, timers, shortcuts, popups, modal dialogs, toolt
 
 **cfw-app contents:** `UiWindow` (a surface in a native window, painted on the CPU, idle when nothing
 changes) and `GlUiWindow` (the same with OpenGL views such as a 3D viewport, the interface composited over
-them), with close handlers for "save your changes?". `Desktop.h`: the system's file picker (the Win32 common
-dialog; zenity or kdialog on Linux), showing a folder in the file manager, and opening a link in the browser.
+them), with close handlers for "save your changes?". Both publish the cfw-ui accessibility tree to screen
+readers: MSAA (`IAccessible`) on Windows, and AT-SPI over CFW's own D-Bus client on Linux. Each is tested with
+a real client: Wine's oleacc, and pyatspi against the AT-SPI registry. `Desktop.h`: the system's file picker
+(the Win32 common dialog; `NSOpenPanel`; zenity or kdialog on Linux), showing a folder in the file manager,
+and opening a link in the browser.
 `cfw_embed_resources` (CMake) builds files into a binary and finds them by path.
 
 **Benchmarks** ([docs/benchmarks](docs/benchmarks/README.md)): a 5 MB scene parses in **0.62×** and writes in
@@ -140,7 +147,9 @@ ASan+UBSan+LSan over every test, TSan over cfw-net, and 14 libFuzzer targets cov
 binary reader, URL/UTF-8, WebSocket frames, HTTP, inflate, PNG, JPEG, WebP, painting, text, fonts, shaping
 and SVG), fuzzed for 45 s each. The committed corpus (`fuzz/corpus/`) replays as CTest tests on every
 toolchain, MinGW included. Window and GL tests run against Xvfb on Linux and skip (passing) without a display.
-UBSan is fatal in every sanitizer build. Fuzzing has found, among others, an out-of-bounds write in the JPEG
+UBSan is fatal in every sanitizer build. The soak tests (`SoakNetTest`, `SoakUiTest`) run for 2 s in every
+build; `CFW_SOAK_SECONDS` runs them longer and `CFW_SOAK_SEED` replays a run. A `macos` workflow builds and
+tests on GitHub's macOS runners. Fuzzing has found, among others, an out-of-bounds write in the JPEG
 Huffman table builder and integer overflow on hostile VP8 coefficients; each fix has a regression input.
 
 **No Qt:** the `NoQt` CTest test fails the build if a Qt header, macro, CMake package or linked Qt library
@@ -152,7 +161,8 @@ appears anywhere in CFW's sources, build files or binaries. Where CFW must behav
 
 This needs CMake ≥ 3.25, Ninja and a C++20 compiler: GCC 13 or Clang 18 on Linux, MinGW-w64 GCC 13 on Windows
 (a standalone build such as WinLibs; nothing from Qt is needed). On Linux the window system backend needs the
-X11 development headers (`libx11-dev`); without them cfw-platform builds its headless stub.
+X11 development headers (`libx11-dev`); without them cfw-platform builds its headless stub. On macOS (13.3 or
+newer) it needs Xcode's command-line tools; the Cocoa backend is Objective-C++ and has not yet been compiled.
 
 ```sh
 cmake --preset debug
@@ -199,7 +209,10 @@ and the operating system:
 - **Windows:** `user32`, `gdi32`, `opengl32`, `shell32`, `ole32`, `comdlg32`, `ws2_32`, and `secur32`/`crypt32`/`ncrypt`
   (Schannel TLS).
 - **Linux:** POSIX, Xlib, and at run time `libGL` and the system OpenSSL (both loaded with `dlopen`), plus
-  `zenity`/`kdialog` and `xdg-open` for the file picker and links when they are installed.
+  `zenity`/`kdialog` and `xdg-open` for the file picker and links when they are installed, and the session
+  D-Bus for accessibility.
+- **macOS:** AppKit, Carbon (key codes only), UniformTypeIdentifiers, the OpenGL framework (loaded with
+  `dlopen`), and Homebrew's or MacPorts' OpenSSL 3 at run time when one is installed.
 
 Reference implementations (zlib, libjpeg-turbo, libwebp, Pillow, and Qt 6.11 for 2D rendering via
 `testing/qt-oracle`) are run outside the build to produce the expected outputs that tests compare against. They are never built or linked. The only third-party
@@ -238,3 +251,5 @@ input.
 - [0014](docs/decisions/0014-m3-paths-and-scan-conversion.md) — M3: `PainterPath` (renamed from the spec's
   `Path`, which is cfw-io's file path), the rasteriser and the CPU painter. It records Qt behaviour measured
   with an outside oracle and CFW's deliberate differences, along with golden images, budgets and fuzzing.
+- [0016](docs/decisions/0016-macos-backend.md) — the macOS backend: AppKit from Objective-C++,
+  `cfw::fromChars` for Apple's libc++, and why it is unverified until the macOS CI job runs.
