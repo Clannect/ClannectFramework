@@ -1,6 +1,7 @@
 #pragma once
 
-// An OpenGL context drawing into a Window (WGL on Windows, GLX on X11).
+// An OpenGL context drawing into a Window (WGL on Windows, GLX on X11,
+// NSOpenGLContext on macOS, where 3.3 core requests get 4.1 core).
 // Core profile, version 3.3 or newer by default, double-buffered with a
 // 24-bit depth and 8-bit stencil buffer.
 //

@@ -110,7 +110,7 @@ Result<void> showInFileManager(const Path &folder) {
 
 Result<void> openUrl(StringView url) { return shellOpen(wide(url)); }
 
-#else
+#elif !defined(__APPLE__) // macOS: mac/DesktopCocoa.mm
 
 namespace {
 

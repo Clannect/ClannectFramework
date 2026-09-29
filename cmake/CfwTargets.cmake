@@ -156,3 +156,11 @@ function(cfw_embed_resources target)
     target_include_directories(${target} PRIVATE "${out_dir}")
     target_link_libraries(${target} PRIVATE cfw-core)
 endfunction()
+
+# Objective-C++ sources (the macOS backends): ARC, and none of the C++-only
+# style warnings AppKit's idioms trip (bridged casts are C-style casts,
+# delegate methods ignore most of their parameters).
+function(cfw_objcxx_sources)
+    set_source_files_properties(${ARGN} PROPERTIES
+        COMPILE_OPTIONS "-fobjc-arc;-Wno-old-style-cast;-Wno-pedantic;-Wno-deprecated-declarations;-Wno-unused-parameter")
+endfunction()

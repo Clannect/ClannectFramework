@@ -1,4 +1,5 @@
 #include "cfw/core/Strings.h"
+#include "cfw/core/CharConv.h"
 
 #include <array>
 #include <charconv>
@@ -138,7 +139,7 @@ Result<std::int64_t> parseInt(StringView text) {
 Result<double> parseDouble(StringView text) {
     double value = 0.0;
     const char *end = text.data() + text.size();
-    const auto [ptr, ec] = std::from_chars(text.data(), end, value, std::chars_format::general);
+    const auto [ptr, ec] = fromChars(text.data(), end, value);
     if (ec == std::errc::result_out_of_range) {
         return Error(ErrorCode::OutOfRange, "number out of range").with("text", excerpt(text));
     }

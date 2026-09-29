@@ -6,6 +6,7 @@ cfw_add_module(cfw-core
     SOURCES
         src/Arena.cpp
         src/Base64.cpp
+        src/CharConv.cpp
         src/Checksum.cpp
         src/Clock.cpp
         src/CommandLine.cpp
@@ -38,6 +39,7 @@ if(CFW_BUILD_TESTS)
     cfw_add_test(cfw-core LocaleTest)
     cfw_add_test(cfw-core Utf8Test)
     cfw_add_test(cfw-core StringsTest)
+    cfw_add_test(cfw-core CharConvTest)
     cfw_add_test(cfw-core NameTest)
     cfw_add_test(cfw-core SmallVectorTest)
     cfw_add_test(cfw-core FlatMapTest)

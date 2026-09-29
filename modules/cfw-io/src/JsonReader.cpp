@@ -1,4 +1,5 @@
 #include "cfw/io/JsonReader.h"
+#include "cfw/core/CharConv.h"
 
 #include <charconv>
 #include <cmath>
@@ -275,7 +276,7 @@ Result<JsonValue> Parser::parseNumber() {
         // Too big for int64: fall through to double.
     }
     double value = 0.0;
-    const auto [ptr, ec] = std::from_chars(first, last, value);
+    const auto [ptr, ec] = fromChars(first, last, value);
     if (ec == std::errc::result_out_of_range) {
         if (negativeExponent) {
             // Underflow: the nearest double is (signed) zero.

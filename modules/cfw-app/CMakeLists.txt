@@ -9,6 +9,11 @@ elseif(UNIX AND NOT APPLE)
 else()
     set(CFW_APP_ACCESSIBILITY src/AccessibilityNone.cpp)
 endif()
+set(CFW_APP_PLATFORM_SOURCES)
+if(APPLE)
+    set(CFW_APP_PLATFORM_SOURCES src/mac/DesktopCocoa.mm)
+    cfw_objcxx_sources(src/mac/DesktopCocoa.mm)
+endif()
 
 cfw_add_module(cfw-app
     SOURCES
@@ -16,6 +21,7 @@ cfw_add_module(cfw-app
         src/GlUiWindow.cpp
         src/UiWindow.cpp
         ${CFW_APP_ACCESSIBILITY}
+        ${CFW_APP_PLATFORM_SOURCES}
     DEPENDS
         cfw-io
         cfw-platform
@@ -23,6 +29,8 @@ cfw_add_module(cfw-app
 )
 if(WIN32)
     target_link_libraries(cfw-app PRIVATE comdlg32 shell32 oleacc oleaut32 ole32)
+elseif(APPLE)
+    target_link_libraries(cfw-app PRIVATE "-framework AppKit" "-framework UniformTypeIdentifiers")
 endif()
 
 if(CFW_BUILD_TESTS)

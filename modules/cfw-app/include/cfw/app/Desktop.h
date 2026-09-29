@@ -4,7 +4,8 @@
 // folder in the file manager, and opening a link in the default browser
 // (QFileDialog::getOpenFileNames and QDesktopServices).
 //
-// Windows uses the common file dialog and the shell. Other desktops use
+// Windows uses the common file dialog and the shell, macOS NSOpenPanel and
+// NSWorkspace. Other desktops use
 // what they install for this: zenity (GNOME and most others) or kdialog
 // (KDE) for the picker, xdg-open for folders and links. Where none is
 // present the calls fail with Unsupported, and the application can ask in

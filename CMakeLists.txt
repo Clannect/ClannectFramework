@@ -1,6 +1,17 @@
 cmake_minimum_required(VERSION 3.25)
 
+# macOS 13.3: the first whose libc++ has floating-point std::to_chars.
+if(APPLE AND NOT CMAKE_OSX_DEPLOYMENT_TARGET)
+    set(CMAKE_OSX_DEPLOYMENT_TARGET "13.3" CACHE STRING "Minimum macOS version")
+endif()
+
 project(ClannectFramework VERSION 0.1.0 LANGUAGES CXX)
+if(APPLE)
+    enable_language(OBJCXX) # the Cocoa backends (*.mm)
+    set(CMAKE_OBJCXX_STANDARD 20)
+    set(CMAKE_OBJCXX_STANDARD_REQUIRED ON)
+    set(CMAKE_OBJCXX_EXTENSIONS OFF)
+endif()
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)

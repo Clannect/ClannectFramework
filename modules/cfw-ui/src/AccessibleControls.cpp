@@ -3,6 +3,7 @@
 // accessibleFocusedItem, accessibleAction).
 
 #include <algorithm>
+#include "cfw/core/CharConv.h"
 #include <charconv>
 #include <cmath>
 
@@ -44,7 +45,7 @@ String withoutMnemonic(StringView text) {
 std::optional<double> parseNumber(StringView text) {
     const String trimmed(trim(text));
     double value = 0.0;
-    const auto result = std::from_chars(trimmed.data(), trimmed.data() + trimmed.size(), value);
+    const auto result = fromChars(trimmed.data(), trimmed.data() + trimmed.size(), value);
     if (result.ec != std::errc() || result.ptr != trimmed.data() + trimmed.size()) {
         return std::nullopt;
     }

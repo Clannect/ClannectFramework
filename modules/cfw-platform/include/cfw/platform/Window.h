@@ -1,7 +1,8 @@
 #pragma once
 
 // Native top-level windows (spec §4.7): Win32 on Windows, X11 on Linux and
-// other Unix desktops; macOS (Cocoa) is not written yet.
+// other Unix desktops, AppKit on macOS (decision 0016: not yet compiled
+// or run on a Mac; CI's macos job is its first check).
 //
 // A window reports input as cfw-core Input events (logical pixels), resizes,
 // close requests, focus and DPI changes through signals, and shows pixels
@@ -13,9 +14,7 @@
 // Events are delivered by processEvents(), on the thread that created the
 // windows. Nothing is delivered from inside present() or other calls.
 //
-// Not yet: IME composition beyond what the input method commits as text,
-// X11 clipboard selections (the clipboard is in-process there), drag and
-// drop, native dialogs, multiple monitors' work areas.
+// Not yet: multiple monitors' work areas.
 //
 // Threads: windows and processEvents() on one thread; wakeUp() from any.
 
@@ -90,8 +89,8 @@ public:
     // Where the client area's top-left is on the screen, in physical pixels
     // (what screen readers are told; nothing known: the origin).
     [[nodiscard]] virtual Vec2i screenPosition() const { return {}; }
-    // HWND on Windows, the X11 Window id on X11 (for embedding WebView2 and
-    // for GL context creation).
+    // HWND on Windows, the X11 Window id on X11, the content NSView on macOS
+    // (for embedding WebView2 and for GL context creation).
     [[nodiscard]] virtual void *nativeHandle() const = 0;
 
     Signal<const PointerEvent &> pointer;

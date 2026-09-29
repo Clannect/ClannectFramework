@@ -148,9 +148,14 @@ int main() {
             serverSockets.remove_if([](const ServerSide &side) { return side.closed; });
         }
 
-        // Wind down: let echoes arrive, then everyone closes.
+        // Wind down: let connects in flight finish and echoes arrive, then
+        // everyone closes.
         loop->runUntil(
             [&] {
+                connecting.remove_if([](const auto &entry) { return *entry.second; });
+                if (!connecting.empty()) {
+                    return false;
+                }
                 for (const Client &c : clients) {
                     if (!c.expected.empty() && !c.closed) {
                         return false;

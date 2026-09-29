@@ -120,9 +120,14 @@ OpenSsl load() {
     // development packages are installed.
     void *ssl = nullptr;
     void *crypto = nullptr;
-    for (const auto &[sslName, cryptoName] : {std::pair{"libssl.so.3", "libcrypto.so.3"},
-                                              std::pair{"libssl.so.1.1", "libcrypto.so.1.1"},
-                                              std::pair{"libssl.so", "libcrypto.so"}}) {
+    // macOS has no system OpenSSL: Homebrew's (Apple silicon, then Intel)
+    // or MacPorts', when installed.
+    for (const auto &[sslName, cryptoName] :
+         {std::pair{"libssl.so.3", "libcrypto.so.3"}, std::pair{"libssl.so.1.1", "libcrypto.so.1.1"},
+          std::pair{"libssl.so", "libcrypto.so"},
+          std::pair{"/opt/homebrew/opt/openssl@3/lib/libssl.3.dylib", "/opt/homebrew/opt/openssl@3/lib/libcrypto.3.dylib"},
+          std::pair{"/usr/local/opt/openssl@3/lib/libssl.3.dylib", "/usr/local/opt/openssl@3/lib/libcrypto.3.dylib"},
+          std::pair{"/opt/local/lib/libssl.3.dylib", "/opt/local/lib/libcrypto.3.dylib"}}) {
         ssl = dlopen(sslName, RTLD_NOW | RTLD_LOCAL);
         crypto = ssl != nullptr ? dlopen(cryptoName, RTLD_NOW | RTLD_LOCAL) : nullptr;
         if (ssl != nullptr && crypto != nullptr) {

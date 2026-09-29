@@ -1,0 +1,40 @@
+# macOS CI: the Cocoa window, GL, clipboard and desktop backends
+# (docs/decisions/0016). GitHub's macOS runners have a logged-in desktop
+# session, so the window, GL and clipboard tests run for real.
+
+name: macos
+
+on:
+  push:
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: ${{ matrix.preset }} (Apple Clang, ${{ matrix.runner }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { preset: debug, runner: macos-14 }
+          - { preset: release, runner: macos-14 }
+          - { preset: asan, runner: macos-14 }
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install tools
+        # OpenSSL 3 for the TLS tests (macOS has no system libssl; CFW loads
+        # Homebrew's at run time).
+        run: brew install ninja openssl@3
+      - name: Configure
+        run: cmake --preset ${{ matrix.preset }}
+      - name: Build
+        run: cmake --build --preset ${{ matrix.preset }}
+      - name: Test
+        env:
+          ASAN_OPTIONS: abort_on_error=1:strict_string_checks=1
+          UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
+        run: ctest --preset ${{ matrix.preset }} --output-on-failure
