@@ -28,6 +28,7 @@ Result<Path> home() {
     return Error(ErrorCode::NotFound, "home directory unknown");
 }
 
+#if !defined(__APPLE__)
 // $variable if set to an absolute path, else ~/fallback.
 Result<Path> xdg(const char *variable, const char *fallback) {
     if (const char *env = std::getenv(variable); env != nullptr && env[0] == '/') {
@@ -39,6 +40,7 @@ Result<Path> xdg(const char *variable, const char *fallback) {
     }
     return base.value() / fallback;
 }
+#endif
 
 } // namespace
 

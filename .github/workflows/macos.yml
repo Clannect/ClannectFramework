@@ -34,7 +34,8 @@ jobs:
       - name: Configure
         run: cmake --preset ${{ matrix.preset }}
       - name: Build
-        run: cmake --build --preset ${{ matrix.preset }}
+        # -k 0: report every compile error in one run, not just the first.
+        run: cmake --build --preset ${{ matrix.preset }} -- -k 0
       - name: Test
         env:
           ASAN_OPTIONS: abort_on_error=1:strict_string_checks=1
