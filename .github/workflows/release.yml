@@ -122,7 +122,8 @@ jobs:
         with:
           ref: ${{ env.TAG }}
       - name: Install tools
-        run: brew install ninja
+        # OpenSSL 3 for the TLS tests (CFW loads Homebrew's at run time).
+        run: brew install ninja openssl@3
       - name: Configure
         run: cmake --preset release
       - name: Build

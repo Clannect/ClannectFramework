@@ -10,7 +10,7 @@ in this repository. It links only the C++ standard library and the operating sys
 [![Rate CFW!](https://img.shields.io/badge/Rate%20CFW-⭐%201–5-gold?style=for-the-badge)](https://github.com/Clannect/ClannectFramework/discussions/2#discussion-10913620)
 
 
-> **Status: pre-1.0 (0.1.0).** CFW runs Clannect today, but its API may still change between versions. Documentation is being written.
+> **Status: pre-1.0 (0.1.1).** CFW runs Clannect today, but its API may still change between versions. Documentation is being written.
 
 ## Features
 
@@ -35,7 +35,7 @@ cfw-core, cfw-io and cfw-net and nothing else.
 |---|---|
 | **Windows** (MinGW-w64 GCC 13) | Supported. |
 | **Linux** (X11; GCC 13 or Clang 18) | Supported. |
-| **macOS** 13.3+ | Experimental: the AppKit backend is written but has not been built on a Mac yet. |
+| **macOS** 13.3+ (Apple silicon) | Experimental: builds and passes the tests on GitHub's macOS runners, but has not been tried on a real Mac by a person yet. |
 
 ## Quick start
 
@@ -72,7 +72,7 @@ target_link_libraries(my_app PRIVATE cfw::app)   # or cfw::core, cfw::net, cfw::
 
 As a subproject, CFW builds only its libraries (no tests, examples or benchmarks).
 
-Or download a prebuilt package (Windows with MinGW-w64, Linux x64) from
+Or download a prebuilt package (Windows with MinGW-w64, Linux x64, and experimentally macOS on Apple silicon) from
 [Releases](https://github.com/Clannect/ClannectFramework/releases), unpack it, and use `find_package`:
 
 ```cmake
