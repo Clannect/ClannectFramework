@@ -7,7 +7,7 @@ Clannect Framework (CFW) was built for [Clannect](https://github.com/Clannect): 
 headless game server run on CFW alone. Everything CFW needs, from PNG decoding to OpenType shaping to TLS, is implemented
 in this repository. It links only the C++ standard library and the operating system.
 
-[![Rate CFW!](https://img.shields.io/badge/Rate%20this%20Repository-⭐%201–5-gold?style=for-the-badge)](https://github.com/Clannect/ClannectFramework/discussions/2#discussion-10913620)
+[![Rate CFW!](https://img.shields.io/badge/Rate%20CFW-⭐%201–5-gold?style=for-the-badge)](https://github.com/Clannect/ClannectFramework/discussions/2#discussion-10913620)
 
 
 > **Status: pre-1.0 (0.1.0).** CFW runs Clannect today, but its API may still change between versions. Documentation is being written.
