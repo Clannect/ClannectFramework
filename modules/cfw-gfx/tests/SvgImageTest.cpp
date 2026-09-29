@@ -117,7 +117,7 @@ void againstQt() {
 void pathData() {
     PainterPath p;
     check(parseSvgPathData("M4.037 4.688a.495.495 0 0 1 .651-.651l16 6.5z", p), "packed numbers and flags");
-    check(p.currentPoint() == Vec2(4.037f, 4.688f), "close returns to the start");
+    check(p.currentPoint() == Vec2{4.037f, 4.688f}, "close returns to the start");
     p.clear();
     check(parseSvgPathData("m1 1 2 0 0 2h-2v-2z M10 10 20 10", p), "implicit line-tos after moves");
     check(std::abs(p.currentPoint().x - 20) < 1e-5f, "absolute pairs after M");

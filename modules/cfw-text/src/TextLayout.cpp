@@ -24,7 +24,7 @@ struct ShapeCache::Entry {
     std::vector<FontFeature> features;
     std::u32string text;
     std::vector<ShapedGlyph> glyphs;
-    std::list<std::size_t>::iterator lru;
+    std::list<std::uint64_t>::iterator lru;
 };
 
 struct ShapeCache::Impl {

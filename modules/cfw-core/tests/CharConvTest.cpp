@@ -21,6 +21,12 @@ namespace {
 
 int mismatches = 0;
 
+// Apple's libc++ has no floating-point std::from_chars to compare against:
+// there only the checks at the end run (the other platforms cover the rest).
+#if defined(__APPLE__)
+template <class T>
+void compare(const std::string &) {}
+#else
 template <class T>
 void compare(const std::string &text) {
     T expected = T(1234.5);
@@ -44,6 +50,7 @@ void compare(const std::string &text) {
         }
     }
 }
+#endif
 
 void both(const std::string &text) {
     compare<double>(text);
