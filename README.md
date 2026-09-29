@@ -7,13 +7,7 @@ Clannect Framework (CFW) was built for [Clannect](https://github.com/Clannect): 
 headless game server run on CFW alone. Everything CFW needs, from PNG decoding to OpenType shaping to TLS, is implemented
 in this repository. It links only the C++ standard library and the operating system.
 
-[![1 Star](https://img.shields.io/static/v1?label=1%20Star&message=%E2%AD%90&color=gold&style=for-the-badge)](https://github.com/Clannect/ClannectFramework/discussions)
-[![2 Stars](https://img.shields.io/static/v1?label=2%20Stars&message=%E2%AD%90&color=gold&style=for-the-badge)](https://github.com/Clannect/ClannectFramework/discussions)
-[![3 Stars](https://img.shields.io/static/v1?label=3%20Stars&message=%E2%AD%90&color=gold&style=for-the-badge)](https://github.com/Clannect/ClannectFramework/discussions)
-[![4 Stars](https://img.shields.io/static/v1?label=4%20Stars&message=%E2%AD%90&color=gold&style=for-the-badge)](https://github.com/Clannect/ClannectFramework/discussions)
-[![5 Stars](https://img.shields.io/static/v1?label=5%20Stars&message=%E2%AD%90&color=gold&style=for-the-badge)](https://github.com/Clannect/ClannectFramework/discussions)
-
-**Total GitHub Stars Given:** [![GitHub Stars](https://img.shields.io/github/stars/Clannect/ClannectFramework?style=flat-square&color=gold)](https://github.com/Clannect/ClannectFramework/stargazers)
+[![Rate CFW!](https://img.shields.io/badge/Rate%20this%20Repository-⭐%201–5-gold?style=for-the-badge)](https://github.com/Clannect/ClannectFramework/discussions/2#discussion-10913620)
 
 
 > **Status: pre-1.0 (0.1.0).** CFW runs Clannect today, but its API may still change between versions. Documentation is being written.
