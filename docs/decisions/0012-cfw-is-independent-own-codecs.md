@@ -1,13 +1,13 @@
 # 0012 — CFW is independent: no third-party code, own image codecs and compression
 
-**Status:** accepted, 2026-09-27. Direction from the project owner. This **amends §2.1, §4.4 and §11** of the
-spec, which proposed permissive third-party libraries (Blend2D, FreeType/HarfBuzz, SDL3, libspng,
+**Status:** accepted, 2026-09-27. Direction from the project owner. This **amends the original plan**,
+which proposed permissive third-party libraries (Blend2D, FreeType/HarfBuzz, SDL3, libspng,
 libjpeg-turbo, libwebp, zlib, BoringSSL/mbedTLS).
 
 ## Decision
 
 Clannect Framework is a framework in its own right. It ships **no third-party code**: every format, codec
-and algorithm it needs is written in this repository, under its tests, fuzzing and review. The spec's §11 list
+and algorithm it needs is written in this repository, under its tests, fuzzing and review. The original dependency list
 now names *references* to test against, not dependencies. The only things CFW links are the C++ standard
 library and the operating system's own APIs (sockets, files, windows, GL/graphics drivers).
 
@@ -15,7 +15,7 @@ Consequences for the rest of the plan:
 
 - **cfw-gfx** gets its own CPU rasteriser; Blend2D is out.
 - **cfw-text** gets its own TrueType/OpenType parsing, rasterisation and shaping; FreeType and HarfBuzz are
-  out. Shaping complex scripts is the largest single item this adds; §4.5 already said to budget for it.
+  out. Shaping complex scripts is the largest single item this adds; the plan already said to budget for it.
 - **cfw-platform** is written against Win32/X11/Wayland/Cocoa directly; SDL and GLFW are out.
 - **TLS** uses the OS stack (Schannel on Windows, which `TlsSchannel.cpp` has started; the platform's own
   TLS elsewhere) rather than BoringSSL or mbedTLS.
@@ -23,7 +23,7 @@ Consequences for the rest of the plan:
 
 ## Why this is safe
 
-§4.4 preferred hardened libraries over hand-rolled decoders because hand-rolled parsers are where memory
+The original plan preferred hardened libraries over hand-rolled decoders because hand-rolled parsers are where memory
 bugs live. The answer here is the same hardening, applied to our own code:
 
 - **Reference-exact tests.** Every decoder is checked pixel for pixel against the reference implementation
@@ -66,7 +66,7 @@ by a script, as data, and checked by the reference-exact tests above. No code wa
 
 Decoding runs on the asset loader's worker threads, not in a frame. The gap to libjpeg-turbo and libwebp
 comes from their SIMD. Closing it is future work (the colour conversion, IDCT and loop filters vectorise
-well). §7 has no decode budget, so it is not a blocker; it is recorded here so it is not forgotten.
+well). The performance budgets have no decode budget, so it is not a blocker; it is recorded here so it is not forgotten.
 
 ## What would change this
 

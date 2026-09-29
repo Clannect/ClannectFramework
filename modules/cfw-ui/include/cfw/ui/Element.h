@@ -1,6 +1,6 @@
 #pragma once
 
-// The element tree every cfw-ui control is built from (spec §4.8).
+// The element tree every cfw-ui control is built from.
 //
 // - Ownership: an element owns its children. Elements live in a Surface,
 //   which routes input and schedules layout and painting.

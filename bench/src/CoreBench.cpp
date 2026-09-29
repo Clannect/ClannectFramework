@@ -1,4 +1,4 @@
-// cfw-bench: the §7 benchmarks that exist so far (cfw-core and cfw-io).
+// cfw-bench: the performance-budget benchmarks that exist so far (cfw-core and cfw-io).
 //
 //   cfw-bench                       run everything, print a table
 //   cfw-bench --quick               allocation budgets only (few runs; what CTest runs)
@@ -107,7 +107,7 @@ JsonValue makeScene(std::size_t targetBytes) {
 std::vector<Entry> runAll(const String &sceneText) {
     std::vector<Entry> results;
 
-    // --- cfw-io: the 5 MB scene (spec §7: "Scene load, 5 MB JSON ≤ Qt's time").
+    // --- cfw-io: the 5 MB scene (budget: "Scene load, 5 MB JSON ≤ Qt's time").
     {
         results.push_back({measure("json.parse.scene5mb", 15, 1, [&] {
                                Result<JsonValue> v = parseJson(sceneText);
@@ -120,7 +120,7 @@ std::vector<Entry> runAll(const String &sceneText) {
                            }), {}});
     }
 
-    // --- Property access by Name (spec §4.1: O(1), no allocation).
+    // --- Property access by Name (required: O(1), no allocation).
     const ClassInfo part = ClassInfo::Builder("Part")
                                .property({.name = "Anchored", .type = VariantType::Bool, .defaultValue = false})
                                .property({.name = "Color", .type = VariantType::Color, .defaultValue = Color{}})
@@ -169,7 +169,7 @@ std::vector<Entry> runAll(const String &sceneText) {
                            keep(sum);
                        }), {0.0}});
 
-    // --- Per-frame allocation (spec §7: 0 allocations per repainted frame).
+    // --- Per-frame allocation (budget: 0 allocations per repainted frame).
     Arena arena(64 * 1024);
     struct Quad {
         float x, y, w, h;
@@ -201,7 +201,7 @@ std::vector<Entry> runAll(const String &sceneText) {
         uiLabelY.push_back(19.0f + static_cast<float>(i) * 14.0f);
     }
 
-    // --- 2D painting on the CPU backend (spec §7: 10,000 anti-aliased rounded
+    // --- 2D painting on the CPU backend (budget: 10,000 anti-aliased rounded
     // rectangles at 1440p within 1.2x Qt; 0 allocations per repainted frame).
     {
         static Image screen = std::move(Image::create(2560, 1440, AlphaMode::Premultiplied).value());
@@ -269,7 +269,7 @@ std::vector<Entry> runAll(const String &sceneText) {
                            }), {0.0}});
     }
 
-    // --- Text (spec §7: 2,000 cached Latin runs at 14 px drawn within 1.2x
+    // --- Text (budget: 2,000 cached Latin runs at 14 px drawn within 1.2x
     // Qt, 2,000 uncached runs shaped within 1.5x Qt).
     if (textFont) {
         static Image screen = std::move(Image::create(2560, 1440, AlphaMode::Premultiplied).value());

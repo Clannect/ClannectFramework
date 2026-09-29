@@ -23,7 +23,7 @@ This keeps decision 0012 intact: CFW ships no crypto. As with Schannel, the TLS 
 operating system provides and patches. Writing our own TLS and crypto was rejected; constant-time
 arithmetic and side channels are not where Clannect should spend its risk.
 
-**Process-wide state (spec §2.5 asks for the reason).** The loaded OpenSSL function table is a
+**Process-wide state (CFW's rules ask for the reason).** The loaded OpenSSL function table is a
 function-local static: built once on first use (thread-safe initialisation) and immutable afterwards. The
 library it describes is itself process-wide, so this is the one global in cfw-net. It is never unloaded,
 because OpenSSL registers exit handlers and `dlclose` before them crashes at exit.

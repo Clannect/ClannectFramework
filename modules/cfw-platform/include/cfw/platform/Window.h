@@ -1,6 +1,6 @@
 #pragma once
 
-// Native top-level windows (spec §4.7): Win32 on Windows, X11 on Linux and
+// Native top-level windows: Win32 on Windows, X11 on Linux and
 // other Unix desktops, AppKit on macOS (decision 0016: not yet compiled
 // or run on a Mac; CI's macos job is its first check).
 //

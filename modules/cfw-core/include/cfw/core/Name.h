@@ -25,7 +25,7 @@ namespace cfw {
 // (the property registry) rather than build runtime Names per value.
 //
 // Names are hashed, not interned: interning needs a process-wide table, which
-// constraint 5 forbids. See docs/decisions/0002-name-is-hashed-not-interned.md.
+// CFW's no-global-state rule forbids. See docs/decisions/0002-name-is-hashed-not-interned.md.
 //
 // Ordering is by hash, then text: stable across runs and platforms, but not
 // alphabetical. Serialisers that need a human-friendly order sort by view().

@@ -10,7 +10,7 @@
 //     while (window->isOpen()) { window->frame(); processEvents(std::chrono::milliseconds(16)); }
 //
 // Idle when nothing changes: frame() paints only after input, a resize or
-// an invalidation, so a static editor uses no CPU (spec §7).
+// an invalidation, so a static editor uses no CPU.
 //
 // Threads: the window's thread.
 

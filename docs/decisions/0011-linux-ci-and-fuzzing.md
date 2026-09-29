@@ -6,8 +6,8 @@
 
 - **`.github/workflows/linux.yml`**, on every push and pull request:
   - GCC debug and release, and Clang debug: build with `-Werror`, run every CTest test.
-  - `asan`: ASan + UBSan + LSan over the full suite. A leak, or any UB report, fails the job (§8).
-  - `tsan`: TSan over `cfw-net` (§8 asks for it on `cfw-net` and, later, `cfw-app`).
+  - `asan`: ASan + UBSan + LSan over the full suite. A leak, or any UB report, fails the job.
+  - `tsan`: TSan over `cfw-net` (the reliability requirements ask for it on `cfw-net` and, later, `cfw-app`).
   - `fuzz`: Clang + libFuzzer + ASan/UBSan. It replays the corpus, then fuzzes each target for 60 s and
     uploads any crashing input.
 - **`fuzz/`**: one libFuzzer target per untrusted-input parser: `FuzzJson`, `FuzzByteReader`, `FuzzUrl`
@@ -55,7 +55,7 @@ Any input that crashed goes into `fuzz/corpus/<Target>/` as `regress-<what>` alo
 
 ## Not done yet
 
-- **Continuous fuzzing.** §8 says "fuzzed continuously". 60 s per push is a smoke test, not that. The
+- **Continuous fuzzing.** The goal is "fuzzed continuously". 60 s per push is a smoke test, not that. The
   next step is a scheduled job with a longer budget that carries its corpus over between runs (or
   OSS-Fuzz / ClusterFuzzLite).
 - **Windows CI.** There is no MinGW job yet, and it cannot run on a GitHub runner without pinning a

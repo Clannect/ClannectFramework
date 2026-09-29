@@ -48,7 +48,7 @@ public:
 };
 
 // Structured, levelled, categorised logging. There is no global logger
-// (constraint 5): the application owns one and hands references to the
+// (no global state): the application owns one and hands references to the
 // subsystems that log. A subsystem given no logger logs nothing.
 //
 //     logger.info("net", "client connected", {{"address", peer}, {"id", id}});

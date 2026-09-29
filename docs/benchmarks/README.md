@@ -1,6 +1,6 @@
 # Benchmarks
 
-Spec §7: *parity is measured, not asserted.* This page records what is measured today, how, and against
+CFW's rule for performance: *parity is measured, not asserted.* This page records what is measured today, how, and against
 what.
 
 ## Running
@@ -97,7 +97,7 @@ tests.
 
 ## Not yet measurable
 
-Most §7 rows need modules that do not exist yet:
+Most budget rows need modules that do not exist yet:
 
 - **Rendering rows** (rounded rects, text runs, image blits, editor frame): M3/M4.
 - **Explorer scrolling:** M5.

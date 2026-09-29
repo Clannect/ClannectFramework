@@ -4,18 +4,18 @@
 
 ## Context
 
-§4.1 asks for "a reflection-lite system: a class declares its properties once (name, type, getter, setter,
+cfw-core was to provide "a reflection-lite system: a class declares its properties once (name, type, getter, setter,
 category, default)". Clannect's object classes are not C++ classes. `ObjectCatalog` defines them as **data**
 (`ObjectDef` + `PropertyDef`), and every object is one C++ `Instance` holding a `QVariantMap`. The property
 system therefore has to be a runtime schema, not compile-time reflection over C++ members.
 
 ## Decision
 
-- **`PropertyInfo`** is one declared property: name, type, default, section (the spec's "category"), choices
+- **`PropertyInfo`** is one declared property: name, type, default, section (the original "category"), choices
   and flags (ReadOnly, Hidden, Transient). It maps one-to-one onto today's `PropertyDef`. `PropertyKind::Choice`
   becomes a String property with a `choices` list. `Number` becomes `Double`. `Text` becomes `String`.
 - **`ClassInfo`** is an immutable, validated list of `PropertyInfo`, with an open-addressing index keyed by
-  `Name` hash. Lookup is O(1) and allocation-free, which meets the spec's requirement. `inherit()` copies a
+  `Name` hash. Lookup is O(1) and allocation-free, which meets the requirement. `inherit()` copies a
   base class's properties, for shared GUI and part properties.
 - **`PropertyBag`** holds one object's values in a vector indexed by property index:
   - An unset slot reads as the declared default. The vector is allocated on the first `set()`, so an

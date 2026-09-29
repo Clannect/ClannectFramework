@@ -1,5 +1,5 @@
 # cfw-ui: the toolkit. Element tree, layout, input routing and focus, theme
-# tokens, and the controls (spec §4.8). Headless: platform windows
+# tokens, and the controls. Headless: platform windows
 # (cfw-platform) feed it events and paint it; nothing here touches the OS.
 
 cfw_add_module(cfw-ui

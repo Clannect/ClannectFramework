@@ -4,8 +4,8 @@
 
 ## Decision
 
-The spec asks for an "interned `cfw::Name`". Interning means a table where each distinct string is stored once,
-and names compare by pointer. That table is process-wide mutable state, which constraint 5 forbids ("no global
+The requirement was an "interned `cfw::Name`". Interning means a table where each distinct string is stored once,
+and names compare by pointer. That table is process-wide mutable state, which CFW's rules forbid ("no global
 mutable state… a process may create two independent `cfw::App` instances"). A thread-safe interning table also
 costs a lock or an atomic on every runtime name creation.
 
@@ -28,7 +28,7 @@ bloated `Variant`.
 
 - Interning with a table per `cfw::App`: every `Name` would need a context pointer, and names could not be
   `constexpr`.
-- Interning with a global table: forbidden by constraint 5.
+- Interning with a global table: forbidden by the no-global-state rule.
 
 ## What would change this
 

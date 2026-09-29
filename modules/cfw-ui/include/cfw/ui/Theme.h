@@ -1,6 +1,6 @@
 #pragma once
 
-// Theme tokens: colours, spacing, radii and fonts as data (spec §4.8: no
+// Theme tokens: colours, spacing, radii and fonts as data (no
 // stylesheet language). Controls read tokens by meaning, never raw colours.
 //
 // Threads: a plain value; share one per surface.

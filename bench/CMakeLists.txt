@@ -1,4 +1,4 @@
-# Benchmarks (spec §7). Always built with optimisation-relevant flags from the
+# Benchmarks (the performance budgets). Always built with optimisation-relevant flags from the
 # active configuration; meaningful numbers come from the release preset.
 #
 # The C++ runtime is linked statically into the benchmark so the replaced
@@ -20,7 +20,7 @@ if(CFW_BUILD_TESTS)
     set_tests_properties(BenchAllocationBudgets PROPERTIES LABELS bench TIMEOUT 120)
 endif()
 
-# Networking: 200 WebSocket connections on one loop (spec §4.3, §7).
+# Networking: 200 WebSocket connections on one loop (the Runtime's networking budget).
 add_executable(cfw-bench-net src/NetBench.cpp)
 target_link_libraries(cfw-bench-net PRIVATE cfw-core cfw-net)
 cfw_configure_target(cfw-bench-net)

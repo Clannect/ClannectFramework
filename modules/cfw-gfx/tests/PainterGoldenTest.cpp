@@ -1,4 +1,4 @@
-// Golden-image tests (spec §9): every scene in testdata/scenes is rendered
+// Golden-image tests: every scene in testdata/scenes is rendered
 // through Painter and the CPU backend and compared with Qt 6.11's rendering
 // of the same scene (testdata/golden, made by testing/qt-oracle). The
 // comparison is in premultiplied colour, per channel, within the tolerance

@@ -15,7 +15,7 @@ namespace cfw {
 // A bump allocator for short-lived data: per-frame UI layout, draw lists,
 // scratch buffers. Allocation is a pointer bump; individual frees do nothing;
 // reset() makes all memory reusable at once while keeping the chunks, so a
-// steady-state frame loop performs zero heap allocations (spec §7).
+// steady-state frame loop performs zero heap allocations.
 //
 // It is a std::pmr::memory_resource, so standard containers can live in it:
 //     std::pmr::vector<DrawCommand> commands(&frameArena);

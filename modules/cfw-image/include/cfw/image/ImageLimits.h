@@ -5,7 +5,7 @@
 
 namespace cfw {
 
-// Hard limits every decoder checks before it allocates (spec §4.4, §8).
+// Hard limits every decoder checks before it allocates.
 // Images come from other creators, so a header claiming 100,000 x 100,000
 // pixels must fail at once, not after trying to allocate 40 GB.
 //

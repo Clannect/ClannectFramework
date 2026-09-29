@@ -10,7 +10,7 @@ not on every string operation.
 
 ## Rejected
 
-- **A custom small-string-optimised class.** The spec asks for "owning, small-string-optimised". `std::string`
+- **A custom small-string-optimised class.** The requirement was "owning, small-string-optimised". `std::string`
   already is: 15 bytes inline on libstdc++ and MSVC, 22 on libc++. A custom class would cost weeks and carry
   risk, and it would need conversions at every boundary with HarfBuzz, FreeType, JSON, the OS and Lua. It
   would win nothing we have measured.
@@ -21,5 +21,5 @@ not on every string operation.
 
 ## What would change this
 
-A §7 benchmark where string copies or allocations dominate, and a string-type change fixes it. The alias
+A performance benchmark where string copies or allocations dominate, and a string-type change fixes it. The alias
 means a later switch is mostly mechanical.

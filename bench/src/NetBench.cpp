@@ -1,4 +1,4 @@
-// cfw-bench-net: the Runtime's networking budget (spec §4.3 / §7): "hundreds
+// cfw-bench-net: the Runtime's networking budget: "hundreds
 // of connections per process, tens of thousands of small binary messages per
 // second."
 //

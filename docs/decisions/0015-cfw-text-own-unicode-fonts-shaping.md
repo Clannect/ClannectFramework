@@ -1,12 +1,12 @@
 # 0015 — cfw-text: Unicode algorithms, fonts and shaping are CFW's own
 
 **Status:** accepted, 2026-09-27. It follows from decision 0012, under which CFW ships no third-party code.
-It replaces spec §4.5's "Shaping via HarfBuzz" and §11's FreeType, HarfBuzz and ICU entries: those
+It replaces the original plan's "Shaping via HarfBuzz" and its FreeType, HarfBuzz and ICU dependencies: those
 libraries become outside references for tests, as zlib, libjpeg-turbo and Qt already are.
 
 ## The plan
 
-The spec calls cfw-text "the module most likely to be underestimated", so the work is split into four
+The original plan called cfw-text "the module most likely to be underestimated", so the work is split into four
 parts, each checked against an outside reference:
 
 | Part | What | Checked against |
@@ -272,7 +272,7 @@ also shapes 400 corrupted and truncated copies of the layout font.
   unhinted, into atlas pages. Page generations tell a GPU backend when to re-upload.
   - `GlyphCacheTest` compares 1,056 masks with FreeType's unhinted rendering: TrueType within 20/255 per
     pixel and 0.9% of the ink; CFF within 2%, where FreeType rounds scaled points to 1/64 px.
-  - **Not yet:** hinting options (the spec asks for them) and LCD sub-pixel rendering.
+  - **Not yet:** hinting options (planned) and LCD sub-pixel rendering.
 - **`FontDatabase`** registers files, data, directories and the installed fonts: the Windows and user
   font folders, the macOS folders, and the XDG directories.
   - Faces load lazily. Matching is by family, weight and slant, CSS-style.

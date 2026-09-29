@@ -4,7 +4,7 @@
 
 ## Decision
 
-§5 forbids shared ownership "without a written reason". This is the reason for `cfw::Signal`.
+CFW's API rules forbid shared ownership "without a written reason". This is the reason for `cfw::Signal`.
 
 A signal's slot list is owned by a `std::shared_ptr`, and each `Connection` holds a `std::weak_ptr` to its
 slot. Three things have independent lifetimes, and any of them can end first:

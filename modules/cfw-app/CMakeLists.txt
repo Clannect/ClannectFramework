@@ -1,4 +1,4 @@
-# cfw-app: the application layer (spec §4.9): UiWindow, a native window
+# cfw-app: the application layer: UiWindow, a native window
 # showing a cfw-ui surface, and GlUiWindow, the same with OpenGL views in it.
 
 # Assistive technology: MSAA on Windows, AT-SPI on Linux.

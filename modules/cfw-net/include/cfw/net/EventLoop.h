@@ -21,7 +21,7 @@ using TimerId = std::uint64_t;
 //
 // The loop is idle when there is nothing to do: it blocks in the OS until a
 // socket is ready, a timer is due, or post()/stop() wakes it. No polling
-// interval, no busy wait (spec §7: ~0% CPU when idle).
+// interval, no busy wait (~0% CPU when idle).
 //
 // Threads: run(), timers and socket objects on the loop thread only;
 // post() and stop() from any thread.

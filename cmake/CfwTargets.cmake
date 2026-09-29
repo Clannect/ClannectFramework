@@ -64,7 +64,7 @@ endfunction()
 function(cfw_add_module name)
     cmake_parse_arguments(ARG "" "" "SOURCES;DEPENDS" ${ARGN})
     add_library(${name} STATIC ${ARG_SOURCES})
-    string(REPLACE "ce-" "" short_name ${name})
+    string(REPLACE "cfw-" "" short_name ${name})
     add_library(cfw::${short_name} ALIAS ${name})
     target_include_directories(${name} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
     target_compile_features(${name} PUBLIC cxx_std_20)
@@ -94,7 +94,7 @@ function(cfw_add_test module test_name)
     target_link_libraries(${test_name} PRIVATE ${module} cfw-test-support)
     cfw_configure_target(${test_name})
     add_test(NAME ${test_name} COMMAND ${test_name})
-    # §9 wants the unit tests fast; sanitizers slow them 2-15x (TSan most), so
+    # The unit tests must stay fast; sanitizers slow them 2-15x (TSan most), so
     # the budget only applies to plain builds.
     set(timeout 10)
     if(CFW_SANITIZE)

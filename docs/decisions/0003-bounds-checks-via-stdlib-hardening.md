@@ -4,7 +4,7 @@
 
 ## Decision
 
-§8 requires debug builds to bounds-check "every container and every `Span`". CFW uses the standard library's
+The reliability requirements ask debug builds to bounds-check "every container and every `Span`". CFW uses the standard library's
 own checked modes rather than wrapping `std::vector` or `std::span`:
 
 - GCC/Clang with libstdc++: Debug builds define `_GLIBCXX_ASSERTIONS`, which checks `operator[]`, `front()`,

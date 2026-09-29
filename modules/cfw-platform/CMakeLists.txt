@@ -1,4 +1,4 @@
-# cfw-platform: native windows, input, cursors, clipboard (spec §4.7).
+# cfw-platform: native windows, input, cursors, clipboard.
 # Win32 on Windows; X11 (the system's Xlib) on other Unix desktops when it is
 # installed; otherwise a stub whose Window::create() reports Unsupported, so
 # headless builds (the game server) still link.

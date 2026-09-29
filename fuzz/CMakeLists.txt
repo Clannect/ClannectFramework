@@ -1,4 +1,4 @@
-# Fuzz targets for every untrusted-input parser (spec §8). Each target is
+# Fuzz targets for every untrusted-input parser. Each target is
 # built twice:
 #
 #   <Target>Replay  always: runs the committed corpus in corpus/<Target>/ as a

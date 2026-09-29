@@ -1,6 +1,6 @@
 # 0016 — macOS: AppKit from Objective-C++, verified only by CI
 
-**Status:** accepted, 2026-09-29. Spec §10, M6: "Linux and macOS builds". macOS is **best-effort**: the
+**Status:** accepted, 2026-09-29. Milestone M6: "Linux and macOS builds". macOS is **best-effort**: the
 team has no Mac hardware and few developers use one, so Windows and Linux come first. The macOS workflow
 runs only when started by hand and does not gate pushes.
 

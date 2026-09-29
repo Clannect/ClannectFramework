@@ -10,7 +10,7 @@ text and painting share.
 - **`cfw::Rasterizer` is in cfw-image.** It turns paths into per-pixel coverage. cfw-text needs it for glyph
   masks and cfw-gfx for painting. Both already depend on cfw-image, and it needs no GPU or platform code.
 
-The spec (§5, §6) calls this type `Path`, but `cfw::Path` has meant a filesystem path since M1 (§4.2, cfw-io),
+The original plan called this type `Path`, but `cfw::Path` has meant a filesystem path since M1 (cfw-io),
 and one namespace cannot hold both. It is therefore `PainterPath`, which is also the name engine code knows from
 `QPainterPath`.
 
@@ -61,7 +61,7 @@ dependency.
 
 ## cfw-gfx: the Painter and the CPU backend
 
-`Painter` (spec §5) keeps the state stack: transform, opacity, blend mode, and clips that nest by
+`Painter` keeps the state stack: transform, opacity, blend mode, and clips that nest by
 intersection and are undone by `restore()` or the destructor. It turns strokes into fills with `Stroker`,
 so every backend draws strokes identically. A `PaintBackend` receives only resolved primitives: fill a
 path, draw an image, push or pop a clip. `RasterPaintBackend` implements it on a premultiplied `Image`. A
@@ -126,7 +126,7 @@ renders the scenes with QPainter and commits the PNGs. `PainterGoldenTest` rende
 - **Curved edges:** differ by up to ~30 levels on under 1% of pixels, because Qt's curves are less precise.
   Each scene's tolerance says this explicitly.
 
-## Budgets (spec §7)
+## Performance budgets
 
 Measured on the same machine:
 
