@@ -11,6 +11,7 @@
 #include "cfw/ui/Views.h"
 
 #include <chrono>
+#include <functional>
 
 using namespace cfw;
 using cfw::test::check;
@@ -33,6 +34,21 @@ protected:
 
 private:
     Vec2 m_size;
+};
+
+// Runs `onRelease` when a press on it is released (wherever that is).
+class ReleaseProbe : public Element {
+public:
+    std::function<void()> onRelease;
+
+protected:
+    Vec2 measureContent(Vec2) override { return {100, 30}; }
+    bool onPointer(const PointerEvent &event) override {
+        if (event.type == PointerEvent::Type::Release && onRelease) {
+            onRelease();
+        }
+        return event.type != PointerEvent::Type::Move;
+    }
 };
 
 PointerEvent pointer(PointerEvent::Type type, float x, float y) {
@@ -150,6 +166,32 @@ void pointerRouting() {
     surface.dispatch(pointer(PointerEvent::Type::Move, 50, 20));
     std::unique_ptr<Element> removed = row.remove(ok);
     check(surface.hovered() != removed.get(), "a removed element is no longer hovered");
+
+    // A release whose handler destroys what the pointer is over (a panel
+    // rebuilt on selection): hover settles on what is there now. (Found by
+    // the engine's soak test; ASan saw the old element being hovered.)
+    {
+        Surface s2;
+        s2.setSize({300, 100});
+        auto &line = static_cast<Stack &>(s2.root().add(std::make_unique<Stack>(Stack::Direction::Row, 0.0f, 0.0f)));
+        auto &source = static_cast<ReleaseProbe &>(line.add(std::make_unique<ReleaseProbe>()));
+        Element *victim = &line.add<Button>("Rebuilt");
+        victim->setFixedSize({100, 30});
+        source.onRelease = [&] {
+            std::unique_ptr<Element> gone = line.remove(*victim);
+            victim = &line.add<Button>("Fresh");
+            victim->setFixedSize({100, 30});
+        };
+        s2.layout();
+        s2.dispatch(pointer(PointerEvent::Type::Press, 50, 15));
+        s2.dispatch(pointer(PointerEvent::Type::Move, 150, 15));
+        s2.dispatch(pointer(PointerEvent::Type::Release, 150, 15));
+        s2.layout();
+        check(s2.hovered() == nullptr || s2.hovered() == victim || s2.hovered() == &line || s2.hovered() == &s2.root(),
+              "hover never lands on a destroyed element");
+        s2.dispatch(pointer(PointerEvent::Type::Move, 150, 15));
+        check(s2.hovered() == victim, "and then follows the pointer as usual");
+    }
 }
 
 void keyboard() {

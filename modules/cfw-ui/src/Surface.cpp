@@ -667,7 +667,13 @@ bool Surface::dispatch(const PointerEvent &event) {
         Element *released = m_pressed;
         m_pressed = nullptr;
         released->onPressedChanged(false);
-        setHovered(hit);
+        // Handling the release may have rebuilt what is under the pointer
+        // (and destroyed `hit`), so look again.
+        Element *under = hitTest(event.position);
+        while (under && !under->isEnabled()) {
+            under = under->parent();
+        }
+        setHovered(under);
     }
     return handled;
 }
