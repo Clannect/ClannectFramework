@@ -27,6 +27,8 @@ option(CFW_WARNINGS_AS_ERRORS "Treat compiler warnings in CFW's own code as erro
 set(CFW_SANITIZE "" CACHE STRING
     "Sanitizers: a list of address, undefined, thread, or ubsan-trap (UBSan without a runtime; works on MinGW)")
 
+option(CFW_INSTALL "Install the libraries, headers and CMake package (and the examples, if built)" ${PROJECT_IS_TOP_LEVEL})
+include(GNUInstallDirs)
 include(cmake/CfwTargets.cmake)
 
 if(CFW_BUILD_TESTS)
@@ -63,4 +65,21 @@ endif()
 if(CFW_BUILD_TOOLS)
     add_subdirectory(bench)
     add_subdirectory(examples)
+endif()
+
+# The installed package: find_package(ClannectFramework) gives cfw::core,
+# cfw::io, ... cfw::app, the same names as FetchContent.
+if(CFW_INSTALL)
+    include(CMakePackageConfigHelpers)
+    set(CFW_CMAKE_DIR ${CMAKE_INSTALL_LIBDIR}/cmake/ClannectFramework)
+    install(EXPORT ClannectFrameworkTargets NAMESPACE cfw:: DESTINATION ${CFW_CMAKE_DIR})
+    configure_package_config_file(cmake/ClannectFrameworkConfig.cmake.in
+        ${CMAKE_CURRENT_BINARY_DIR}/ClannectFrameworkConfig.cmake INSTALL_DESTINATION ${CFW_CMAKE_DIR})
+    # Before 1.0, minor versions may break the API.
+    write_basic_package_version_file(${CMAKE_CURRENT_BINARY_DIR}/ClannectFrameworkConfigVersion.cmake
+        COMPATIBILITY SameMinorVersion)
+    install(FILES ${CMAKE_CURRENT_BINARY_DIR}/ClannectFrameworkConfig.cmake
+                  ${CMAKE_CURRENT_BINARY_DIR}/ClannectFrameworkConfigVersion.cmake
+            DESTINATION ${CFW_CMAKE_DIR})
+    install(FILES license.md README.md DESTINATION .)
 endif()

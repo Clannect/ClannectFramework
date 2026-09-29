@@ -71,6 +71,16 @@ target_link_libraries(my_app PRIVATE cfw::app)   # or cfw::core, cfw::net, cfw::
 
 As a subproject, CFW builds only its libraries (no tests, examples or benchmarks).
 
+Or download a prebuilt package (Windows with MinGW-w64, Linux x64) from
+[Releases](https://github.com/Clannect/ClannectFramework/releases), unpack it, and use `find_package`:
+
+```cmake
+find_package(ClannectFramework 0.1 REQUIRED)   # configure with -DCMAKE_PREFIX_PATH=<unpacked folder>
+target_link_libraries(my_app PRIVATE cfw::app)
+```
+
+The packages also contain `cfw-ui-gallery`, a tour of the widgets.
+
 ### Hello, window
 
 ```cpp

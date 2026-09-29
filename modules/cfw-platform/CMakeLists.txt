@@ -15,10 +15,10 @@ elseif(APPLE)
     list(APPEND CFW_PLATFORM_LIBS "-framework AppKit" "-framework Carbon" ${CMAKE_DL_LIBS})
     set(CFW_PLATFORM_BACKEND "Cocoa")
 else()
-    find_package(X11 QUIET)
+    find_package(X11 QUIET GLOBAL)
     if(X11_FOUND)
         list(APPEND CFW_PLATFORM_SOURCES src/WindowX11.cpp src/GlContextGlx.cpp)
-        list(APPEND CFW_PLATFORM_LIBS ${X11_LIBRARIES} ${CMAKE_DL_LIBS})
+        list(APPEND CFW_PLATFORM_LIBS X11::X11 ${CMAKE_DL_LIBS})
         set(CFW_PLATFORM_BACKEND "X11")
     else()
         list(APPEND CFW_PLATFORM_SOURCES src/WindowStub.cpp src/GlContextStub.cpp)
@@ -34,9 +34,8 @@ cfw_add_module(cfw-platform
         cfw-image
 )
 target_link_libraries(cfw-platform PRIVATE ${CFW_PLATFORM_LIBS})
-if(X11_FOUND AND NOT WIN32 AND NOT APPLE)
-    target_include_directories(cfw-platform PRIVATE ${X11_INCLUDE_DIR})
-endif()
+# The backend, for the installed package's dependencies.
+set(CFW_PLATFORM_BACKEND ${CFW_PLATFORM_BACKEND} PARENT_SCOPE)
 
 # Tests (only when CFW builds them: not as a subproject). Without a display
 # the window test reports that it skipped and passes.

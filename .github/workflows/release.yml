@@ -1,0 +1,163 @@
+# Releases: pushing a tag vX.Y.Z builds, tests and packages Clannect Framework
+# for Linux and Windows (and macOS, experimental), then publishes a GitHub
+# release with the packages and docs/releases/X.Y.Z.md as its notes.
+
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to release (it must exist, e.g. v0.1.0)"
+        required: true
+
+permissions:
+  contents: write
+
+env:
+  TAG: ${{ inputs.tag || github.ref_name }}
+
+jobs:
+  version:
+    name: check the version
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+      - id: v
+        name: The tag matches the project version
+        run: |
+          version="${TAG#v}"
+          project=$(sed -n 's/^project(ClannectFramework VERSION \([0-9.]*\).*/\1/p' CMakeLists.txt)
+          if [ "$version" != "$project" ]; then
+            echo "::error::tag $TAG does not match project version $project in CMakeLists.txt"
+            exit 1
+          fi
+          test -f "docs/releases/$version.md" || { echo "::error::docs/releases/$version.md is missing"; exit 1; }
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+  linux:
+    name: linux x64
+    needs: version
+    runs-on: ubuntu-24.04
+    env:
+      PACKAGE: ClannectFramework-${{ needs.version.outputs.version }}-linux-x64
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+      - name: Install tools
+        run: >
+          sudo apt-get update && sudo apt-get install -y ninja-build libx11-dev xvfb
+          uim-xim uim-anthy at-spi2-core python3-pyatspi dbus
+      # The C++ runtime is linked into the executables, so the gallery runs
+      # on distributions with an older libstdc++.
+      - name: Configure
+        run: cmake --preset release -DCMAKE_EXE_LINKER_FLAGS="-static-libstdc++ -static-libgcc"
+      - name: Build
+        run: cmake --build --preset release
+      - name: Test
+        run: xvfb-run -a -s "-screen 0 1280x1024x24" ctest --preset release
+      - name: Package
+        run: |
+          cmake --install build/release --prefix "$PACKAGE"
+          tar czf "$PACKAGE.tar.gz" "$PACKAGE"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux
+          path: ${{ env.PACKAGE }}.tar.gz
+
+  windows:
+    name: windows x64 (MinGW-w64)
+    needs: version
+    runs-on: ubuntu-24.04
+    env:
+      PACKAGE: ClannectFramework-${{ needs.version.outputs.version }}-windows-x64-mingw
+      WINEPREFIX: ${{ github.workspace }}/.wine
+      WINEDEBUG: -all
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+      - name: Install tools
+        run: |
+          sudo dpkg --add-architecture i386
+          sudo apt-get update
+          sudo apt-get install -y ninja-build g++-mingw-w64-x86-64-posix wine64 wine zip
+      - name: Initialise Wine
+        run: wineboot -i
+      - name: Configure
+        run: >
+          cmake -S . -B build/windows -G Ninja -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_TOOLCHAIN_FILE=cmake/toolchains/mingw-w64-cross.cmake
+      - name: Build
+        run: cmake --build build/windows
+      - name: Test (under Wine)
+        run: ctest --test-dir build/windows --output-on-failure --timeout 120
+      - name: Package
+        run: |
+          cmake --install build/windows --prefix "$PACKAGE"
+          zip -qr "$PACKAGE.zip" "$PACKAGE"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: ${{ env.PACKAGE }}.zip
+
+  # Experimental: the macOS backend has not been verified on a Mac, so this
+  # job may fail without stopping the release.
+  macos:
+    name: macos (experimental)
+    needs: version
+    runs-on: macos-14
+    continue-on-error: true
+    env:
+      PACKAGE: ClannectFramework-${{ needs.version.outputs.version }}-macos-arm64-EXPERIMENTAL
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+      - name: Install tools
+        run: brew install ninja
+      - name: Configure
+        run: cmake --preset release
+      - name: Build
+        run: cmake --build --preset release
+      - name: Test
+        run: ctest --preset release --output-on-failure
+      - name: Package
+        run: |
+          cmake --install build/release --prefix "$PACKAGE"
+          zip -qr "$PACKAGE.zip" "$PACKAGE"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos
+          path: ${{ env.PACKAGE }}.zip
+
+  publish:
+    name: publish the release
+    needs: [version, linux, windows, macos]
+    if: ${{ !cancelled() && needs.linux.result == 'success' && needs.windows.result == 'success' }}
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+      - uses: actions/download-artifact@v4
+        with:
+          path: packages
+          merge-multiple: true
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="${{ needs.version.outputs.version }}"
+          prerelease=""
+          case "$version" in 0.*) prerelease="--prerelease";; esac
+          gh release create "$TAG" packages/* \
+            --title "Clannect Framework $version" \
+            --notes-file "docs/releases/$version.md" $prerelease
