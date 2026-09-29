@@ -95,4 +95,66 @@ bool findUseSyllables(ot::Buffer &b);
 // vowels before the base).
 void reorderUse(ot::Buffer &b);
 
+// ---- Indic, Khmer and Myanmar ----
+//
+// These three engines use the character categories with HarfBuzz's machine
+// numbering, which folds some together (A and VD; Myanmar's IV, DB and GB
+// with V, N and PLACEHOLDER), so the syllable grammars treat them alike.
+
+namespace mcat {
+enum : std::uint8_t {
+    X = 0, C = 1, V = 2, N = 3, H = 4, ZWNJ = 5, ZWJ = 6, M = 7, SM = 8, A = 9, PLACEHOLDER = 10, DOTTEDCIRCLE = 11,
+    RS = 12, MPst = 13, Repha = 14, Ra = 15, CM = 16, Symbol = 17, CS = 18, VAbv = 20, VBlw = 21, VPre = 22,
+    VPst = 23, Robatic = 25, Xgroup = 26, Ygroup = 27, As = 32, MH = 35, MR = 36, MW = 37, MY = 38, PT = 39, VS = 40,
+    ML = 41, SMPst = 57,
+    // Myanmar names for the shared numbers.
+    IV = V, DB = N, GB = PLACEHOLDER,
+};
+} // namespace mcat
+
+// Categories (and, for Indic, positions) from code points, after normalisation.
+void setMachineCategories(ot::Buffer &b, bool positions);
+
+enum IndicSyllable : std::uint8_t { IndicConsonant, IndicVowel, IndicStandalone, IndicSymbol, IndicBroken, IndicNonIndic };
+enum KhmerSyllable : std::uint8_t { KhmerConsonant, KhmerBroken, KhmerNonKhmer };
+enum MyanmarSyllable : std::uint8_t { MyanmarConsonant, MyanmarBroken, MyanmarNonMyanmar };
+
+// Marks syllables; true if a broken one was found.
+bool findIndicSyllables(ot::Buffer &b);
+bool findKhmerSyllables(ot::Buffer &b);
+bool findMyanmarSyllables(ot::Buffer &b);
+
+// What the Indic engine knows about a script and a font's lookups.
+struct IndicPlan {
+    enum class RephMode : std::uint8_t { Implicit, Explicit, LogRepha };
+    unicode::Script script = unicode::Script::Common;
+    bool oldSpec = false;                 // the font has the first spec's tags (deva, not dev2)
+    GlyphId viramaGlyph = 0;
+    std::uint8_t rephPosition = static_cast<std::uint8_t>(IndicPos::BEFORE_POST);
+    RephMode rephMode = RephMode::Implicit;
+    bool blwfPostOnly = false;            // below-base forms only after the base
+    std::uint32_t rphfMask = 0, prefMask = 0, blwfMask = 0, abvfMask = 0, halfMask = 0, pstfMask = 0, initMask = 0;
+    // Each feature's GSUB stage, for "would it substitute" tests.
+    const ot::LayoutTable *gsub = nullptr;
+    std::vector<std::uint16_t> rphf, pref, blwf, pstf, vatu;
+    bool zeroContext = false;
+
+    // Script configuration (virama, reph position and mode, below-forms mode).
+    void configure(unicode::Script s, bool oldSpecTags);
+    [[nodiscard]] bool wouldSubstitute(const std::vector<std::uint16_t> &lookups, Span<const GlyphId> glyphs) const;
+};
+
+// Before the basic features: consonant positions from the font, dotted
+// circles into broken syllables, reordering, and the feature masks.
+void initialReorderingIndic(const FontFace &face, const IndicPlan &plan, ot::Buffer &b, bool broken);
+// After them: pre-base matras, reph and pre-base-reordering consonants move
+// to where the font's forms need them.
+void finalReorderingIndic(const IndicPlan &plan, ot::Buffer &b);
+
+struct KhmerPlan {
+    std::uint32_t prefMask = 0, blwfMask = 0, abvfMask = 0, pstfMask = 0, cfarMask = 0;
+};
+void reorderKhmer(const FontFace &face, const KhmerPlan &plan, ot::Buffer &b, bool broken);
+void reorderMyanmar(const FontFace &face, ot::Buffer &b, bool broken);
+
 } // namespace cfw::syllabic

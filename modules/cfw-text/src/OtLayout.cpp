@@ -147,6 +147,10 @@ void Buffer::replaceGlyph(GlyphId g) {
 }
 
 void Buffer::outputGlyph(GlyphId g) {
+    if (out.size() + (info.size() - idx) >= maxLen) {
+        maxOps = -1; // too long: shaping stops here
+        return;
+    }
     GlyphInfo copy = info[idx];
     copy.glyph = g;
     out.push_back(copy);
@@ -188,6 +192,7 @@ bool Buffer::moveTo(std::size_t i) {
     }
     if (out.size() < i) {
         const std::size_t count = i - out.size();
+        maxOps -= static_cast<int>(count);
         out.insert(out.end(), info.begin() + static_cast<std::ptrdiff_t>(idx),
                    info.begin() + static_cast<std::ptrdiff_t>(idx + count));
         idx += count;
@@ -196,9 +201,11 @@ bool Buffer::moveTo(std::size_t i) {
         if (idx < count) {
             // Make room at the front of the input.
             const std::size_t shift = count - idx;
+            maxOps -= static_cast<int>(info.size() - idx);
             info.insert(info.begin() + static_cast<std::ptrdiff_t>(idx), shift, GlyphInfo{});
             idx += shift;
         }
+        maxOps -= static_cast<int>(count);
         idx -= count;
         std::copy(out.end() - static_cast<std::ptrdiff_t>(count), out.end(), info.begin() + static_cast<std::ptrdiff_t>(idx));
         out.resize(i);
@@ -210,6 +217,7 @@ void Buffer::mergeClusters(std::size_t start, std::size_t end) {
     if (end - start < 2) {
         return;
     }
+    maxOps -= static_cast<int>(end - start);
     std::uint32_t cluster = info[start].cluster;
     for (std::size_t i = start + 1; i < end; ++i) {
         cluster = std::min(cluster, info[i].cluster);
@@ -241,6 +249,7 @@ void Buffer::mergeOutClusters(std::size_t start, std::size_t end) {
     if (end - start < 2) {
         return;
     }
+    maxOps -= static_cast<int>(end - start);
     std::uint32_t cluster = out[start].cluster;
     for (std::size_t i = start + 1; i < end; ++i) {
         cluster = std::min(cluster, out[i].cluster);
@@ -1549,6 +1558,194 @@ bool Context::applyGpos(std::uint16_t type, std::uint32_t st) {
 
 } // namespace
 
+namespace {
+
+// The subtable's first-glyph coverage (what HarfBuzz's lookup accelerator
+// collects), or 0.
+std::uint32_t firstCoverage(const Data &d, std::uint16_t type, std::uint32_t st) {
+    const std::uint16_t format = d.u16(st);
+    if ((type == 5 && format == 3)) {
+        return d.u16(st + 2) ? st + d.u16(st + 6) : 0;
+    }
+    if (type == 6 && format == 3) {
+        const std::uint32_t input = st + 4 + 2u * d.u16(st + 2);
+        return d.u16(input) ? st + d.u16(input + 2) : 0;
+    }
+    return st + d.u16(st + 2);
+}
+
+// Whether glyphs[1..] match the rule's input values (glyph ids, classes or
+// coverages), and the rule's input is exactly as long as `glyphs`.
+bool wouldMatchInput(const Data &d, Span<const GlyphId> glyphs, unsigned count, std::uint32_t values,
+                     std::uint32_t valueBase, int kind, std::uint32_t classDef) {
+    if (count != glyphs.size()) {
+        return false;
+    }
+    for (unsigned i = 1; i < count; ++i) {
+        const std::uint16_t v = d.u16(values + 2u * (i - 1));
+        const GlyphId g = glyphs[i];
+        const bool ok = kind == 0   ? g == v
+                        : kind == 1 ? classOf(d, classDef, g) == v
+                                    : coverageIndex(d, valueBase + v, g) != kNotCovered;
+        if (!ok) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool subtableWouldApply(const Data &d, std::uint16_t type, std::uint32_t st, Span<const GlyphId> glyphs, bool zeroContext) {
+    const std::uint16_t format = d.u16(st);
+    const GlyphId first = glyphs[0];
+    switch (type) {
+    case 1:
+    case 2:
+    case 3:
+    case 8:
+        return glyphs.size() == 1 && coverageIndex(d, st + d.u16(st + 2), first) != kNotCovered;
+    case 4: {
+        const std::uint32_t index = coverageIndex(d, st + d.u16(st + 2), first);
+        if (index == kNotCovered || index >= d.u16(st + 4)) {
+            return false;
+        }
+        const std::uint32_t set = st + d.u16(st + 6 + 2 * index);
+        for (unsigned k = 0, n = d.u16(set); k < n; ++k) {
+            const std::uint32_t lig = set + d.u16(set + 2 + 2 * k);
+            const unsigned components = d.u16(lig + 2);
+            if (components != glyphs.size()) {
+                continue;
+            }
+            bool ok = true;
+            for (unsigned i = 1; i < components && ok; ++i) {
+                ok = glyphs[i] == d.u16(lig + 4 + 2 * (i - 1));
+            }
+            if (ok) {
+                return true;
+            }
+        }
+        return false;
+    }
+    case 5:
+        if (format == 1 || format == 2) {
+            std::uint32_t index = 0;
+            std::uint32_t classDef = 0;
+            if (format == 1) {
+                index = coverageIndex(d, st + d.u16(st + 2), first);
+                if (index == kNotCovered) {
+                    return false;
+                }
+            } else {
+                classDef = st + d.u16(st + 4);
+                index = classOf(d, classDef, first);
+            }
+            const std::uint32_t setsAt = st + (format == 1 ? 4 : 6);
+            if (index >= d.u16(setsAt) || d.u16(setsAt + 2 + 2 * index) == 0) {
+                return false;
+            }
+            const std::uint32_t set = st + d.u16(setsAt + 2 + 2 * index);
+            for (unsigned k = 0, n = d.u16(set); k < n; ++k) {
+                const std::uint32_t rule = set + d.u16(set + 2 + 2 * k);
+                if (wouldMatchInput(d, glyphs, d.u16(rule), rule + 4, 0, format == 1 ? 0 : 1, classDef)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+        if (format == 3) {
+            return wouldMatchInput(d, glyphs, d.u16(st + 2), st + 8, st, 2, 0);
+        }
+        return false;
+    case 6:
+        if (format == 1 || format == 2) {
+            std::uint32_t index = 0;
+            std::uint32_t classDef = 0;
+            if (format == 1) {
+                index = coverageIndex(d, st + d.u16(st + 2), first);
+                if (index == kNotCovered) {
+                    return false;
+                }
+            } else {
+                classDef = st + d.u16(st + 6); // the input class definition
+                index = classOf(d, classDef, first);
+            }
+            const std::uint32_t setsAt = st + (format == 1 ? 4 : 10);
+            if (index >= d.u16(setsAt) || d.u16(setsAt + 2 + 2 * index) == 0) {
+                return false;
+            }
+            const std::uint32_t set = st + d.u16(setsAt + 2 + 2 * index);
+            for (unsigned k = 0, n = d.u16(set); k < n; ++k) {
+                const std::uint32_t rule = set + d.u16(set + 2 + 2 * k);
+                const unsigned backtrack = d.u16(rule);
+                const std::uint32_t input = rule + 2 + 2 * backtrack;
+                const unsigned inputCount = d.u16(input);
+                const unsigned lookahead = d.u16(input + 2 + 2 * (inputCount ? inputCount - 1 : 0));
+                if (zeroContext && (backtrack || lookahead)) {
+                    continue;
+                }
+                if (wouldMatchInput(d, glyphs, inputCount, input + 2, 0, format == 1 ? 0 : 1, classDef)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+        if (format == 3) {
+            const unsigned backtrack = d.u16(st + 2);
+            const std::uint32_t input = st + 4 + 2 * backtrack;
+            const unsigned inputCount = d.u16(input);
+            const unsigned lookahead = d.u16(input + 2 + 2 * inputCount);
+            if (zeroContext && (backtrack || lookahead)) {
+                return false;
+            }
+            return wouldMatchInput(d, glyphs, inputCount, input + 4, st, 2, 0);
+        }
+        return false;
+    default: return false;
+    }
+}
+
+} // namespace
+
+bool wouldSubstitute(const LayoutTable &gsub, std::uint16_t index, Span<const GlyphId> glyphs, bool zeroContext) {
+    if (glyphs.empty() || !gsub.present() || gsub.kind() != TableKind::Gsub) {
+        return false;
+    }
+    const Data d(gsub.table());
+    const std::uint32_t list = gsub.lookupList();
+    if (list == 0 || index >= d.u16(list)) {
+        return false;
+    }
+    const std::uint32_t lookup = list + d.u16(list + 2 + index * 2u);
+    const std::uint16_t lookupType = d.u16(lookup);
+    const std::uint16_t count = d.u16(lookup + 4);
+    std::vector<std::pair<std::uint16_t, std::uint32_t>> subtables;
+    for (std::uint32_t i = 0; i < count; ++i) {
+        std::uint32_t st = lookup + d.u16(lookup + 6 + i * 2);
+        std::uint16_t type = lookupType;
+        if (type == 7) {
+            type = d.u16(st + 2);
+            st = st + d.u32(st + 4);
+        }
+        if (st < d.n) {
+            subtables.emplace_back(type, st);
+        }
+    }
+    // The lookup covers the first glyph somewhere (HarfBuzz's accelerator).
+    bool covered = false;
+    for (const auto &[type, st] : subtables) {
+        const std::uint32_t cov = firstCoverage(d, type, st);
+        covered = covered || (cov != 0 && coverageIndex(d, cov, glyphs[0]) != kNotCovered);
+    }
+    if (!covered) {
+        return false;
+    }
+    for (const auto &[type, st] : subtables) {
+        if (subtableWouldApply(d, type, st, glyphs, zeroContext)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 void applyLookups(const FontFace &face, const Gdef &gdef, const LayoutTable &table, Span<const PlannedLookup> lookups,
                   Buffer &buffer) {
     if (!table.present()) {
@@ -1589,7 +1786,7 @@ void applyLookups(const FontFace &face, const Gdef &gdef, const LayoutTable &tab
             }
             buffer.idx = buffer.len() - 1;
             while (true) {
-                if (--buffer.maxOps <= 0) {
+                if (buffer.maxOps <= 0) {
                     break;
                 }
                 GlyphInfo &cur = buffer.cur();
@@ -1608,8 +1805,12 @@ void applyLookups(const FontFace &face, const Gdef &gdef, const LayoutTable &tab
             buffer.clearOutput();
         }
         buffer.idx = 0;
+        // Each step consumes or passes a glyph; the cap only guarantees an
+        // end should a malformed subtable report success without moving.
+        std::size_t steps = 0;
+        const std::size_t maxSteps = 16 * (std::max(buffer.maxLen, buffer.len()) + 1);
         while (buffer.idx < buffer.len()) {
-            if (--buffer.maxOps <= 0) {
+            if (buffer.maxOps <= 0 || ++steps > maxSteps) {
                 break;
             }
             bool applied = false;

@@ -5,8 +5,10 @@
 // features, plus random strings, on four fonts: DejaVu Sans (real-world
 // GSUB/GPOS), CfwTestLayout (every lookup type and format), and CfwTestPlain
 // as TrueType and CFF (no layout tables: fallback mark placement, Arabic and
-// Hebrew presentation forms, the kern table). Every glyph id, cluster,
-// advance and offset must match. Hostile fonts and text must not crash.
+// Hebrew presentation forms, the kern table), and CfwTestIndic(Old), whose
+// Devanagari and Malayalam lookups reach the Indic engine's context rules
+// under both specs' tags. Every glyph id, cluster, advance and offset must
+// match. Hostile fonts and text must not crash.
 //
 // Run as ShaperTest <expected.json[.z]> <font> to compare another font.
 
@@ -229,6 +231,8 @@ int main(int argc, char **argv) {
         compareWithHarfBuzz(shaping / "CfwTestLayout.json.z", fonts / "CfwTestLayout.ttf");
         compareWithHarfBuzz(shaping / "CfwTestPlain.ttf.json.z", fonts / "CfwTestPlain.ttf");
         compareWithHarfBuzz(shaping / "CfwTestPlain.otf.json.z", fonts / "CfwTestPlain.otf");
+        compareWithHarfBuzz(shaping / "CfwTestIndic.json.z", fonts / "CfwTestIndic.ttf");
+        compareWithHarfBuzz(shaping / "CfwTestIndicOld.json.z", fonts / "CfwTestIndicOld.ttf");
         normalisationData();
         hostileInput();
         hostileFonts();

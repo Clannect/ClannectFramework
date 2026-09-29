@@ -87,8 +87,80 @@ COMPLEX_BLOCKS = {
     "Deva": (0x0900, 0x097F), "Hano": (0x1720, 0x173F), "Java": (0xA980, 0xA9DF), "Khmr": (0x1780, 0x17FF),
     "Lana": (0x1A20, 0x1AAF), "Mlym": (0x0D00, 0x0D7F), "Mong": (0x1800, 0x18AF), "Mymr": (0x1000, 0x109F),
     "Nkoo": (0x07C0, 0x07FF), "Sinh": (0x0D80, 0x0DFF), "Taml": (0x0B80, 0x0BFF), "Tale": (0x1950, 0x197F),
-    "Tfng": (0x2D30, 0x2D7F),
+    "Tfng": (0x2D30, 0x2D7F), "Guru": (0x0A00, 0x0A7F), "Gujr": (0x0A80, 0x0AFF), "Orya": (0x0B00, 0x0B7F),
+    "Telu": (0x0C00, 0x0C7F), "Knda": (0x0C80, 0x0CFF),
 }
+
+
+def syllable_parts(script):
+    """A script's characters by role, from their Unicode names: consonants,
+    independent vowels, dependent vowels, the virama (or coeng / asat),
+    nukta and syllable modifiers."""
+    import unicodedata
+    lo, hi = COMPLEX_BLOCKS[script]
+    parts = {"C": [], "V": [], "M": [], "H": [], "N": [], "SM": [], "MED": []}
+    for u in range(lo, hi + 1):
+        ch = chr(u)
+        name = unicodedata.name(ch, "")
+        cat = unicodedata.category(ch)
+        if not name:
+            continue
+        if "VIRAMA" in name or "COENG" in name or name.endswith("SIGN ASAT"):
+            parts["H"].append(ch)
+        elif "NUKTA" in name or "SIGN DOT BELOW" in name:
+            parts["N"].append(ch)
+        elif "VOWEL SIGN" in name or ("SIGN" in name and "LENGTH MARK" in name) or "AU LENGTH" in name:
+            parts["M"].append(ch)
+        elif "CONSONANT SIGN MEDIAL" in name:
+            parts["MED"].append(ch)
+        elif cat in ("Mn", "Mc") and any(w in name for w in ("CANDRABINDU", "ANUSVARA", "VISARGA", "NIKAHIT", "REAHMUK",
+                                                               "TONE", "BINDU", "ADDAK", "TIPPI")):
+            parts["SM"].append(ch)
+        elif cat == "Lo" and "LETTER" in name:
+            if any(f" LETTER {v}" in name and name.endswith(f"LETTER {v}")
+                   for v in ("A", "AA", "I", "II", "U", "UU", "E", "EE", "AI", "O", "OO", "AU", "VOCALIC R")):
+                parts["V"].append(ch)
+            else:
+                parts["C"].append(ch)
+    return parts
+
+
+def random_syllables(script, rng):
+    """One to three plausible syllables: an optional reph (Ra + virama), a
+    cluster of consonants joined by the virama (sometimes with a joiner),
+    nukta, medials, one or two vowel signs and a modifier."""
+    parts = syllable_parts(script)
+    ra = {"Deva": "\u0930", "Beng": "\u09b0", "Guru": "\u0a30", "Gujr": "\u0ab0", "Orya": "\u0b30",
+          "Taml": "\u0bb0", "Telu": "\u0c30", "Knda": "\u0cb0", "Mlym": "\u0d30", "Khmr": "\u179a",
+          "Mymr": "\u101b"}.get(script)
+    pick = lambda k: rng.choice(parts[k]) if parts[k] else ""
+    out = ""
+    for _ in range(rng.randint(1, 3)):
+        s = ""
+        if ra and parts["H"] and rng.random() < 0.25:
+            s += ra + parts["H"][0] + ("\u200d" if rng.random() < 0.1 else "")
+        if parts["V"] and rng.random() < 0.15:
+            s += pick("V")
+        else:
+            for k in range(rng.choice((1, 1, 2, 2, 3, 4))):
+                if k:
+                    s += rng.choice(parts["H"]) if parts["H"] else ""
+                    r = rng.random()
+                    s += "\u200d" if r < 0.08 else "\u200c" if r < 0.12 else ""
+                s += ra if (ra and rng.random() < 0.2) else pick("C")
+                if parts["N"] and rng.random() < 0.15:
+                    s += pick("N")
+            if parts["MED"] and rng.random() < 0.4:
+                s += "".join(rng.choice(parts["MED"]) for _ in range(rng.randint(1, 2)))
+        r = rng.random()
+        if r < 0.1 and parts["H"]:
+            s += rng.choice(parts["H"])
+        elif r < 0.85 and parts["M"]:
+            s += "".join(pick("M") for _ in range(rng.choice((1, 1, 1, 2))))
+        if parts["SM"] and rng.random() < 0.3:
+            s += pick("SM")
+        out += s
+    return out
 
 
 def complex_pool(script):
@@ -97,6 +169,38 @@ def complex_pool(script):
     chars = "".join(chr(u) for u in range(lo, hi + 1) if unicodedata.category(chr(u)) != "Cn")
     return chars + " \u200c\u200d\u25cc\u034f"
 
+
+# Real words and classic hard cases of the Indic, Khmer and Myanmar engines:
+# reph, conjuncts, half and below-base forms, pre-base matras, split
+# matras, joiners, chillus, coeng and kinzi.
+WORDS = [
+    # Devanagari
+    "हिन्दी", "क्षत्रिय", "र्क", "कार्य", "प्रेम", "द्वार", "श्री", "स्त्री", "अर्ध", "क्ष्म", "ज्ञान", "कि", "र्कि",
+    "क्कि", "द्ध", "ह्म", "ङ्क", "ट्ठ", "रु", "रू", "हृदय", "र्‍", "क्‍ष", "क्‌ष", "ऩ", "क़", "अँ", "किं",
+    "कॉ", "र्र्र", "त्र्य", "र्त्स्न्य", "ि", "क्", "कर्‍म", "फ़िल्म", "ऑफ़िस", "धर्मं", "र्ई",
+    # Bengali
+    "বাংলা", "ক্ষ", "র্ক", "ক্র", "ক্য", "কো", "কৌ", "র‍্য", "স্ত্র", "শ্রী", "ব্র", "য়", "ড়", "কি", "র্কি",
+    "ক্ষ্ম", "বর্ষা", "কর্ণফুলী", "ৎ",
+    # Gurmukhi
+    "ਪੰਜਾਬੀ", "ਕ੍ਰ", "ਸ੍ਵ", "ਕਿ", "ਗੁਰਮੁਖੀ", "ਪ੍ਰੇਮ", "ਸ੍ਹ", "ਕਿੰ",
+    # Gujarati
+    "ગુજરાતી", "ક્ષ", "ર્ક", "પ્ર", "શ્રી", "કિ", "દ્ર", "ર્કિ",
+    # Oriya
+    "ଓଡ଼ିଆ", "କ୍ଷ", "ର୍କ", "ପ୍ର", "କି", "କୋ", "କୌ", "କ୍ୟ", "ର୍କି",
+    # Tamil
+    "தமிழ்", "க்ஷ", "ஸ்ரீ", "கொ", "கோ", "கௌ", "க்", "பெ", "கை", "க்ஷொ",
+    # Telugu
+    "తెలుగు", "క్ష", "ర్క", "ర్‍క", "ప్ర", "కి", "క్క", "శ్రీ", "కై", "స్త్రీ", "ర్కి",
+    # Kannada
+    "ಕನ್ನಡ", "ಕ್ಷ", "ರ್ಕ", "ರ್‍ಕ", "ಪ್ರ", "ಕಿ", "ಕೊ", "ಕೋ", "ಸ್ತ್ರೀ", "ರ್ಕಿ",
+    # Malayalam
+    "മലയാളം", "ക്ഷ", "ർക്ക", "ന്റ", "ക്ര", "കൊ", "കോ", "കൌ", "ൎക", "സ്ത്ര", "ല്ല", "ണ്‍", "ക്‍", "ര്‍ക",
+    "ക്യ", "ക്വ", "കൈ", "സ്ത്രീ",
+    # Khmer
+    "ភាសាខ្មែរ", "ក្រ", "ស្ត្រី", "កើ", "កៀ", "កោ", "កៅ", "ង្ក្រ", "ក៏", "ន្ត្រី", "ស្រី", "ក្រោ", "ប៉ុ", "ស៊ី", "ក្រុម",
+    # Myanmar
+    "မြန်မာ", "ကြ", "ကျ", "ကွ", "ကှ", "င်္ဂ", "ကို", "ကော်", "ကြော", "မင်္ဂလာ", "ဿ", "ကြွ", "ကျွန်", "ဥ", "ဦ", "ကေ့",
+]
 
 FEATURES = [
     ("office", [["liga", 0, 0, 0xFFFFFFFF]]),
@@ -197,6 +301,16 @@ def main():
     if "--pools" in sys.argv:  # complex scripts only
         pools = {sc: complex_pool(sc) for sc in sys.argv[sys.argv.index("--pools") + 1].split(",")}
     rng = random.Random(seed)
+    if "--words" in sys.argv:
+        cases += [shape(font, w) for w in WORDS]
+        cases.append(shape(font, " ".join(WORDS)))
+    if "--syllables" in sys.argv:  # plausible syllables of these scripts
+        syl_scripts = sys.argv[sys.argv.index("--syllables") + 1].split(",")
+        n_syl = int(sys.argv[sys.argv.index("--syllables") + 2])
+        for _ in range(n_syl):
+            s = rng.choice(syl_scripts)
+            text = " ".join(random_syllables(s, rng) for _ in range(rng.randint(1, 2)))
+            cases.append(shape(font, text, script=s))
     scripts = sorted(pools)
     for _ in range(n_random):
         s = rng.choice(scripts)

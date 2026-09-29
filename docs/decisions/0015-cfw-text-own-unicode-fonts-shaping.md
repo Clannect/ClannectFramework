@@ -101,7 +101,7 @@ findings; the `hostileData` test adds every truncation and random corruption of 
 **Not supported yet:** variable fonts (`fvar`, `gvar`, CFF2), vertical metrics, colour and bitmap glyphs,
 WOFF/WOFF2, and the deprecated `seac` accent form of `endchar`.
 
-## Shaping (done for the default, Arabic, Hebrew, Thai, Hangul and Universal Shaping engines)
+## Shaping (done: every HarfBuzz engine but AAT)
 
 `Shaper::shape(face, text, options, out)` turns a run of one script and direction into glyph ids, clusters,
 advances and offsets. It is modelled on HarfBuzz 13 and matches it exactly (every glyph, cluster and
@@ -131,7 +131,7 @@ linked. The pipeline:
    - Mask bits: a shared global bit, plus bits for non-boolean and ranged features.
    - Per-stage lookups, sorted and merged, and the required feature.
    - The engine: default, Arabic, which also serves Syriac in fonts made for it, Hebrew, Thai/Lao, Hangul,
-     or the Universal Shaping Engine (below).
+     the Universal Shaping Engine, or the Indic, Khmer and Myanmar engines (below).
 4. **Masks:** automatic fractions (`frac`, `numr`, `dnom` around U+2044), Arabic joining (HarfBuzz's
    state machine, with Syriac Alaph and Dalath-Rish), and ranged user features.
 5. **GSUB:**
@@ -158,7 +158,7 @@ follows, decompose into jamo marked for `ljmo`/`vjmo`/`tjmo`; tone marks move be
 Javanese, Balinese, N'Ko, Tai Tham, Chakma and more), and Indic scripts in fonts with `dev3`-style tags:
 
 - **Categories:** `tools/unicode/syllabic.py` derives each character's USE category (and the Indic, Khmer
-  and Myanmar categories and positions, for the engines still to come) from the UCD and Microsoft's USE
+  and Myanmar categories and positions) from the UCD and Microsoft's USE
   additions, with HarfBuzz's adjustments. The generated `SyllabicTables.inc` equals HarfBuzz's tables on
   every code point.
 - **Syllables:** the USE grammar is written with small regular-expression combinators and compiled once to
@@ -170,6 +170,44 @@ Javanese, Balinese, N'Ko, Tai Tham, Chakma and more), and Indic scripts in fonts
   are reordered; clusters take isolated/initial/medial/final forms, or Arabic joining in the scripts that
   join; marks are zeroed before GPOS.
 
+**The Indic engine** (Devanagari, Bengali, Gurmukhi, Gujarati, Oriya, Tamil, Telugu, Kannada and Malayalam
+in fonts with the first or second spec's tags; `dflt`-only fonts get the default engine, `dev3`-style ones
+the USE) follows Microsoft's Indic specs as Uniscribe and HarfBuzz apply them:
+
+- **Per script:** the virama, where the reph goes (after the main consonant, before or after sub-joined
+  forms, before or after post-base forms), how it is written (Ra+H, Ra+H+ZWJ in Telugu, the encoded dot
+  reph in Malayalam) and whether below-base forms apply before the base.
+- **Syllables:** HarfBuzz's Indic grammar (consonant, vowel, standalone, symbol and broken clusters), with
+  its category numbering, which folds some categories together.
+- **Consonant positions from the font:** a consonant is below-base or post-base if the font's `blwf`,
+  `vatu`, `pstf` or `pref` stage would substitute it with the virama, in either order (some fonts copied
+  the old order into the new spec). This asks the lookups whether they would apply without running them
+  (`ot::wouldSubstitute`, HarfBuzz's rules: exact input length, and without backtrack or lookahead for the
+  second spec except Malayalam).
+- **Initial reordering:** the base consonant (skipping a reph-forming Ra), pre-base matras and consonants
+  sorted before it, marks that travel with their consonant, old-spec halant moves, and cluster merges
+  exactly where HarfBuzz merges; then the masks for `rphf`, `half`, `blwf`, `abvf`, `pstf` and `pref`, and
+  ZWNJ blocking half forms.
+- **The basic features** run one stage each, per syllable, then **final reordering** moves pre-base matras
+  after the last half form, the reph to its script's position, pre-base-reordering Ra before the base, and
+  gives a word-initial left matra `init`.
+- Normalisation keeps the letters Uniscribe does not decompose (U+0931, U+09DC, U+09DD, U+0B94) and
+  recomposes Bengali YYA. Marks keep their advances (the font's GPOS places them), as in HarfBuzz.
+
+**Khmer:** its grammar (Robat, Coeng subscripts, the X and Y groups); split vowels decomposed (U+17BE,
+U+17BF, U+17C0, U+17C4, U+17C5); Coeng+Ro moved before the base with `pref`, and what follows it marked
+`cfar`; left vowel parts moved to the front; `clig` on and `liga` off. **Myanmar:** its grammar (kinzi,
+medials, the vowel, tone and Asat groups), fonts for the old `mymr` tag left to the default engine, the
+reordering by position (kinzi after the base, medial Ra and left vowels before it, below-base vowels and
+their Asat, and so on) with HarfBuzz's cluster-merging insertion sort, and marks zeroed before GPOS.
+
+**Found on the way:** Telugu's length marks (ccc 84 and 91) take HarfBuzz's modified classes 4 and 5, so
+they sort before the nukta. And the lookup loop charged its work budget one operation per glyph per lookup,
+which HarfBuzz does not. Fonts with many lookups (every Indic font) ran out of budget partway through long
+text, so GPOS stopped early. The budget is now spent where HarfBuzz spends it (cluster merges, rewinds,
+nested lookups). Growth is capped by HarfBuzz's maximum buffer length, and each pass has a generous local
+step cap, so a malformed subtable still cannot loop.
+
 **Checked against HarfBuzz (`ShaperTest`, committed):**
 
 | Font | Covers | Cases |
@@ -177,6 +215,7 @@ Javanese, Balinese, N'Ko, Tai Tham, Chakma and more), and Indic scripts in fonts
 | DejaVu Sans | Real GSUB/GPOS for Latin, Greek, Cyrillic, Arabic, Hebrew, N'Ko, Tifinagh and more | 2,123 |
 | `CfwTestLayout.ttf` | Built with fontTools to use every lookup type and subtable format, the required feature, a language system and `kern` formats 0 and 2 | 3,079 |
 | `CfwTestPlain.ttf` / `.otf` | DejaVu without layout tables: box-placed marks (glyf and CFF), Arabic fallback forms, Hebrew presentation forms, legacy kerning | 1,623 / 1,123 |
+| `CfwTestIndic.ttf` / `CfwTestIndicOld.ttf` | Devanagari and Malayalam lookups for every Indic basic feature under both specs' tags, with a context-dependent below-base Ra | 874 / 874 |
 
 The cases are a fixed corpus plus random strings from per-script pools. The corpus covers:
 
@@ -194,6 +233,13 @@ FreeSerif, Liberation, IPA Gothic, WenQuanYi, Loma (Thai) and Unifont (Arabic wi
 match. The Hangul engine matched on WenQuanYi Zen Hei, Unifont and IPA Gothic, and the Universal Shaping
 Engine on Noto Sans Javanese, Balinese, Sinhala, Tai Tham, Chakma, Mongolian and N'Ko, with 1,500 random
 strings from each script's whole block (most of them broken syllables): 1,617 cases per font, all equal.
+The Indic, Khmer and Myanmar engines matched on Noto Sans Devanagari, Bengali, Gurmukhi, Gujarati, Oriya,
+Tamil, Telugu, Kannada, Malayalam, Khmer and Myanmar (2,287 cases each: real words, generated well-formed
+syllables and random block strings, from `shape.py --words --syllables`), on FreeSans and FreeSerif
+(regular and bold, 3,287 cases each), and on first-spec copies of FreeSerif and the nine Noto Indic
+fonts (`dev2` renamed `deva` and so on; 2,087 to 4,287 cases each). Mutation checks confirm the cases
+reach the reph, matra, pre-base, consonant-position, old-spec halant and eyelash-Ra, Coeng+Ro and Myanmar
+reordering code: breaking any of them fails hundreds of cases.
 
 **Fuzzing:** `FuzzShape` shapes arbitrary text in the test fonts and in `CfwTestLayout` with patched table
 bytes. It ran 245,000 inputs with no findings, and 1,726 of them are the committed corpus. `ShaperTest`
@@ -201,8 +247,6 @@ also shapes 400 corrupted and truncated copies of the layout font.
 
 **Not yet:**
 
-- The Indic (v1/v2 tags), Khmer and Myanmar engines. Those scripts shape with the default engine, which
-  differs from HarfBuzz once a font has their script tags.
 - Arabic `stch` stretching, and Windows-1256 legacy Arabic fonts.
 - Vertical text, variable fonts, AAT (`morx`, `kerx`, `trak`), and `kern` state machines (formats 1 and 3).
 

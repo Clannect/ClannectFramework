@@ -72,7 +72,10 @@ public:
     bool haveOutput = false;
     bool backward = false; // right-to-left (or bottom-to-top) text
     std::uint32_t serial = 0;
-    int maxOps = 0; // work budget against hostile fonts
+    // Budgets against hostile fonts, as HarfBuzz keeps them: operations
+    // (cluster merges, rewinds, nested lookups) and the buffer's length.
+    int maxOps = 0;
+    std::size_t maxLen = 0;
     std::uint32_t randomState = 1;
 
     std::size_t len() const noexcept { return info.size(); }
@@ -162,6 +165,12 @@ private:
     bool m_foundScript = false;
     std::uint32_t m_langSys = 0; // selected language system (offset), 0 if none
 };
+
+// Whether GSUB lookup `index` would substitute exactly `glyphs` (as
+// HarfBuzz's hb_ot_layout_lookup_would_substitute: no lookup flags, the
+// whole sequence as the input; with `zeroContext`, chaining rules that
+// need backtrack or lookahead do not count).
+bool wouldSubstitute(const LayoutTable &gsub, std::uint16_t index, Span<const GlyphId> glyphs, bool zeroContext);
 
 // Applies one stage's lookups to the buffer.
 void applyLookups(const FontFace &face, const Gdef &gdef, const LayoutTable &table, Span<const PlannedLookup> lookups,

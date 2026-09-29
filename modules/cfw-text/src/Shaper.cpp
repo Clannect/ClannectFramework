@@ -26,7 +26,7 @@ constexpr std::uint32_t tag4(const char *t) {
 constexpr std::uint32_t kGlobalBit = 1u << 31;
 constexpr unsigned kMaxCombiningMarks = 32;
 
-enum class Engine : std::uint8_t { Default, Arabic, Hebrew, Thai, Hangul, Use };
+enum class Engine : std::uint8_t { Default, Arabic, Hebrew, Thai, Hangul, Use, Indic, Khmer, Myanmar };
 
 // What runs between two GSUB stages.
 enum Pause : std::uint8_t {
@@ -37,6 +37,13 @@ enum Pause : std::uint8_t {
     PauseUseRphf,      // USE: a substituted glyph under rphf is a repha
     PauseUsePref,      // USE: a substituted glyph under pref is a pre-base vowel
     PauseUseReorder,   // USE: dotted circles, then reordering
+    PauseIndicSyllables,
+    PauseIndicInitial, // Indic: consonant positions, dotted circles, reordering, masks
+    PauseIndicFinal,   // Indic: matras, reph and pre-base forms to their places
+    PauseKhmerSyllables,
+    PauseKhmerReorder,
+    PauseMyanmarSyllables,
+    PauseMyanmarReorder,
 };
 
 // Arabic joining forms, in the order of kArabicFeatures.
@@ -87,6 +94,8 @@ std::uint8_t modifiedCombiningClass(char32_t u, std::uint8_t ccc) {
     case 34: return 34;  // sukun
     case 35: return 35;  // superscript alef
     case 36: return 36;  // superscript alaph
+    case 84: return 4;   // Telugu length mark
+    case 91: return 5;   // Telugu ai length mark
     case 103: return 3;  // Thai sara u / sara uu
     case 130: return 132; // Tibetan sign i
     case 132: return 131; // Tibetan sign u
@@ -587,6 +596,8 @@ struct Shaper::Plan {
     std::uint32_t fracMask = 0;
     std::uint32_t numrMask = 0;
     std::uint32_t dnomMask = 0;
+    syllabic::IndicPlan indic;
+    syllabic::KhmerPlan khmer;
 };
 
 struct Shaper::Scratch {
@@ -654,9 +665,15 @@ const Shaper::Plan &Shaper::plan(const FontFace &face, Script script, TextDirect
     default: break;
     }
     const std::uint32_t gsubScript = p->gsub.chosenScript();
-    if ((isUseScript(script) || (isIndicScript(script) && (gsubScript & 0xFF) == '3')) && gsubScript != tag("DFLT") &&
-        gsubScript != tag("latn")) {
+    const bool genericTag = gsubScript == tag("DFLT") || gsubScript == tag("latn");
+    if ((isUseScript(script) || (isIndicScript(script) && (gsubScript & 0xFF) == '3')) && !genericTag) {
         p->engine = Engine::Use;
+    } else if (isIndicScript(script) && !genericTag) {
+        p->engine = Engine::Indic;
+    } else if (script == Script::Khmer) {
+        p->engine = Engine::Khmer;
+    } else if (script == Script::Myanmar && !genericTag && gsubScript != tag("mymr")) {
+        p->engine = Engine::Myanmar; // fonts for the old 'mymr' tag get the default engine
     }
 
     // The features, in HarfBuzz's order and GSUB stages (a stage ends at
@@ -724,6 +741,53 @@ const Shaper::Plan &Shaper::plan(const FontFace &face, Script script, TextDirect
             add(tag4(f), Global | ManualZwj);
         }
     }
+    constexpr std::uint8_t ManualJoiners = ManualZwj | ManualZwnj;
+    if (p->engine == Engine::Indic) {
+        pause(PauseIndicSyllables);
+        add(tag("locl"), Global | PerSyllable);
+        add(tag("ccmp"), Global | PerSyllable);
+        pause(PauseIndicInitial);
+        // The basic features, one stage each.
+        for (const auto &[f, global] : {std::pair{"nukt", true}, std::pair{"akhn", true}, std::pair{"rphf", false},
+                                        std::pair{"rkrf", true}, std::pair{"pref", false}, std::pair{"blwf", false},
+                                        std::pair{"abvf", false}, std::pair{"half", false}, std::pair{"pstf", false},
+                                        std::pair{"vatu", true}, std::pair{"cjct", true}}) {
+            add(tag4(f), static_cast<std::uint8_t>((global ? Global : 0) | ManualJoiners | PerSyllable));
+            pause(PauseNone);
+        }
+        pause(PauseIndicFinal);
+        add(tag("init"), ManualJoiners | PerSyllable);
+        for (const char *f : {"pres", "abvs", "blws", "psts", "haln"}) {
+            add(tag4(f), Global | ManualJoiners | PerSyllable);
+        }
+    }
+    if (p->engine == Engine::Khmer) {
+        pause(PauseKhmerSyllables);
+        pause(PauseKhmerReorder);
+        add(tag("locl"), Global | PerSyllable);
+        add(tag("ccmp"), Global | PerSyllable);
+        for (const char *f : {"pref", "blwf", "abvf", "pstf", "cfar"}) {
+            add(tag4(f), ManualJoiners | PerSyllable);
+        }
+        pause(PauseClearSyllables);
+        for (const char *f : {"pres", "abvs", "blws", "psts"}) {
+            add(tag4(f), Global | ManualJoiners);
+        }
+    }
+    if (p->engine == Engine::Myanmar) {
+        pause(PauseMyanmarSyllables);
+        add(tag("locl"), Global | PerSyllable);
+        add(tag("ccmp"), Global | PerSyllable);
+        pause(PauseMyanmarReorder);
+        for (const char *f : {"rphf", "pref", "blwf", "pstf"}) {
+            add(tag4(f), Global | ManualZwj | PerSyllable);
+            pause(PauseNone);
+        }
+        pause(PauseClearSyllables);
+        for (const char *f : {"pres", "abvs", "blws", "psts"}) {
+            add(tag4(f), Global | ManualZwj);
+        }
+    }
     if (p->engine == Engine::Arabic) {
         add(tag("stch"), Global);
         ++stage;
@@ -770,6 +834,17 @@ const Shaper::Plan &Shaper::plan(const FontFace &face, Script script, TextDirect
     if (p->engine == Engine::Hangul) {
         add(tag("calt"), 0); // its own mask bit, so jamo can be kept out of it
     }
+    // The engines' overrides: Indic and Khmer turn liga off (disabling is
+    // adding it again, global with value 0); the Khmer spec requires clig.
+    if (p->engine == Engine::Khmer) {
+        add(tag("clig"), Global);
+    }
+    if (p->engine == Engine::Indic || p->engine == Engine::Khmer) {
+        add(tag("liga"), Global, 0);
+    }
+    if (p->engine == Engine::Indic) {
+        pause(PauseClearSyllables);
+    }
     const unsigned stages = stage + 1;
     p->pauses.assign(stages, PauseNone);
     for (const auto &[at, action] : pauses) {
@@ -805,6 +880,7 @@ const Shaper::Plan &Shaper::plan(const FontFace &face, Script script, TextDirect
         unsigned shift;
     };
     std::vector<Mapped> mapped;
+    std::vector<std::pair<std::uint32_t, unsigned>> mappedStages; // tag, GSUB stage
     const std::uint32_t requiredGsub = p->gsub.requiredFeatureTag();
     const std::uint32_t requiredGpos = p->gpos.requiredFeatureTag();
     unsigned requiredGsubStage = 0;
@@ -839,6 +915,7 @@ const Shaper::Plan &Shaper::plan(const FontFace &face, Script script, TextDirect
             p->globalMask |= (f.defaultValue << shift) & mask;
         }
         mapped.push_back({f.tag, mask, shift});
+        mappedStages.emplace_back(f.tag, f.stage);
         const std::uint32_t oneMask = (1u << shift) & mask;
         const bool autoZwj = !(f.flags & ManualZwj);
         const bool autoZwnj = !(f.flags & ManualZwnj);
@@ -930,21 +1007,84 @@ const Shaper::Plan &Shaper::plan(const FontFace &face, Script script, TextDirect
         }
     }
 
+    // The syllabic engines' masks (0 for global features, as HarfBuzz's
+    // engines keep them) and the lookups of each feature's stage.
+    const auto oneMask = [&](const char *t) {
+        for (const Mapped &m : mapped) {
+            if (m.tag == tag4(t)) {
+                return (1u << m.shift) & m.mask;
+            }
+        }
+        return 0u;
+    };
+    const auto stageLookups = [&](const char *t, std::vector<std::uint16_t> &out) {
+        out.clear();
+        for (const auto &[ft, st] : mappedStages) {
+            if (ft == tag4(t) && st < p->gsubStages.size()) {
+                for (const ot::PlannedLookup &l : p->gsubStages[st]) {
+                    out.push_back(l.index);
+                }
+            }
+        }
+    };
+    if (p->engine == Engine::Indic) {
+        syllabic::IndicPlan &ip = p->indic;
+        ip.configure(script, (gsubScript & 0xFF) != '2');
+        ip.gsub = &p->gsub;
+        ip.rphfMask = oneMask("rphf");
+        ip.prefMask = oneMask("pref");
+        ip.blwfMask = oneMask("blwf");
+        ip.abvfMask = oneMask("abvf");
+        ip.halfMask = oneMask("half");
+        ip.pstfMask = oneMask("pstf");
+        ip.initMask = oneMask("init");
+        stageLookups("rphf", ip.rphf);
+        stageLookups("pref", ip.pref);
+        stageLookups("blwf", ip.blwf);
+        stageLookups("pstf", ip.pstf);
+        stageLookups("vatu", ip.vatu);
+        const char32_t virama = [&]() -> char32_t {
+            switch (script) {
+            case Script::Devanagari: return 0x094D;
+            case Script::Bengali: return 0x09CD;
+            case Script::Gurmukhi: return 0x0A4D;
+            case Script::Gujarati: return 0x0ACD;
+            case Script::Oriya: return 0x0B4D;
+            case Script::Tamil: return 0x0BCD;
+            case Script::Telugu: return 0x0C4D;
+            case Script::Kannada: return 0x0CCD;
+            case Script::Malayalam: return 0x0D4D;
+            default: return 0;
+            }
+        }();
+        ip.viramaGlyph = virama ? face.glyphIndex(virama) : 0;
+    }
+    if (p->engine == Engine::Khmer) {
+        p->khmer.prefMask = oneMask("pref");
+        p->khmer.blwfMask = oneMask("blwf");
+        p->khmer.abvfMask = oneMask("abvf");
+        p->khmer.pstfMask = oneMask("pstf");
+        p->khmer.cfarMask = oneMask("cfar");
+    }
+
     // As HarfBuzz decides: GPOS if the font has it (the Hebrew engine wants
     // Hebrew in it); the kern table unless GPOS kerns this script (not for
     // Thai and Lao); without GPOS, marks are placed by their bounding boxes
     // (except in Thai and Lao).
-    const bool fallbackPosition = p->engine != Engine::Thai && p->engine != Engine::Use;
+    const bool fallbackPosition = p->engine != Engine::Thai && p->engine != Engine::Use && p->engine != Engine::Indic &&
+                                  p->engine != Engine::Khmer && p->engine != Engine::Myanmar;
     const bool disableGpos = p->engine == Engine::Hebrew && p->gpos.chosenScript() != tag("hebr");
     p->applyGpos = !disableGpos && p->gpos.present();
     p->applyKern = (!p->hasGposKern || !p->applyGpos) && ot::hasKernTable(face) && fallbackPosition;
     p->fallbackGlyphClasses = !p->gdef.hasGlyphClasses();
     p->adjustMarkOffsets = !p->applyGpos && (!p->applyKern || !ot::hasCrossStreamKerning(face));
     p->fallbackMarkPositioning = p->adjustMarkOffsets && fallbackPosition;
-    p->zeroMarks = p->engine != Engine::Hangul && (!p->applyKern || !ot::hasMachineKerning(face));
+    p->zeroMarks = p->engine != Engine::Hangul && p->engine != Engine::Indic && p->engine != Engine::Khmer &&
+                   (!p->applyKern || !ot::hasMachineKerning(face));
     p->composeCharacters = p->engine != Engine::Hangul; // HarfBuzz's normalisation mode "none" for Hangul
-    p->zeroMarksEarly = p->engine == Engine::Use;
-    p->shortCircuit = p->engine != Engine::Use;
+    p->zeroMarksEarly = p->engine == Engine::Use || p->engine == Engine::Myanmar;
+    p->shortCircuit = p->engine != Engine::Use && p->engine != Engine::Indic && p->engine != Engine::Khmer &&
+                      p->engine != Engine::Myanmar;
     p->arabicJoining = p->engine == Engine::Use && hasArabicJoining(script);
     if (p->engine == Engine::Use && !p->arabicJoining) {
         for (std::size_t k = 0; k < 4; ++k) {
@@ -1001,8 +1141,13 @@ struct Normalizer {
         b.nextGlyph();
     }
     bool compose(char32_t a, char32_t c, char32_t &ab) const {
-        if (engine == Engine::Use && unicode::isMark(unicode::generalCategory(a))) {
-            return false; // the USE never composes a mark with a mark
+        if ((engine == Engine::Use || engine == Engine::Indic || engine == Engine::Khmer) &&
+            unicode::isMark(unicode::generalCategory(a))) {
+            return false; // never a mark with a mark (split matras stay split)
+        }
+        if (engine == Engine::Indic && a == 0x09AF && c == 0x09BC) {
+            ab = 0x09DF; // a composition exclusion the Indic engine recomposes
+            return true;
         }
         if (unicode::compose(a, c, ab)) {
             return true;
@@ -1011,10 +1156,23 @@ struct Normalizer {
     }
     // Outputs the decomposition of `ab` if the font has glyphs for it: the
     // shortest one the font covers, or (not shortest) the full one.
+    // The engine's decompositions: Unicode's, less a few the Indic engine
+    // keeps whole, plus Khmer's split matras (which Unicode does not split).
+    bool decomposeChar(char32_t ab, char32_t &a, char32_t &c) const {
+        if (engine == Engine::Indic && (ab == 0x0931 || ab == 0x09DC || ab == 0x09DD || ab == 0x0B94)) {
+            return false;
+        }
+        if (engine == Engine::Khmer && (ab == 0x17BE || ab == 0x17BF || ab == 0x17C0 || ab == 0x17C4 || ab == 0x17C5)) {
+            a = 0x17C1;
+            c = ab;
+            return true;
+        }
+        return unicode::decompose(ab, a, c);
+    }
     unsigned decompose(char32_t ab, bool shortest) {
         char32_t a = 0;
         char32_t c = 0;
-        if (!unicode::decompose(ab, a, c)) {
+        if (!decomposeChar(ab, a, c)) {
             return 0;
         }
         GlyphId cGlyph = 0;
@@ -1850,6 +2008,7 @@ void Shaper::shape(const FontFace &face, Span<const char32_t> text, const ShapeO
     b.serial = 0;
     b.randomState = 1;
     b.maxOps = static_cast<int>(std::clamp<std::size_t>(text.size() * 64, 16384, 0x1FFFFFFF));
+    b.maxLen = std::clamp<std::size_t>(text.size() * 64, 16384, 0x3FFFFFFF);
 
     // Characters with their Unicode properties; graphemes (as HarfBuzz
     // approximates them) are clusters.
@@ -1933,7 +2092,7 @@ void Shaper::shape(const FontFace &face, Span<const char32_t> text, const ShapeO
     if (p.engine == Engine::Hangul) {
         hangulPreprocess(face, b);
     }
-    if (p.engine == Engine::Use) {
+    if (p.engine == Engine::Use || p.engine == Engine::Indic) {
         syllabic::insertVowelConstraintCircles(b, script);
     }
     if (p.engine == Engine::Thai) {
@@ -2030,8 +2189,11 @@ void Shaper::shape(const FontFace &face, Span<const char32_t> text, const ShapeO
     }
     if (p.engine == Engine::Use) {
         syllabic::setUseCategories(b);
+    } else if (p.engine == Engine::Indic || p.engine == Engine::Khmer || p.engine == Engine::Myanmar) {
+        syllabic::setMachineCategories(b, p.engine == Engine::Indic);
     }
     for (const Plan::RangedFeature &f : p.ranged) {
+        b.maxOps -= static_cast<int>(b.len()); // HarfBuzz's set_masks
         const std::uint32_t value = (f.value << f.shift) & f.mask;
         for (ot::GlyphInfo &g : b.info) {
             if (g.cluster >= f.start && g.cluster < f.end) {
@@ -2157,6 +2319,13 @@ void Shaper::shape(const FontFace &face, Span<const char32_t> text, const ShapeO
             }
             syllabic::reorderUse(b);
             break;
+        case PauseIndicSyllables: broken = syllabic::findIndicSyllables(b); break;
+        case PauseIndicInitial: syllabic::initialReorderingIndic(face, p.indic, b, broken); break;
+        case PauseIndicFinal: syllabic::finalReorderingIndic(p.indic, b); break;
+        case PauseKhmerSyllables: broken = syllabic::findKhmerSyllables(b); break;
+        case PauseKhmerReorder: syllabic::reorderKhmer(face, p.khmer, b, broken); break;
+        case PauseMyanmarSyllables: broken = syllabic::findMyanmarSyllables(b); break;
+        case PauseMyanmarReorder: syllabic::reorderMyanmar(face, b, broken); break;
         }
     };
     for (ot::GlyphInfo &g : b.info) {
@@ -2164,6 +2333,7 @@ void Shaper::shape(const FontFace &face, Span<const char32_t> text, const ShapeO
     }
     for (std::size_t stage = 0; stage < p.gsubStages.size(); ++stage) {
         ot::applyLookups(face, p.gdef, p.gsub, p.gsubStages[stage], b);
+        b.idx = 0;
         runPause(static_cast<Pause>(p.pauses[stage]));
         if (stage == p.fallbackStage && !p.fallbackLookups.empty()) {
             for (const ot::PlannedLookup &l : p.fallbackLookups) {

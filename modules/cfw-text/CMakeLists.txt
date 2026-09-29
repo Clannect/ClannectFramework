@@ -11,6 +11,7 @@ cfw_add_module(cfw-text
         src/GlyphCache.cpp
         src/OtLayout.cpp
         src/Shaper.cpp
+        src/IndicShapers.cpp
         src/Syllabic.cpp
         src/TextBreaks.cpp
         src/TextLayout.cpp

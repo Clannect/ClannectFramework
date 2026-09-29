@@ -20,6 +20,12 @@
   | `CfwTestPlain.ttf` | DejaVu Sans (Latin, marks, Greek, Hebrew, Arabic and presentation forms) without GSUB, GPOS and GDEF but with its `kern` table: marks placed by glyph boxes, Arabic forms from presentation forms, Hebrew presentation forms, legacy kerning |
   | `CfwTestPlain.otf` | A smaller CFF version, for glyph boxes computed from CFF outlines |
 
+- `CfwTestIndic.ttf` and `CfwTestIndicOld.ttf` are made by `testing/text-oracle/make_indic_font.py` (box
+  outlines, no third-party data). They hold Devanagari and Malayalam lookups for every Indic basic feature,
+  under the second spec's tags (`dev2`, `mlm2`) and the first's (`deva`, `mlym`). The below-base Ra exists
+  only before KA, a chained rule with lookahead, so the base consonant depends on whether the engine's
+  "would substitute" tests may use context. The script also writes HarfBuzz's results for both fonts.
+
 - `expected.json` holds, for each font, what the references report: names, metrics, a hash of the whole character
   map, and hashes of every glyph's outline in blocks of 64. fontTools is the reference, and FreeType is used where
   fontTools cannot interpret a glyph (Type 2 arithmetic, point-matched components). `FontFaceTest` compares
