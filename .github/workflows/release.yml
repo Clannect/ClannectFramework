@@ -158,6 +158,13 @@ jobs:
           version="${{ needs.version.outputs.version }}"
           prerelease=""
           case "$version" in 0.*) prerelease="--prerelease";; esac
-          gh release create "$TAG" packages/* \
-            --title "Clannect Framework $version" \
-            --notes-file "docs/releases/$version.md" $prerelease
+          # A release drafted for the tag on GitHub is completed and published.
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" packages/* --clobber
+            gh release edit "$TAG" --title "Clannect Framework $version" \
+              --notes-file "docs/releases/$version.md" $prerelease --draft=false
+          else
+            gh release create "$TAG" packages/* \
+              --title "Clannect Framework $version" \
+              --notes-file "docs/releases/$version.md" $prerelease
+          fi
