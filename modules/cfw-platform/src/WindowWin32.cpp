@@ -427,6 +427,12 @@ public:
 
     void *nativeHandle() const override { return m_hwnd; }
 
+    Vec2i screenPosition() const override {
+        POINT origin{0, 0};
+        ClientToScreen(m_hwnd, &origin);
+        return {int(origin.x), int(origin.y)};
+    }
+
     LRESULT handle(UINT message, WPARAM wParam, LPARAM lParam);
 
 private:

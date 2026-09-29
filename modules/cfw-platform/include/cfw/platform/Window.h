@@ -87,6 +87,9 @@ public:
     // candidate window beside it; nothing when no text is being edited, which
     // turns the input method off (keys then reach the application as keys).
     virtual void setTextInputArea(const std::optional<RectF> &caret) { (void)caret; }
+    // Where the client area's top-left is on the screen, in physical pixels
+    // (what screen readers are told; nothing known: the origin).
+    [[nodiscard]] virtual Vec2i screenPosition() const { return {}; }
     // HWND on Windows, the X11 Window id on X11 (for embedding WebView2 and
     // for GL context creation).
     [[nodiscard]] virtual void *nativeHandle() const = 0;

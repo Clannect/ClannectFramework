@@ -429,6 +429,14 @@ public:
 
     void *nativeHandle() const override { return reinterpret_cast<void *>(m_window); }
 
+    Vec2i screenPosition() const override {
+        Display *display = connection().display;
+        int x = 0, y = 0;
+        ::Window child = 0;
+        XTranslateCoordinates(display, m_window, DefaultRootWindow(display), 0, 0, &x, &y, &child);
+        return {x, y};
+    }
+
     // ---- Event handling (called by processEvents) ----
     void handle(XEvent &event);
     void handleXdnd(const XClientMessageEvent &message);
