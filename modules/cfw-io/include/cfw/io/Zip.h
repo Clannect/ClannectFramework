@@ -57,6 +57,8 @@ public:
     [[nodiscard]] Result<std::vector<std::byte>> read(const ZipEntry &entry) const;
     // The sum of the entries' sizes.
     [[nodiscard]] std::uint64_t totalSize() const noexcept { return m_totalSize; }
+    // The archive's own bytes: open()'s data without whatever preceded it.
+    [[nodiscard]] Span<const std::byte> bytes() const noexcept { return m_data; }
 
 private:
     Span<const std::byte> m_data; // from the archive's first byte

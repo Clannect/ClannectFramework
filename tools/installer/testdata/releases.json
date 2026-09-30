@@ -1,0 +1,87 @@
+[
+  {
+    "html_url": "https://github.com/Clannect/ClannectFramework/releases/tag/v0.2.0",
+    "tag_name": "v0.2.0",
+    "name": "Clannect Framework 0.2.0",
+    "draft": true,
+    "prerelease": false,
+    "published_at": null,
+    "assets": []
+  },
+  {
+    "html_url": "https://github.com/Clannect/ClannectFramework/releases/tag/v0.1.1",
+    "tag_name": "v0.1.1",
+    "name": "Clannect Framework 0.1.1",
+    "draft": false,
+    "prerelease": true,
+    "published_at": "2026-09-30T05:26:00Z",
+    "assets": [
+      {
+        "name": "ClannectFramework-0.1.1-linux-x64.tar.gz",
+        "size": 3759400,
+        "digest": "sha256:949ee76329462c8889a48aeedaf7dff61b8db82ec3eddb6dffcab563eb324d06",
+        "browser_download_url": "https://github.com/Clannect/ClannectFramework/releases/download/v0.1.1/ClannectFramework-0.1.1-linux-x64.tar.gz"
+      },
+      {
+        "name": "ClannectFramework-0.1.1-windows-x64-mingw.zip",
+        "size": 3571086,
+        "digest": "sha256:FDDFDC1D52EE6CA526BCF0F7E0F27676A91BEA72ADEC4C1EBCB6BFB194C88E54",
+        "browser_download_url": "https://github.com/Clannect/ClannectFramework/releases/download/v0.1.1/ClannectFramework-0.1.1-windows-x64-mingw.zip"
+      }
+    ]
+  },
+  {
+    "html_url": "https://github.com/Clannect/ClannectFramework/releases/tag/nightly",
+    "tag_name": "nightly",
+    "name": "Nightly",
+    "draft": false,
+    "prerelease": true,
+    "published_at": "2026-09-29T00:00:00Z",
+    "assets": []
+  },
+  {
+    "html_url": "https://github.com/Clannect/ClannectFramework/releases/tag/v1.0.0",
+    "tag_name": "v1.0.0",
+    "name": "Clannect Framework 1.0.0",
+    "draft": false,
+    "prerelease": false,
+    "published_at": "2027-01-01T00:00:00Z",
+    "assets": [
+      {
+        "name": "ClannectFramework-1.0.0-windows-x64-mingw.zip",
+        "size": 4000000,
+        "browser_download_url": "https://github.com/Clannect/ClannectFramework/releases/download/v1.0.0/ClannectFramework-1.0.0-windows-x64-mingw.zip"
+      }
+    ]
+  },
+  {
+    "html_url": "https://github.com/Clannect/ClannectFramework/releases/tag/v0.1.0",
+    "tag_name": "v0.1.0",
+    "name": "Clannect Framework 0.1.0",
+    "draft": false,
+    "prerelease": true,
+    "published_at": "2026-09-29T15:22:12Z",
+    "assets": [
+      {
+        "name": "ClannectFramework-0.1.0-windows-x64-mingw.zip",
+        "size": 3571086,
+        "browser_download_url": "http://example.com/insecure.zip"
+      }
+    ]
+  },
+  {
+    "html_url": "https://github.com/Clannect/ClannectFramework/releases/tag/v1.1.0-rc.1",
+    "tag_name": "v1.1.0-rc.1",
+    "name": "Clannect Framework 1.1.0 RC 1",
+    "draft": false,
+    "prerelease": true,
+    "published_at": "2027-02-01T00:00:00Z",
+    "assets": [
+      {
+        "name": "ClannectFramework-1.1.0-rc.1-windows-x64-mingw.zip",
+        "size": 4100000,
+        "browser_download_url": "https://github.com/Clannect/ClannectFramework/releases/download/v1.1.0-rc.1/ClannectFramework-1.1.0-rc.1-windows-x64-mingw.zip"
+      }
+    ]
+  }
+]

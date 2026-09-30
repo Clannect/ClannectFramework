@@ -27,6 +27,7 @@ option(CFW_WARNINGS_AS_ERRORS "Treat compiler warnings in CFW's own code as erro
 set(CFW_SANITIZE "" CACHE STRING
     "Sanitizers: a list of address, undefined, thread, or ubsan-trap (UBSan without a runtime; works on MinGW)")
 
+option(CFW_BUILD_INSTALLER "Build the Windows installer (tools/installer; its logic and tests build everywhere)" ${PROJECT_IS_TOP_LEVEL})
 option(CFW_INSTALL "Install the libraries, headers and CMake package (and the examples, if built)" ${PROJECT_IS_TOP_LEVEL})
 include(GNUInstallDirs)
 include(cmake/CfwTargets.cmake)
@@ -65,6 +66,9 @@ endif()
 if(CFW_BUILD_TOOLS)
     add_subdirectory(bench)
     add_subdirectory(examples)
+endif()
+if(CFW_BUILD_INSTALLER)
+    add_subdirectory(tools/installer)
 endif()
 
 # The installed package: find_package(ClannectFramework) gives cfw::core,
