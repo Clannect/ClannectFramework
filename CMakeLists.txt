@@ -5,7 +5,7 @@ if(APPLE AND NOT CMAKE_OSX_DEPLOYMENT_TARGET)
     set(CMAKE_OSX_DEPLOYMENT_TARGET "13.3" CACHE STRING "Minimum macOS version")
 endif()
 
-project(ClannectFramework VERSION 0.1.1 LANGUAGES CXX)
+project(ClannectFramework VERSION 0.2.0 LANGUAGES CXX)
 if(APPLE)
     enable_language(OBJCXX) # the Cocoa backends (*.mm)
     set(CMAKE_OBJCXX_STANDARD 20)

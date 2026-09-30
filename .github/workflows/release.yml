@@ -1,6 +1,7 @@
 # Releases: pushing a tag vX.Y.Z builds, tests and packages Clannect Framework
-# for Linux and Windows (and macOS, experimental), then publishes a GitHub
-# release with the packages and docs/releases/X.Y.Z.md as its notes.
+# for Linux and Windows (and macOS, experimental), and the Windows online and
+# offline installers, then publishes a GitHub release with them and
+# docs/releases/X.Y.Z.md (plus docs/releases/installers.md) as its notes.
 
 name: release
 
@@ -103,10 +104,29 @@ jobs:
         run: |
           cmake --install build/windows --prefix "$PACKAGE"
           zip -qr "$PACKAGE.zip" "$PACKAGE"
+      - name: Installers
+        # Online: the installer alone (it downloads the version you choose).
+        # Offline: the installer with this release's package appended
+        # (docs/decisions/0017-windows-installer.md).
+        env:
+          OFFLINE: ClannectFramework-${{ needs.version.outputs.version }}-windows-x64-offline-installer.exe
+          ONLINE: ClannectFramework-windows-x64-online-installer.exe
+          CFW_INSTALLER_REGISTRY_SANDBOX: Software\ClannectFrameworkReleaseCheck
+        run: |
+          cp build/windows/tools/installer/cfw-installer.exe "$ONLINE"
+          cat build/windows/tools/installer/cfw-installer.exe "$PACKAGE.zip" > "$OFFLINE"
+          # The offline installer must install its own package and uninstall it.
+          wine "$OFFLINE" --silent --root 'C:\cfw-release-check'
+          test -f "$WINEPREFIX/drive_c/cfw-release-check/${{ needs.version.outputs.version }}/bin/cfw-ui-gallery.exe"
+          wine "$WINEPREFIX/drive_c/cfw-release-check/maintenance/Clannect Framework Maintenance.exe" \
+            --silent --uninstall 'C:\cfw-release-check\${{ needs.version.outputs.version }}'
+          ls -l "$ONLINE" "$OFFLINE"
       - uses: actions/upload-artifact@v4
         with:
           name: windows
-          path: ${{ env.PACKAGE }}.zip
+          path: |
+            ${{ env.PACKAGE }}.zip
+            ClannectFramework-*-installer.exe
 
   # Experimental: the macOS backend has not been verified on a Mac, so this
   # job may fail without stopping the release.
@@ -159,13 +179,19 @@ jobs:
           version="${{ needs.version.outputs.version }}"
           prerelease=""
           case "$version" in 0.*) prerelease="--prerelease";; esac
+          # Every release's notes end with what the installers are.
+          cp "docs/releases/$version.md" notes.md
+          if ls packages/*-installer.exe >/dev/null 2>&1; then
+            printf '\n' >> notes.md
+            cat docs/releases/installers.md >> notes.md
+          fi
           # A release drafted for the tag on GitHub is completed and published.
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" packages/* --clobber
             gh release edit "$TAG" --title "Clannect Framework $version" \
-              --notes-file "docs/releases/$version.md" $prerelease --draft=false
+              --notes-file notes.md $prerelease --draft=false
           else
             gh release create "$TAG" packages/* \
               --title "Clannect Framework $version" \
-              --notes-file "docs/releases/$version.md" $prerelease
+              --notes-file notes.md $prerelease
           fi

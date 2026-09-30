@@ -10,21 +10,21 @@ in this repository. It links only the C++ standard library and the operating sys
 [![Rate CFW!](https://img.shields.io/badge/Rate%20CFW-⭐%201–5-gold?style=for-the-badge)](https://github.com/Clannect/ClannectFramework/discussions/2#discussion-10913620)
 
 
-> **Status: pre-1.0 (0.1.1).** CFW runs Clannect today, but its API may still change between versions. Documentation is being written.
+> **Status: pre-1.0 (0.2.0).** CFW runs Clannect today, but its API may still change between versions. Documentation is being written.
 
 ## Features
 
 | Module | What it gives you |
 |---|---|
 | **cfw-core** | Strings and UTF-8/16, containers, math (vectors, quaternions, matrices), colours, `Variant`, reflection-lite properties, signals, `Result`/`Error`, logging, arenas, SHA-256, UUIDs, URLs, locale-aware number formatting, and DEFLATE/zlib compression. |
-| **cfw-io** | Files and paths (UTF-8, atomic writes, memory mapping), JSON (strict, fast, with precise error positions), a binary reader/writer, per-user settings and standard folders, processes. |
+| **cfw-io** | Files and paths (UTF-8, atomic writes, memory mapping), JSON (strict, fast, with precise error positions), a binary reader/writer, zip archives, per-user settings and standard folders, processes. |
 | **cfw-net** | An event loop, TCP, TLS 1.2/1.3 through the OS, an HTTP/1.1 client, and WebSocket client and server. |
 | **cfw-image** | `Image`; PNG and JPEG decoding and encoding, and WebP decoding, exact to the pixel against the reference decoders; resizing and an atlas packer. |
 | **cfw-text** | Unicode 18 (grapheme clusters, line breaking, bidi), a TrueType/CFF font parser, OpenType shaping for every script HarfBuzz shapes (Arabic, Hebrew, Thai, Hangul, the Indic scripts, Khmer, Myanmar and the 90-odd scripts of the Universal Shaping Engine), text layout, font fallback and a glyph atlas. |
 | **cfw-gfx** | A 2D `Painter`: paths, pens, dashes, gradients, images, transforms, clipping and blend modes, on an anti-aliased CPU rasteriser; SVG icons. |
 | **cfw-platform** | Native windows (Win32, X11), keyboard, mouse and input methods (IME), file drag and drop, the clipboard, cursors, high-DPI, and OpenGL 3.3 contexts with a built-in function loader. |
 | **cfw-ui** | A retained widget toolkit: layout, focus, themes, buttons, text fields, menus, dropdowns, sliders, tree views, tabs, dockable panels, property grids, dialogs, a colour picker and more. |
-| **cfw-app** | Puts it together: UI windows (CPU-painted, or composited over OpenGL views), screen reader support, native file pickers, opening links. |
+| **cfw-app** | Puts it together: UI windows (CPU-painted, or composited over OpenGL views), screen reader support, native file and folder pickers, opening links. |
 
 Modules are layered; each depends only on the ones above it in this table, so a headless server can link
 cfw-core, cfw-io and cfw-net and nothing else.
@@ -72,11 +72,16 @@ target_link_libraries(my_app PRIVATE cfw::app)   # or cfw::core, cfw::net, cfw::
 
 As a subproject, CFW builds only its libraries (no tests, examples or benchmarks).
 
-Or download a prebuilt package (Windows with MinGW-w64, Linux x64, and experimentally macOS on Apple silicon) from
-[Releases](https://github.com/Clannect/ClannectFramework/releases), unpack it, and use `find_package`:
+Or install a prebuilt version from [Releases](https://github.com/Clannect/ClannectFramework/releases):
+
+- **Windows:** run the **online installer** (it downloads the version you choose and can tell you when a new one
+  is released) or a version's **offline installer** (everything inside, no internet needed). Both can register the
+  install with CMake, so `find_package` finds it with no path to set.
+- **Linux x64, and macOS on Apple silicon (experimental):** unpack the package and point CMake at it with
+  `-DCMAKE_PREFIX_PATH=<unpacked folder>`. A zip of the Windows package is there too.
 
 ```cmake
-find_package(ClannectFramework 0.1 REQUIRED)   # configure with -DCMAKE_PREFIX_PATH=<unpacked folder>
+find_package(ClannectFramework 0.2 REQUIRED)
 target_link_libraries(my_app PRIVATE cfw::app)
 ```
 
@@ -157,6 +162,7 @@ modules/<module>/include/cfw/<name>/   public headers
 modules/<module>/src/                  implementation
 modules/<module>/tests/                tests, one executable per area
 examples/                              example programs (the widget gallery)
+tools/installer/                       the Windows installer (online, offline, maintenance tool)
 fuzz/                                  fuzz targets and their corpus
 bench/                                 benchmarks
 testing/                               test helpers and the scripts that produce reference results
