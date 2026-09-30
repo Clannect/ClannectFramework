@@ -31,6 +31,7 @@ endfunction()
 
 cfw_add_fuzz_target(FuzzJson DEPENDS cfw-io)
 cfw_add_fuzz_target(FuzzByteReader DEPENDS cfw-io)
+cfw_add_fuzz_target(FuzzZip DEPENDS cfw-io)
 cfw_add_fuzz_target(FuzzUrl DEPENDS cfw-core)
 cfw_add_fuzz_target(FuzzWebSocketFrames DEPENDS cfw-net)
 cfw_add_fuzz_target(FuzzHttp DEPENDS cfw-net)

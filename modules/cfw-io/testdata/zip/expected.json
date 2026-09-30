@@ -1,0 +1,400 @@
+{
+ "stored.zip": {
+  "entries": [
+   {
+    "name": "README.md",
+    "size": 2583,
+    "crc32": 2853884769,
+    "sha256": "a8400fd285ffba9ad301ac54b0270e855836ff2cc962482bb0af147492e092c4"
+   },
+   {
+    "name": "lib/libcfw-core.a",
+    "size": 22914,
+    "crc32": 1504984667,
+    "sha256": "e77f5195fb684a58504e67240658fb28b9890bb28be7fe784efd99adfe4120ef"
+   },
+   {
+    "name": "include/cfw/core/String.h",
+    "size": 1351,
+    "crc32": 3394825585,
+    "sha256": "47824707945fdc26fedfb702f69df97b6da15555ebd51ce040045dae3ba50352"
+   },
+   {
+    "name": "empty.txt",
+    "size": 0,
+    "crc32": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+   },
+   {
+    "name": "bin/random.bin",
+    "size": 20000,
+    "crc32": 2384892117,
+    "sha256": "3126dbf3cbbc4f2cf585fefb3578d4bcce99ed5618a44d88a5b1a9cd8a7e75b7"
+   }
+  ]
+ },
+ "deflated.zip": {
+  "entries": [
+   {
+    "name": "README.md",
+    "size": 2583,
+    "crc32": 2853884769,
+    "sha256": "a8400fd285ffba9ad301ac54b0270e855836ff2cc962482bb0af147492e092c4"
+   },
+   {
+    "name": "lib/libcfw-core.a",
+    "size": 22914,
+    "crc32": 1504984667,
+    "sha256": "e77f5195fb684a58504e67240658fb28b9890bb28be7fe784efd99adfe4120ef"
+   },
+   {
+    "name": "include/cfw/core/String.h",
+    "size": 1351,
+    "crc32": 3394825585,
+    "sha256": "47824707945fdc26fedfb702f69df97b6da15555ebd51ce040045dae3ba50352"
+   },
+   {
+    "name": "empty.txt",
+    "size": 0,
+    "crc32": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+   },
+   {
+    "name": "bin/random.bin",
+    "size": 20000,
+    "crc32": 2384892117,
+    "sha256": "3126dbf3cbbc4f2cf585fefb3578d4bcce99ed5618a44d88a5b1a9cd8a7e75b7"
+   }
+  ]
+ },
+ "deflated-level1.zip": {
+  "entries": [
+   {
+    "name": "README.md",
+    "size": 2583,
+    "crc32": 2853884769,
+    "sha256": "a8400fd285ffba9ad301ac54b0270e855836ff2cc962482bb0af147492e092c4"
+   },
+   {
+    "name": "lib/libcfw-core.a",
+    "size": 22914,
+    "crc32": 1504984667,
+    "sha256": "e77f5195fb684a58504e67240658fb28b9890bb28be7fe784efd99adfe4120ef"
+   },
+   {
+    "name": "include/cfw/core/String.h",
+    "size": 1351,
+    "crc32": 3394825585,
+    "sha256": "47824707945fdc26fedfb702f69df97b6da15555ebd51ce040045dae3ba50352"
+   },
+   {
+    "name": "empty.txt",
+    "size": 0,
+    "crc32": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+   },
+   {
+    "name": "bin/random.bin",
+    "size": 20000,
+    "crc32": 2384892117,
+    "sha256": "3126dbf3cbbc4f2cf585fefb3578d4bcce99ed5618a44d88a5b1a9cd8a7e75b7"
+   }
+  ]
+ },
+ "deflated-level9.zip": {
+  "entries": [
+   {
+    "name": "README.md",
+    "size": 2583,
+    "crc32": 2853884769,
+    "sha256": "a8400fd285ffba9ad301ac54b0270e855836ff2cc962482bb0af147492e092c4"
+   },
+   {
+    "name": "lib/libcfw-core.a",
+    "size": 22914,
+    "crc32": 1504984667,
+    "sha256": "e77f5195fb684a58504e67240658fb28b9890bb28be7fe784efd99adfe4120ef"
+   },
+   {
+    "name": "include/cfw/core/String.h",
+    "size": 1351,
+    "crc32": 3394825585,
+    "sha256": "47824707945fdc26fedfb702f69df97b6da15555ebd51ce040045dae3ba50352"
+   },
+   {
+    "name": "empty.txt",
+    "size": 0,
+    "crc32": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+   },
+   {
+    "name": "bin/random.bin",
+    "size": 20000,
+    "crc32": 2384892117,
+    "sha256": "3126dbf3cbbc4f2cf585fefb3578d4bcce99ed5618a44d88a5b1a9cd8a7e75b7"
+   }
+  ]
+ },
+ "descriptors.zip": {
+  "entries": [
+   {
+    "name": "README.md",
+    "size": 2583,
+    "crc32": 2853884769,
+    "sha256": "a8400fd285ffba9ad301ac54b0270e855836ff2cc962482bb0af147492e092c4"
+   },
+   {
+    "name": "lib/libcfw-core.a",
+    "size": 22914,
+    "crc32": 1504984667,
+    "sha256": "e77f5195fb684a58504e67240658fb28b9890bb28be7fe784efd99adfe4120ef"
+   },
+   {
+    "name": "include/cfw/core/String.h",
+    "size": 1351,
+    "crc32": 3394825585,
+    "sha256": "47824707945fdc26fedfb702f69df97b6da15555ebd51ce040045dae3ba50352"
+   },
+   {
+    "name": "empty.txt",
+    "size": 0,
+    "crc32": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+   },
+   {
+    "name": "bin/random.bin",
+    "size": 20000,
+    "crc32": 2384892117,
+    "sha256": "3126dbf3cbbc4f2cf585fefb3578d4bcce99ed5618a44d88a5b1a9cd8a7e75b7"
+   }
+  ]
+ },
+ "directories.zip": {
+  "entries": [
+   {
+    "name": "pkg/",
+    "size": 0,
+    "crc32": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+   },
+   {
+    "name": "pkg/empty/",
+    "size": 0,
+    "crc32": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+   },
+   {
+    "name": "README.md",
+    "size": 2583,
+    "crc32": 2853884769,
+    "sha256": "a8400fd285ffba9ad301ac54b0270e855836ff2cc962482bb0af147492e092c4"
+   },
+   {
+    "name": "lib/libcfw-core.a",
+    "size": 22914,
+    "crc32": 1504984667,
+    "sha256": "e77f5195fb684a58504e67240658fb28b9890bb28be7fe784efd99adfe4120ef"
+   },
+   {
+    "name": "include/cfw/core/String.h",
+    "size": 1351,
+    "crc32": 3394825585,
+    "sha256": "47824707945fdc26fedfb702f69df97b6da15555ebd51ce040045dae3ba50352"
+   },
+   {
+    "name": "empty.txt",
+    "size": 0,
+    "crc32": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+   },
+   {
+    "name": "bin/random.bin",
+    "size": 20000,
+    "crc32": 2384892117,
+    "sha256": "3126dbf3cbbc4f2cf585fefb3578d4bcce99ed5618a44d88a5b1a9cd8a7e75b7"
+   }
+  ]
+ },
+ "comment.zip": {
+  "entries": [
+   {
+    "name": "README.md",
+    "size": 2583,
+    "crc32": 2853884769,
+    "sha256": "a8400fd285ffba9ad301ac54b0270e855836ff2cc962482bb0af147492e092c4"
+   },
+   {
+    "name": "lib/libcfw-core.a",
+    "size": 22914,
+    "crc32": 1504984667,
+    "sha256": "e77f5195fb684a58504e67240658fb28b9890bb28be7fe784efd99adfe4120ef"
+   },
+   {
+    "name": "include/cfw/core/String.h",
+    "size": 1351,
+    "crc32": 3394825585,
+    "sha256": "47824707945fdc26fedfb702f69df97b6da15555ebd51ce040045dae3ba50352"
+   },
+   {
+    "name": "empty.txt",
+    "size": 0,
+    "crc32": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+   },
+   {
+    "name": "bin/random.bin",
+    "size": 20000,
+    "crc32": 2384892117,
+    "sha256": "3126dbf3cbbc4f2cf585fefb3578d4bcce99ed5618a44d88a5b1a9cd8a7e75b7"
+   }
+  ]
+ },
+ "utf8-names.zip": {
+  "entries": [
+   {
+    "name": "dokument/räksmörgås.txt",
+    "size": 332,
+    "crc32": 2494652612,
+    "sha256": "944eac71e04a30cff99bf2dbb994ad82b2b48b8d5fdda32e17e0e753ee7d2a14"
+   },
+   {
+    "name": "日本/ファイル.txt",
+    "size": 190,
+    "crc32": 3129161911,
+    "sha256": "1ffdb53a55df9d3386767be5060e6afbd1fadadcd24c48f4963aa1e96d3897d5"
+   }
+  ]
+ },
+ "empty.zip": {
+  "entries": []
+ },
+ "infozip.zip": {
+  "entries": [
+   {
+    "name": "ClannectFramework-0.0.0-test/",
+    "size": 0,
+    "crc32": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+   },
+   {
+    "name": "ClannectFramework-0.0.0-test/README.md",
+    "size": 2583,
+    "crc32": 2853884769,
+    "sha256": "a8400fd285ffba9ad301ac54b0270e855836ff2cc962482bb0af147492e092c4"
+   },
+   {
+    "name": "ClannectFramework-0.0.0-test/empty.txt",
+    "size": 0,
+    "crc32": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+   },
+   {
+    "name": "ClannectFramework-0.0.0-test/lib/",
+    "size": 0,
+    "crc32": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+   },
+   {
+    "name": "ClannectFramework-0.0.0-test/lib/libcfw-core.a",
+    "size": 22914,
+    "crc32": 1504984667,
+    "sha256": "e77f5195fb684a58504e67240658fb28b9890bb28be7fe784efd99adfe4120ef"
+   },
+   {
+    "name": "ClannectFramework-0.0.0-test/bin/",
+    "size": 0,
+    "crc32": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+   },
+   {
+    "name": "ClannectFramework-0.0.0-test/bin/random.bin",
+    "size": 20000,
+    "crc32": 2384892117,
+    "sha256": "3126dbf3cbbc4f2cf585fefb3578d4bcce99ed5618a44d88a5b1a9cd8a7e75b7"
+   },
+   {
+    "name": "ClannectFramework-0.0.0-test/include/",
+    "size": 0,
+    "crc32": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+   },
+   {
+    "name": "ClannectFramework-0.0.0-test/include/cfw/",
+    "size": 0,
+    "crc32": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+   },
+   {
+    "name": "ClannectFramework-0.0.0-test/include/cfw/core/",
+    "size": 0,
+    "crc32": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+   },
+   {
+    "name": "ClannectFramework-0.0.0-test/include/cfw/core/String.h",
+    "size": 1351,
+    "crc32": 3394825585,
+    "sha256": "47824707945fdc26fedfb702f69df97b6da15555ebd51ce040045dae3ba50352"
+   }
+  ]
+ },
+ "prefixed.bin": {
+  "entries": [
+   {
+    "name": "README.md",
+    "size": 2583,
+    "crc32": 2853884769,
+    "sha256": "a8400fd285ffba9ad301ac54b0270e855836ff2cc962482bb0af147492e092c4"
+   },
+   {
+    "name": "lib/libcfw-core.a",
+    "size": 22914,
+    "crc32": 1504984667,
+    "sha256": "e77f5195fb684a58504e67240658fb28b9890bb28be7fe784efd99adfe4120ef"
+   },
+   {
+    "name": "include/cfw/core/String.h",
+    "size": 1351,
+    "crc32": 3394825585,
+    "sha256": "47824707945fdc26fedfb702f69df97b6da15555ebd51ce040045dae3ba50352"
+   },
+   {
+    "name": "empty.txt",
+    "size": 0,
+    "crc32": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+   },
+   {
+    "name": "bin/random.bin",
+    "size": 20000,
+    "crc32": 2384892117,
+    "sha256": "3126dbf3cbbc4f2cf585fefb3578d4bcce99ed5618a44d88a5b1a9cd8a7e75b7"
+   }
+  ]
+ },
+ "zip64-local.zip": {
+  "entries": [
+   {
+    "name": "a.txt",
+    "size": 134,
+    "crc32": 2190102061,
+    "sha256": "68b4c3057f5be2d0b2d204979b9ec0f5b8e37719176442d7ab79fe4d037659f6"
+   }
+  ]
+ },
+ "unsafe-0.zip": {
+  "unsafe": "../escaped.txt"
+ },
+ "unsafe-1.zip": {
+  "unsafe": "/absolute.txt"
+ },
+ "unsafe-2.zip": {
+  "unsafe": "C:/drive.txt"
+ },
+ "unsafe-3.zip": {
+  "unsafe": "dir\\backslash.txt"
+ },
+ "unsafe-4.zip": {
+  "unsafe": "ok/../../up.txt"
+ }
+}
