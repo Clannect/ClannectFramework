@@ -11,6 +11,7 @@
 #include <windows.h>
 #include <commdlg.h>
 #include <shellapi.h>
+#include <shobjidl.h>
 
 #include <filesystem>
 #include <string>
@@ -102,6 +103,67 @@ Result<std::vector<Path>> chooseFilesToOpen(const Window *owner, const OpenFileO
     return chosen;
 }
 
+Result<std::optional<Path>> chooseFolder(const Window *owner, const ChooseFolderOptions &options) {
+    // The Vista-style dialog in folder mode (COM, apartment-threaded on the
+    // window's thread).
+    const HRESULT init = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
+    const bool uninitialize = SUCCEEDED(init);
+    struct Uninit {
+        bool active;
+        ~Uninit() {
+            if (active) {
+                CoUninitialize();
+            }
+        }
+    } uninit{uninitialize};
+
+    IFileOpenDialog *dialog = nullptr;
+    if (FAILED(CoCreateInstance(CLSID_FileOpenDialog, nullptr, CLSCTX_INPROC_SERVER, IID_IFileOpenDialog,
+                                reinterpret_cast<void **>(&dialog)))) {
+        return Error(ErrorCode::Unsupported, "the folder dialog is not available");
+    }
+    struct Release {
+        IUnknown *object;
+        ~Release() { object->Release(); }
+    } releaseDialog{dialog};
+
+    FILEOPENDIALOGOPTIONS flags = 0;
+    dialog->GetOptions(&flags);
+    dialog->SetOptions(flags | FOS_PICKFOLDERS | FOS_FORCEFILESYSTEM | FOS_PATHMUSTEXIST);
+    const std::wstring title = wide(options.title);
+    dialog->SetTitle(title.c_str());
+    if (!options.directory.empty()) {
+        std::filesystem::path native = options.directory.native();
+        native.make_preferred();
+        IShellItem *start = nullptr;
+        if (SUCCEEDED(SHCreateItemFromParsingName(native.wstring().c_str(), nullptr, IID_IShellItem,
+                                                  reinterpret_cast<void **>(&start)))) {
+            dialog->SetFolder(start);
+            start->Release();
+        }
+    }
+    const HRESULT shown = dialog->Show(owner ? static_cast<HWND>(owner->nativeHandle()) : nullptr);
+    if (shown == HRESULT_FROM_WIN32(ERROR_CANCELLED)) {
+        return std::optional<Path>{};
+    }
+    if (FAILED(shown)) {
+        return Error(ErrorCode::IoError, "the folder dialog failed");
+    }
+    IShellItem *item = nullptr;
+    if (FAILED(dialog->GetResult(&item))) {
+        return Error(ErrorCode::IoError, "the folder dialog returned nothing");
+    }
+    PWSTR name = nullptr;
+    const HRESULT got = item->GetDisplayName(SIGDN_FILESYSPATH, &name);
+    item->Release();
+    if (FAILED(got) || name == nullptr) {
+        return Error(ErrorCode::IoError, "the chosen folder has no file system path");
+    }
+    Path chosen{std::filesystem::path(std::wstring(name))};
+    CoTaskMemFree(name);
+    return std::optional<Path>(std::move(chosen));
+}
+
 Result<void> showInFileManager(const Path &folder) {
     std::filesystem::path native = folder.native();
     native.make_preferred();
@@ -188,6 +250,33 @@ Result<std::vector<Path>> chooseFilesToOpen(const Window *, const OpenFileOption
         return ran.value().exitCode == 0 ? lines(ran.value().standardOutput) : std::vector<Path>{};
     }
     return Error(ErrorCode::Unsupported, "no file picker (zenity or kdialog) is installed");
+}
+
+Result<std::optional<Path>> chooseFolder(const Window *, const ChooseFolderOptions &options) {
+    ProcessOptions process;
+    process.timeout = std::chrono::hours(24);
+    std::optional<Path> program;
+    if ((program = findExecutable("zenity"))) {
+        process.arguments = {"--file-selection", "--directory", "--title=" + options.title};
+        if (!options.directory.empty()) {
+            process.arguments.push_back("--filename=" + options.directory.toString() + "/");
+        }
+    } else if ((program = findExecutable("kdialog"))) {
+        process.arguments = {"--getexistingdirectory",
+                             options.directory.empty() ? String(".") : options.directory.toString(), "--title",
+                             options.title};
+    } else {
+        return Error(ErrorCode::Unsupported, "no folder picker (zenity or kdialog) is installed");
+    }
+    const Result<ProcessResult> ran = runProcess(*program, process);
+    if (!ran) {
+        return ran.error();
+    }
+    const std::vector<Path> chosen = lines(ran.value().standardOutput);
+    if (ran.value().exitCode != 0 || chosen.empty()) {
+        return std::optional<Path>{}; // cancelled
+    }
+    return std::optional<Path>(chosen.front());
 }
 
 Result<void> showInFileManager(const Path &folder) { return xdgOpen(folder.toString()); }

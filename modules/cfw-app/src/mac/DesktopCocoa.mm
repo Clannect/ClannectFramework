@@ -57,6 +57,27 @@ Result<std::vector<Path>> chooseFilesToOpen(const Window *, const OpenFileOption
     }
 }
 
+Result<std::optional<Path>> chooseFolder(const Window *, const ChooseFolderOptions &options) {
+    @autoreleasepool {
+        NSOpenPanel *panel = [NSOpenPanel openPanel];
+        [panel setMessage:toNs(options.title)];
+        [panel setTitle:toNs(options.title)];
+        [panel setCanChooseFiles:NO];
+        [panel setCanChooseDirectories:YES];
+        [panel setCanCreateDirectories:YES];
+        [panel setAllowsMultipleSelection:NO];
+        if (!options.directory.empty()) {
+            [panel setDirectoryURL:[NSURL fileURLWithPath:toNs(options.directory.toString()) isDirectory:YES]];
+        }
+        if ([panel runModal] == NSModalResponseOK) {
+            if (const char *path = [[[panel URL] path] UTF8String]) {
+                return std::optional<Path>(Path(String(path)));
+            }
+        }
+        return std::optional<Path>{};
+    }
+}
+
 Result<void> showInFileManager(const Path &folder) {
     @autoreleasepool {
         NSURL *url = [NSURL fileURLWithPath:toNs(folder.toString()) isDirectory:YES];

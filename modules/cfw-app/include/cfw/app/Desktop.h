@@ -1,6 +1,6 @@
 #pragma once
 
-// The desktop around an application: the system's file picker, showing a
+// The desktop around an application: the system's file and folder pickers, showing a
 // folder in the file manager, and opening a link in the default browser
 // (QFileDialog::getOpenFileNames and QDesktopServices).
 //
@@ -11,8 +11,9 @@
 // present the calls fail with Unsupported, and the application can ask in
 // its own interface instead.
 //
-// Threads: the window's. chooseFilesToOpen blocks until the picker closes.
+// Threads: the window's. The pickers block until they close.
 
+#include <optional>
 #include <vector>
 
 #include "cfw/core/Result.h"
@@ -37,6 +38,15 @@ struct OpenFileOptions {
 
 // The files chosen, or none if the picker was cancelled.
 [[nodiscard]] Result<std::vector<Path>> chooseFilesToOpen(const Window *owner, const OpenFileOptions &options);
+
+struct ChooseFolderOptions {
+    String title = "Choose a folder";
+    Path directory; // where it starts; empty: the system's choice
+};
+
+// The folder chosen, or nothing if the picker was cancelled. The picker can
+// create a new folder.
+[[nodiscard]] Result<std::optional<Path>> chooseFolder(const Window *owner, const ChooseFolderOptions &options);
 
 // Shows a folder in the file manager.
 [[nodiscard]] Result<void> showInFileManager(const Path &folder);

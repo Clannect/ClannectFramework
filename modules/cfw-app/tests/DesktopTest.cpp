@@ -56,6 +56,22 @@ void standIns() {
     chosen = chooseFilesToOpen(nullptr, options);
     check(chosen && chosen.value().empty(), "cancelling chooses nothing");
 
+    // The folder picker: zenity in directory mode.
+    writeScript(bin / "zenity", "printf '%s\\n' \"$@\" > '" + log.toString() + "'\nprintf '/home/me/Clannect\\n'\n");
+    ChooseFolderOptions folderOptions;
+    folderOptions.title = "Install to";
+    folderOptions.directory = Path("/opt");
+    const auto folder = chooseFolder(nullptr, folderOptions);
+    check(folder && folder.value() && folder.value()->toString() == "/home/me/Clannect", "a folder is chosen");
+    const String folderArgs = readTextFile(log).valueOr("");
+    check(folderArgs.find("--directory") != String::npos && folderArgs.find("--title=Install to") != String::npos &&
+              folderArgs.find("--filename=/opt/") != String::npos,
+          "in directory mode, with the title and start folder");
+    writeScript(bin / "zenity", "exit 1\n");
+    const auto none = chooseFolder(nullptr, folderOptions);
+    check(none && !none.value(), "cancelling the folder picker chooses nothing");
+    writeScript(bin / "zenity", "exit 1\n");
+
     // No picker at all.
     (void)removeFile(bin / "zenity");
     check(!chooseFilesToOpen(nullptr, options), "without a picker it fails");

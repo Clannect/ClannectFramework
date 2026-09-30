@@ -28,7 +28,7 @@ cfw_add_module(cfw-app
         cfw-ui
 )
 if(WIN32)
-    target_link_libraries(cfw-app PRIVATE comdlg32 shell32 oleacc oleaut32 ole32)
+    target_link_libraries(cfw-app PRIVATE comdlg32 shell32 oleacc oleaut32 ole32 uuid)
 elseif(APPLE)
     target_link_libraries(cfw-app PRIVATE "-framework AppKit" "-framework UniformTypeIdentifiers")
 endif()
