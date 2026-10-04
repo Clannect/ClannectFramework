@@ -53,7 +53,9 @@ public:
     // What changed since the last call (empty: nothing to repaint).
     [[nodiscard]] RectF takeDamage();
 
-    // Input. Returns whether an element handled it.
+    // Input. Returns whether an element handled it. One pointer at a time:
+    // the mouse, or the primary touch standing in for it (Window::pointer).
+    // A Cancel ends a press without a click.
     bool dispatch(const PointerEvent &event);
     bool dispatch(const KeyEvent &event);
     bool dispatch(const TextEvent &event);
@@ -105,6 +107,28 @@ public:
     // Timers run on the surface's thread, from runTimers(), which the host
     // calls every time round its loop; nextTimer() says how long it may
     // sleep. The clock is Clock::now() unless a test supplies one.
+    //
+    // A repeating timer fires on a steady grid (start + interval, start + 2 *
+    // interval, ...) for as long as runTimers() keeps up, however late each
+    // call is within its period. What it guarantees when it cannot keep up -
+    // the host stalled, or the callback takes longer than the interval:
+    //
+    //   - A timer fires at most once per runTimers(). Periods that passed
+    //     meanwhile are dropped, not made up: a 16 ms tick whose callback
+    //     takes 40 ms runs once every 40 ms or so, never three times in a row.
+    //   - A callback never runs inside itself or inside another timer's.
+    //   - After a late firing the next one is due one interval after the
+    //     time it should have fired, or at once if that has passed too (the
+    //     time runTimers() began is what counts as "now"). So a timer that
+    //     is always late fires on every runTimers(), and the host's loop
+    //     still returns to its events between two firings: a slow timer
+    //     delays input by one callback, it does not starve it.
+    //   - Timers are independent: one that is slow makes the others late,
+    //     but each still fires once on the next runTimers() after it is due,
+    //     in the order they were started.
+    //
+    // A callback may start and stop timers, its own included. A timer
+    // started from a callback first fires on a later runTimers().
     using TimerId = std::uint64_t;
     TimerId startTimer(Duration delay, std::function<void()> callback, bool repeat = false);
     void stopTimer(TimerId id);

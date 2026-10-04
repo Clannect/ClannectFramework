@@ -11,7 +11,13 @@
 #include "cfw/io/StandardPaths.h"
 #include "cfw/io/TemporaryDirectory.h"
 
+#include <optional>
 #include <thread>
+#include <vector>
+
+#ifndef _WIN32
+#include <sys/stat.h>
+#endif
 
 #include "cfw/test/Check.h"
 
@@ -39,6 +45,79 @@ void atomicSaveReplacesAndLeavesNoDebris() {
 
     const Result<void> noParent = writeFileAtomic(temp.path() / "missing-dir" / "x.txt", "data");
     check(!noParent.ok() && noParent.error().code() == ErrorCode::NotFound, "missing parent is NotFound");
+}
+
+// The directory this test's executable is in: in the build tree, which is
+// often on another volume than the system's temporary directory.
+Path buildDirectory() {
+    const Result<Path> self = executablePath();
+    return self ? Path(self.value().native().parent_path()) : Path();
+}
+
+bool sameVolume(const Path &a, const Path &b) {
+#ifdef _WIN32
+    return a.native().root_name() == b.native().root_name();
+#else
+    struct stat first {}, second {};
+    return ::stat(a.native().c_str(), &first) == 0 && ::stat(b.native().c_str(), &second) == 0 &&
+           first.st_dev == second.st_dev;
+#endif
+}
+
+void setTempVariables(const String &value) {
+    for (const char *name : {"TMP", "TEMP", "TMPDIR"}) {
+        check(setEnvironmentVariable(name, value), "temporary directory variable set");
+    }
+}
+
+// The atomic write keeps its temporary file beside the target, so where the
+// system's temporary directory is - another volume, or nowhere - does not matter.
+void atomicSaveDoesNotDependOnTheTempDirectory() {
+    TemporaryDirectory temp = makeTemp();
+    std::vector<Path> targets = {temp.path()};
+    // Somewhere on another volume than the temporary directory, if this
+    // machine has one that can be written: the build tree, or /dev/shm.
+    for (const Path &candidate : {buildDirectory(), Path("/dev/shm")}) {
+        if (!candidate.toString().empty() && isDirectory(candidate) && !sameVolume(candidate, temp.path())) {
+            targets.push_back(candidate);
+            break;
+        }
+    }
+    if (targets.size() == 1) {
+        std::printf("FileSystemTest: no second volume here; the cross-volume write is checked with the temp variables only\n");
+    } else {
+        std::printf("FileSystemTest: cross-volume target %s (temporary directory %s)\n", targets[1].toString().c_str(),
+                    temp.path().toString().c_str());
+    }
+    // Remembered, to put back: other tests make temporary directories.
+    const std::optional<String> saved[3] = {environmentVariable("TMP"), environmentVariable("TEMP"),
+                                            environmentVariable("TMPDIR")};
+    for (const Path &directory : targets) {
+        const Path file = directory / "cfw-atomic-test.settings";
+        const std::size_t before = listDirectory(directory).valueOr({}).size();
+        check(writeFileAtomic(file, "first").ok(), "create on the target volume");
+        // The temporary directory on the other volume, then nowhere at all.
+        setTempVariables(temp.path().toString());
+        check(writeFileAtomic(file, "second").ok(), "replace with the temporary directory elsewhere");
+        setTempVariables((temp.path() / "no-such-directory").toString());
+        check(writeFileAtomic(file, String(100000, 'x')).ok(), "replace with no usable temporary directory at all");
+        checkEqual(readFile(file).valueOr({}).size(), std::size_t(100000), "the last write is what is there");
+        checkEqual(listDirectory(directory).valueOr({}).size(), before + 1, "and no temporary file is left beside it");
+        check(removeFile(file).ok(), "cleaned up");
+    }
+    const char *names[3] = {"TMP", "TEMP", "TMPDIR"};
+    for (int i = 0; i < 3; ++i) {
+        if (saved[i]) {
+            setEnvironmentVariable(names[i], *saved[i]);
+        } else {
+#ifdef _WIN32
+            _putenv_s(names[i], ""); // an empty value removes the variable
+#else
+            unsetenv(names[i]);
+#endif
+        }
+    }
+    check(listDirectory(temp.path()).valueOr({}).empty(), "nothing was written to the temporary directory");
 }
 
 void unicodePathsWork() {
@@ -217,6 +296,7 @@ int main() {
     setsEnvironmentVariables();
     findsTheExecutable();
     atomicSaveReplacesAndLeavesNoDebris();
+    atomicSaveDoesNotDependOnTheTempDirectory();
     unicodePathsWork();
     readsEnforceLimitsAndEncoding();
     directoriesAndMetadata();

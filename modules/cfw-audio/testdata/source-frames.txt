@@ -1,0 +1,11 @@
+# frames of the source each lossy file was encoded from
+vorbis-stereo44 13230
+vorbis-mono22 8820
+vorbis-stereo48 14400
+vorbis-seek 66150
+mp3-stereo44-joint 13230
+mp3-stereo48-vbr-id3 14400
+mp3-stereo44-plain 13230
+mp3-mono22 8820
+mp3-mono8 4000
+mp3-seek 88200

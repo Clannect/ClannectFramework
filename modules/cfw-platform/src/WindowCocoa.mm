@@ -8,6 +8,18 @@
 // Command reports as Modifier::Control (so "Ctrl+S" is Command-S) and the
 // Control key as Modifier::Meta.
 //
+// Keys: a virtual key code is the key's position (kVK_ANSI_A is the key
+// left of S on every layout), so it gives KeyEvent::physicalKey; the layout's
+// key comes from the character the key types without modifiers. Relative
+// mouse mode detaches the cursor from the mouse
+// (CGAssociateMouseAndMouseCursorPosition) and reports each event's deltaX
+// and deltaY, which on macOS are after the system's pointer acceleration:
+// AppKit has no unaccelerated mouse movement short of reading the HID device.
+// There is no touch screen to report, and no cursor confinement.
+//
+// UNVERIFIED on a Mac: these additions (relative mode, physical keys) have
+// not been compiled or run; see docs/decisions/0016.
+//
 // Built with ARC. Threads: AppKit is main-thread only; wakeUp() is the
 // exception (postEvent:atStart: is safe from any thread).
 
@@ -182,6 +194,57 @@ Key keyOf(unsigned short code) {
     }
 }
 
+// The key by position, with the modifier keys by side. (Command is reported
+// as Control and Control as Meta throughout; see the top of the file.)
+Key physicalKeyOf(unsigned short code) {
+    switch (code) {
+    case kVK_Shift: return Key::LeftShift;
+    case kVK_RightShift: return Key::RightShift;
+    case kVK_Command: return Key::LeftControl;
+    case kVK_RightCommand: return Key::RightControl;
+    case kVK_Option: return Key::LeftAlt;
+    case kVK_RightOption: return Key::RightAlt;
+    case kVK_Control: return Key::LeftMeta;
+    case kVK_RightControl: return Key::RightMeta;
+    default: return keyOf(code);
+    }
+}
+
+// The key the layout produces: from the character the key types with no
+// modifier but Shift. Keys that type nothing (arrows, function keys), and
+// characters with no Key, are the key at that position.
+Key layoutKeyOf(NSEvent *event) {
+    const Key byPosition = keyOf([event keyCode]);
+    NSString *characters = [event charactersIgnoringModifiers];
+    if ([characters length] != 1) {
+        return byPosition;
+    }
+    const unichar c = [characters characterAtIndex:0];
+    if (c >= 'a' && c <= 'z') {
+        return static_cast<Key>(static_cast<unsigned>(Key::A) + unsigned(c - 'a'));
+    }
+    if (c >= 'A' && c <= 'Z') {
+        return static_cast<Key>(static_cast<unsigned>(Key::A) + unsigned(c - 'A'));
+    }
+    if (c >= '0' && c <= '9') {
+        return static_cast<Key>(static_cast<unsigned>(Key::Digit0) + unsigned(c - '0'));
+    }
+    switch (c) {
+    case '`': case '~': return Key::Backquote;
+    case '-': case '_': return Key::Minus;
+    case '=': case '+': return Key::Equal;
+    case '[': case '{': return Key::BracketLeft;
+    case ']': case '}': return Key::BracketRight;
+    case '\\': case '|': return Key::Backslash;
+    case ';': case ':': return Key::Semicolon;
+    case '\'': case '"': return Key::Quote;
+    case ',': case '<': return Key::Comma;
+    case '.': case '>': return Key::Period;
+    case '/': case '?': return Key::Slash;
+    default: return byPosition;
+    }
+}
+
 Modifier modifiersOf(NSEventModifierFlags flags) {
     Modifier m = Modifier::None;
     if (flags & NSEventModifierFlagShift) m = m | Modifier::Shift;
@@ -273,6 +336,9 @@ public:
     ~WindowCocoa() override {
         auto &list = windows();
         list.erase(std::remove(list.begin(), list.end(), this), list.end());
+        if (m_relative) {
+            CGAssociateMouseAndMouseCursorPosition(true);
+        }
         if (m_cursorHidden) {
             [NSCursor unhide];
         }
@@ -354,8 +420,25 @@ public:
         applyCursor();
     }
 
+    // The cursor detached from the mouse and hidden: it stays where it is
+    // while every mouse event still carries how far the mouse moved.
+    void setRelativeMouse(bool relative) override {
+        if (relative == m_relative || (relative && ![m_window isKeyWindow])) {
+            return;
+        }
+        m_relative = relative;
+        if (relative) {
+            const NSPoint p = [m_view convertPoint:[m_window mouseLocationOutsideOfEventStream] fromView:nil];
+            m_relativeAnchor = {float(p.x), float(p.y)};
+        }
+        CGAssociateMouseAndMouseCursorPosition(!relative);
+        applyCursor();
+        relativeMouseChanged.emit(relative);
+    }
+    bool isRelativeMouse() const override { return m_relative; }
+
     void applyCursor() {
-        const bool hide = m_cursor == Cursor::Hidden;
+        const bool hide = m_relative || m_cursor == Cursor::Hidden;
         if (hide != m_cursorHidden) {
             if (hide) {
                 [NSCursor hide];
@@ -494,7 +577,14 @@ public:
     void mouse(NSEvent *event, PointerEvent::Type type, PointerButton button) {
         PointerEvent e;
         e.type = type;
-        e.position = logical(event);
+        e.position = m_relative ? m_relativeAnchor : logical(event);
+        if (m_relative && type == PointerEvent::Type::Move) {
+            // Down is positive in both; nothing to report for a zero move.
+            e.delta = {float([event deltaX]), float([event deltaY])};
+            if (e.delta.x == 0.0f && e.delta.y == 0.0f) {
+                return;
+            }
+        }
         e.button = button;
         e.modifiers = modifiersOf([event modifierFlags]);
         if (type == PointerEvent::Type::Press) {
@@ -531,7 +621,8 @@ public:
     void keyDown(NSEvent *event) {
         KeyEvent e;
         e.type = KeyEvent::Type::Press;
-        e.key = keyOf([event keyCode]);
+        e.key = layoutKeyOf(event);
+        e.physicalKey = physicalKeyOf([event keyCode]);
         e.modifiers = modifiersOf([event modifierFlags]);
         e.repeat = [event isARepeat];
         key.emit(e);
@@ -550,7 +641,8 @@ public:
     void keyUp(NSEvent *event) {
         KeyEvent e;
         e.type = KeyEvent::Type::Release;
-        e.key = keyOf([event keyCode]);
+        e.key = layoutKeyOf(event);
+        e.physicalKey = physicalKeyOf([event keyCode]);
         e.modifiers = modifiersOf([event modifierFlags]);
         key.emit(e);
     }
@@ -563,6 +655,7 @@ public:
         KeyEvent e;
         e.type = ([event modifierFlags] & flag) ? KeyEvent::Type::Press : KeyEvent::Type::Release;
         e.key = keyOf([event keyCode]);
+        e.physicalKey = physicalKeyOf([event keyCode]);
         e.modifiers = modifiersOf([event modifierFlags]);
         key.emit(e);
     }
@@ -630,7 +723,13 @@ public:
         return handleDrop(e);
     }
 
-    void focus(bool focused) { focusChanged.emit(focused); }
+    void focus(bool focused) {
+        // The mouse goes back to the user with the focus.
+        if (!focused && m_relative) {
+            setRelativeMouse(false);
+        }
+        focusChanged.emit(focused);
+    }
     void close() { closeRequested.emit(); }
 
     // processEvents(), after the queue is drained.
@@ -660,6 +759,8 @@ private:
     Vec2i m_frameSize;
     CGImageRef m_image = nullptr;
     Cursor m_cursor = Cursor::Arrow;
+    bool m_relative = false;
+    Vec2 m_relativeAnchor;
     bool m_cursorHidden = false;
     bool m_repaint = true;
     bool m_fullScreen = false;           // asked for

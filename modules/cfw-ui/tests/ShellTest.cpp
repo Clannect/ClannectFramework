@@ -104,6 +104,93 @@ void timers() {
     checkEqual(second, 10, "the timer started in a callback runs next time");
 }
 
+// What a repeating timer does when it cannot keep up (documented in
+// Surface.h): the engine runs a 16 ms tick and a 33 ms brush timer here.
+void slowTimers() {
+    FakeClock clock;
+    Surface surface;
+    surface.clock = [&clock] { return clock.time; };
+    const TimePoint start = clock.time;
+    const auto ms = [](int n) { return Duration(std::chrono::milliseconds(n)); };
+
+    int ticks = 0, brushes = 0, depth = 0, deepest = 0;
+    std::vector<int> order;
+    Duration tickCost = ms(0);
+    surface.startTimer(ms(16), [&] {
+        deepest = std::max(deepest, ++depth);
+        ++ticks;
+        order.push_back(16);
+        clock.advance(tickCost); // the callback takes this long
+        --depth;
+    }, true);
+    surface.startTimer(ms(33), [&] {
+        deepest = std::max(deepest, ++depth);
+        ++brushes;
+        order.push_back(33);
+        --depth;
+    }, true);
+
+    // Keeping up, but always a little late: the grid does not drift.
+    for (int frame = 1; frame <= 10; ++frame) {
+        clock.time = start + ms(16 * frame + 5);
+        surface.runTimers();
+    }
+    checkEqual(ticks, 10, "a timer served a little late each time still fires once per period");
+    check(surface.nextTimer() == start + ms(16 * 11), "and stays on its grid: the lateness does not add up");
+    checkEqual(brushes, 5, "the 33 ms timer fired for 33, 66, 99, 132 and 165");
+
+    // The host stalls for a second: the missed periods are dropped.
+    clock.time = start + ms(1200);
+    surface.runTimers();
+    checkEqual(ticks, 11, "after a stall a timer fires once, not once per missed period");
+    checkEqual(brushes, 6, "each of them");
+    check(surface.nextTimer() == clock.time, "a timer that missed its next time too is due at once");
+
+    // The tick's callback takes 40 ms, more than twice its interval.
+    tickCost = ms(40);
+    ticks = brushes = 0;
+    order.clear();
+    for (int pass = 0; pass < 5; ++pass) {
+        surface.runTimers(); // the host comes straight back: its other work takes no time here
+    }
+    checkEqual(ticks, 5, "a callback slower than its interval runs once per runTimers()");
+    checkEqual(deepest, 1, "and never inside itself or another timer");
+    check(surface.nextTimer().has_value() && *surface.nextTimer() <= clock.time,
+          "it is due again at once, so the host does not sleep - but it does get its turn");
+    // 200 ms passed in those five passes: the brush timer was due in each.
+    checkEqual(brushes, 5, "the other timer is made late, but still fires once on each pass it is due");
+    check(order == std::vector<int>({16, 33, 16, 33, 16, 33, 16, 33, 16, 33}), "in the order the timers were started");
+
+    // The callback gets fast again. The firing that was late is followed by
+    // one more at once (its next time had passed too); then the tick is on a
+    // 16 ms grid again, counted from now.
+    tickCost = ms(0);
+    surface.runTimers();
+    check(surface.nextTimer() == clock.time, "the late firing's successor is due at once");
+    surface.runTimers();
+    check(surface.nextTimer() == clock.time + ms(16), "and after it the next firing is one interval on");
+    ticks = 0;
+    clock.advance(ms(15));
+    surface.runTimers();
+    checkEqual(ticks, 0, "not before");
+    clock.advance(ms(1));
+    surface.runTimers();
+    checkEqual(ticks, 1, "then");
+
+    // A repeating timer that stops itself from its own slow callback.
+    Surface::TimerId self = 0;
+    int runs = 0;
+    self = surface.startTimer(ms(10), [&] {
+        ++runs;
+        clock.advance(ms(50));
+        surface.stopTimer(self);
+    }, true);
+    clock.advance(ms(10));
+    surface.runTimers();
+    surface.runTimers();
+    checkEqual(runs, 1, "a timer stopped from its own callback does not fire again, however late it was");
+}
+
 void shortcuts() {
     Surface surface;
     surface.setSize({300, 200});
@@ -259,6 +346,7 @@ void cursors() {
 int main() {
     keyChords();
     timers();
+    slowTimers();
     shortcuts();
     modalPopups();
     toolTips();

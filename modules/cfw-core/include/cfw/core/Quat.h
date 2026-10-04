@@ -31,7 +31,13 @@ struct Quat {
     [[nodiscard]] static Quat fromEulerDegrees(Vec3 pitchYawRoll) noexcept;
     // Rotation matrix to quaternion. `m` must be orthonormal.
     [[nodiscard]] static Quat fromRotationMatrix(const Mat3 &m) noexcept;
-    // Rotation whose columns are the given orthonormal axes.
+    // Rotation whose columns are the given orthonormal axes: the inverse of
+    // toRotationMatrix(). Axes that are orthonormal only as far as float
+    // arithmetic made them (normalised vectors and their cross products)
+    // give a unit quaternion to within 2e-6, whose matrix gives the axes
+    // back to within 3e-6. Axes that are further off give a quaternion that
+    // is off by about as much and is not normalised: normalise the axes, or
+    // the result.
     [[nodiscard]] static Quat fromAxes(Vec3 xAxis, Vec3 yAxis, Vec3 zAxis) noexcept;
     // Rotation mapping +Z to `direction`, keeping `up` as close to +Y as
     // possible. Zero direction gives the identity; `up` collinear with the
@@ -43,7 +49,10 @@ struct Quat {
     [[nodiscard]] static Quat slerp(Quat a, Quat b, float t) noexcept;
 
     // (pitch, yaw, roll) in degrees; inverse of fromEulerDegrees. At gimbal lock
-    // (pitch = ±90°) roll is reported as 0 and folded into yaw.
+    // (pitch = ±90°) roll is reported as 0 and folded into yaw. Away from it
+    // the angles round-trip: pitch within ±90 comes back to a hundredth of a
+    // degree (up to 89°), yaw and roll likewise, in (-180, 180]. Angles
+    // outside those ranges come back as the same rotation inside them.
     [[nodiscard]] Vec3 toEulerDegrees() const noexcept;
     [[nodiscard]] Mat3 toRotationMatrix() const noexcept;
 

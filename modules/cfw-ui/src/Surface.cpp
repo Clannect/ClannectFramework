@@ -596,6 +596,28 @@ bool Surface::dispatch(const PointerEvent &event) {
     const AccessibleFocusWatch watch(*this);
     m_closed.clear();
     layout();
+    if (event.type == PointerEvent::Type::Cancel) {
+        // A touch the system took away: the press ends, but as a release
+        // somewhere else would, so nothing is clicked. The pressed element
+        // is told through an ordinary Release while it is not hovered.
+        hideToolTip();
+        m_pointerInside = false;
+        setHovered(nullptr);
+        bool handled = false;
+        if (Element *released = m_pressed) {
+            PointerEvent release = event;
+            release.type = PointerEvent::Type::Release;
+            release.button = PointerButton::Left;
+            for (Element *e = released; e && !handled; e = e->parent()) {
+                handled = e->onPointer(release);
+            }
+            if (m_pressed == released) {
+                m_pressed = nullptr;
+                released->onPressedChanged(false);
+            }
+        }
+        return handled;
+    }
     if (event.type == PointerEvent::Type::Leave) {
         m_pointerInside = false;
     } else {

@@ -31,6 +31,17 @@ inline constexpr std::size_t kDefaultMaxFileBytes = 256u * 1024u * 1024u;
 // in the same directory, is flushed to the disk, and is then renamed over the
 // target. A crash, power loss or full disk at any point leaves either the old
 // file or the new one, never a truncated mix. The parent directory must exist.
+//
+// The temporary file is the target's sibling ("<name>.cfw-tmp-<random>"),
+// never a file in the system's temporary directory: the final rename stays
+// inside one directory, so it is atomic wherever the target is, including a
+// volume other than the one that holds the temporary directory (a project on
+// D: with TEMP on C:, a save on a USB stick, a network share). The system's
+// temporary directory is not used and need not exist. An interrupted write
+// can leave the sibling behind; it is never mistaken for the file.
+//
+// A target that is a symbolic link is replaced by a regular file: the link
+// itself is renamed over, not followed.
 [[nodiscard]] Result<void> writeFileAtomic(const Path &path, Span<const std::byte> data);
 [[nodiscard]] Result<void> writeFileAtomic(const Path &path, StringView text);
 

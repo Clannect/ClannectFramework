@@ -2,7 +2,17 @@
 // XPutImage presentation, Xft.dpi for the scale, and the CLIPBOARD
 // selection (ICCCM: TARGETS, UTF8_STRING, STRING; INCR when reading), and
 // file drops (XDND version 5, text/uri-list).
+//
+// Relative mouse mode and touch are the X Input extension, version 2: raw
+// motion events (the mouse's own movement, before acceleration) while the
+// pointer is grabbed and hidden, and touch events with an id per finger.
+// libXi is loaded at run time with dlopen and its few structures are
+// declared here, so CFW builds without its headers and runs without it
+// (then relative mode is refused and touch arrives as the mouse the server
+// emulates). A key's position comes from the name XKB gives its key code
+// (see KeyCodes.h).
 
+#include <dlfcn.h>
 #include <langinfo.h>
 #include <locale.h>
 #include <poll.h>
@@ -18,6 +28,7 @@
 #include <optional>
 #include <vector>
 
+#include "KeyCodes.h"
 #include "PixelCopy.h"
 #include "Preedit.h"
 #include "X11Internal.h"
@@ -31,6 +42,7 @@ namespace cfw::x11 {
 constexpr Modifier kNoModifier = Modifier::None;
 } // namespace cfw::x11
 
+#include <X11/XKBlib.h>
 #include <X11/Xatom.h>
 #include <X11/Xlib.h>
 #include <X11/Xresource.h>
@@ -44,8 +56,79 @@ namespace {
 
 class WindowX11;
 
+// The parts of <X11/extensions/XInput2.h> used here.
+namespace xi2 {
+constexpr int kAllMasterDevices = 1;
+constexpr int kRawMotion = 17;
+constexpr int kTouchBegin = 18;
+constexpr int kTouchUpdate = 19;
+constexpr int kTouchEnd = 20;
+constexpr int kTouchEmulatingPointer = 1 << 17;
+struct EventMask {
+    int deviceid;
+    int mask_len;
+    unsigned char *mask;
+};
+struct ValuatorState {
+    int mask_len;
+    unsigned char *mask;
+    double *values;
+};
+struct RawEvent {
+    int type;
+    unsigned long serial;
+    Bool send_event;
+    Display *display;
+    int extension;
+    int evtype;
+    Time time;
+    int deviceid;
+    int sourceid;
+    int detail;
+    int flags;
+    ValuatorState valuators;
+    double *raw_values;
+};
+struct ButtonState {
+    int mask_len;
+    unsigned char *mask;
+};
+struct ModifierState {
+    int base, latched, locked, effective;
+};
+struct DeviceEvent {
+    int type;
+    unsigned long serial;
+    Bool send_event;
+    Display *display;
+    int extension;
+    int evtype;
+    Time time;
+    int deviceid;
+    int sourceid;
+    int detail;
+    ::Window root;
+    ::Window event;
+    ::Window child;
+    double root_x, root_y;
+    double event_x, event_y;
+    int flags;
+    ButtonState buttons;
+    ValuatorState valuators;
+    ModifierState mods;
+    ModifierState group;
+};
+} // namespace xi2
+
 struct X11Connection {
     Display *display = nullptr;
+    // XInput 2, when the server has it and libXi is installed.
+    int xiOpcode = 0;
+    bool xiRaw = false;   // version 2.0: raw motion
+    bool xiTouch = false; // version 2.2: touch
+    int (*xiSelectEvents)(Display *, ::Window, xi2::EventMask *, int) = nullptr;
+    WindowX11 *relativeWindow = nullptr; // the window in relative mouse mode
+    Key physicalKeys[256] = {};          // key code to the key at that position
     XIM im = nullptr;
     Atom deleteWindow = 0;
     Atom netWmName = 0;
@@ -118,6 +201,37 @@ bool connect() {
     c.uriList = XInternAtom(c.display, "text/uri-list", False);
     c.dropProperty = XInternAtom(c.display, "CFW_DROP", False);
     c.im = XOpenIM(c.display, nullptr, nullptr, nullptr);
+    // Keys by position: from the names XKB gives the key codes, or, on a
+    // server without them, taking the codes to be the kernel's plus 8.
+    bool named = false;
+    if (XkbDescPtr keyboard = XkbGetMap(c.display, 0, XkbUseCoreKbd)) {
+        if (XkbGetNames(c.display, XkbKeyNamesMask, keyboard) == Success && keyboard->names && keyboard->names->keys) {
+            for (int code = keyboard->min_key_code; code <= keyboard->max_key_code && code < 256; ++code) {
+                const char *name = keyboard->names->keys[code].name;
+                c.physicalKeys[code] = detail::physicalKeyFromXkbName(StringView(name, strnlen(name, XkbKeyNameLength)));
+                named = named || c.physicalKeys[code] != Key::Unknown;
+            }
+        }
+        XkbFreeKeyboard(keyboard, 0, True);
+    }
+    for (unsigned code = 8; !named && code < 256; ++code) {
+        c.physicalKeys[code] = detail::physicalKeyFromEvdev(code - 8);
+    }
+    int firstEvent = 0, firstError = 0;
+    if (XQueryExtension(c.display, "XInputExtension", &c.xiOpcode, &firstEvent, &firstError)) {
+        // Never dlclose'd: Xlib keeps the extension's hooks for the display's life.
+        if (void *library = dlopen("libXi.so.6", RTLD_NOW | RTLD_LOCAL)) {
+            const auto queryVersion =
+                reinterpret_cast<int (*)(Display *, int *, int *)>(dlsym(library, "XIQueryVersion"));
+            c.xiSelectEvents =
+                reinterpret_cast<int (*)(Display *, ::Window, xi2::EventMask *, int)>(dlsym(library, "XISelectEvents"));
+            int major = 2, minor = 2;
+            if (queryVersion && c.xiSelectEvents && queryVersion(c.display, &major, &minor) == Success) {
+                c.xiRaw = major >= 2;
+                c.xiTouch = major > 2 || (major == 2 && minor >= 2);
+            }
+        }
+    }
     if (::pipe(c.wakePipe) != 0) {
         c.wakePipe[0] = c.wakePipe[1] = -1;
     }
@@ -223,7 +337,149 @@ public:
     WindowX11(::Window window, float scale, Vec2i size) : m_window(window), m_ic(nullptr), m_scale(scale), m_size(size) {
         connection().windows[window] = this;
         createInputContext();
+        // Every finger on the window, each with its id (XInput 2.2).
+        X11Connection &c = connection();
+        if (c.xiTouch) {
+            unsigned char bits[4] = {};
+            for (const int type : {xi2::kTouchBegin, xi2::kTouchUpdate, xi2::kTouchEnd}) {
+                bits[type >> 3] = static_cast<unsigned char>(bits[type >> 3] | (1 << (type & 7)));
+            }
+            xi2::EventMask mask{xi2::kAllMasterDevices, int(sizeof bits), bits};
+            c.xiSelectEvents(c.display, m_window, &mask, 1);
+        }
     }
+
+    // Raw motion is selected on the root window, and only while a window is
+    // in relative mode: the server then sends every mouse movement.
+    static void selectRawMotion(bool on) {
+        X11Connection &c = connection();
+        unsigned char bits[4] = {};
+        if (on) {
+            bits[xi2::kRawMotion >> 3] = static_cast<unsigned char>(1 << (xi2::kRawMotion & 7));
+        }
+        xi2::EventMask mask{xi2::kAllMasterDevices, int(sizeof bits), bits};
+        c.xiSelectEvents(c.display, DefaultRootWindow(c.display), &mask, 1);
+    }
+
+    ::Cursor invisibleCursor() {
+        auto it = m_cursors.find(~0u);
+        if (it == m_cursors.end()) {
+            Display *display = connection().display;
+            static const char empty[1] = {0};
+            const Pixmap blank = XCreateBitmapFromData(display, m_window, empty, 1, 1);
+            XColor black{};
+            it = m_cursors.emplace(~0u, XCreatePixmapCursor(display, blank, blank, &black, &black, 0, 0)).first;
+            XFreePixmap(display, blank);
+        }
+        return it->second;
+    }
+
+    // Grabs the pointer into the window, hidden (relative mode) or as it is
+    // (confined). False if another client holds it.
+    bool grabPointer(bool hidden) {
+        Display *display = connection().display;
+        const int result =
+            XGrabPointer(display, m_window, True, ButtonPressMask | ButtonReleaseMask | PointerMotionMask, GrabModeAsync,
+                         GrabModeAsync, m_window, hidden ? invisibleCursor() : ::Cursor(0), CurrentTime);
+        XFlush(display);
+        return result == GrabSuccess;
+    }
+
+    // The pointer grabbed into the window with an invisible cursor, and raw
+    // motion events for its movement. The real pointer still moves under the
+    // grab (X cannot hold it still), so it is put back where it was when the
+    // mode ends, and its position is not reported meanwhile.
+    void setRelativeMouse(bool relative) override {
+        X11Connection &c = connection();
+        if (relative == m_relative) {
+            return;
+        }
+        if (relative) {
+            if (!c.xiRaw || !m_focused || c.relativeWindow || !grabPointer(true)) {
+                return;
+            }
+            ::Window root = 0, child = 0;
+            int rootX = 0, rootY = 0, x = 0, y = 0;
+            unsigned mask = 0;
+            XQueryPointer(c.display, m_window, &root, &child, &rootX, &rootY, &x, &y, &mask);
+            m_relativeAnchor = {x, y};
+            m_rawPending = false;
+            selectRawMotion(true);
+            c.relativeWindow = this;
+        } else {
+            selectRawMotion(false);
+            c.relativeWindow = nullptr;
+            XWarpPointer(c.display, 0, m_window, 0, 0, 0, 0, m_relativeAnchor.x, m_relativeAnchor.y);
+            XUngrabPointer(c.display, CurrentTime);
+            if (m_confined && m_focused) {
+                grabPointer(false);
+            }
+        }
+        XFlush(c.display);
+        m_relative = relative;
+        relativeMouseChanged.emit(relative);
+    }
+    bool isRelativeMouse() const override { return m_relative; }
+
+    void setCursorConfined(bool confined) override {
+        m_confined = confined;
+        if (m_relative || !m_focused) {
+            return; // applied when relative mode ends, or the focus comes
+        }
+        if (confined) {
+            grabPointer(false);
+        } else {
+            XUngrabPointer(connection().display, CurrentTime);
+            XFlush(connection().display);
+        }
+    }
+    bool isCursorConfined() const override { return m_confined; }
+
+    // One XInput 2 event for this window.
+    void rawMotion(const xi2::RawEvent &raw) {
+        // The valuators present are flagged in the mask; their values follow
+        // in order. Axis 0 is x, axis 1 is y; raw_values are before acceleration.
+        Vec2 delta;
+        const double *value = raw.raw_values;
+        for (int axis = 0; axis < raw.valuators.mask_len * 8; ++axis) {
+            if (raw.valuators.mask[axis >> 3] & (1 << (axis & 7))) {
+                if (axis == 0) {
+                    delta.x = float(*value);
+                } else if (axis == 1) {
+                    delta.y = float(*value);
+                }
+                ++value;
+            }
+        }
+        // A server delivers each raw event twice to the client that holds the
+        // pointer grab (once for the grab, once for the selection on the
+        // root): the second of two identical events in a row is that copy.
+        // A server that does not would show an event with no copy after it,
+        // and from then on nothing is dropped.
+        if (m_rawPairs) {
+            const bool same = m_rawPending && raw.time == m_rawTime && raw.sourceid == m_rawSource && delta == m_rawDelta;
+            if (same) {
+                m_rawPending = false;
+                return;
+            }
+            if (m_rawPending) {
+                m_rawPairs = false; // the event before had no copy
+            }
+            m_rawPending = true;
+            m_rawTime = raw.time;
+            m_rawSource = raw.sourceid;
+            m_rawDelta = delta;
+        }
+        if (delta.x == 0.0f && delta.y == 0.0f) {
+            return;
+        }
+        PointerEvent e;
+        e.type = PointerEvent::Type::Move;
+        e.position = logical(m_relativeAnchor.x, m_relativeAnchor.y);
+        e.delta = delta;
+        pointer.emit(e);
+    }
+    void touchEvent(const xi2::DeviceEvent &device);
 
     // Xlib keeps every callback as an XIMProc and calls it with the types
     // the callback is registered for; the cast through void(*)() says so.
@@ -297,6 +553,13 @@ public:
 
     ~WindowX11() override {
         X11Connection &c = connection();
+        if (m_relative) {
+            selectRawMotion(false);
+            c.relativeWindow = nullptr;
+        }
+        if (m_relative || m_confined) {
+            XUngrabPointer(c.display, CurrentTime);
+        }
         c.windows.erase(m_window);
         if (m_ic) {
             XDestroyIC(m_ic);
@@ -403,13 +666,7 @@ public:
     void setCursor(Cursor cursor) override {
         Display *display = connection().display;
         if (cursor == Cursor::Hidden) {
-            static const char empty[1] = {0};
-            const Pixmap blank = XCreateBitmapFromData(display, m_window, empty, 1, 1);
-            XColor black{};
-            const ::Cursor invisible = XCreatePixmapCursor(display, blank, blank, &black, &black, 0, 0);
-            XFreePixmap(display, blank);
-            XDefineCursor(display, m_window, invisible);
-            m_cursors.emplace(~0u, invisible);
+            XDefineCursor(display, m_window, invisibleCursor());
             return;
         }
         const unsigned shape = cursorShape(cursor);
@@ -539,6 +796,15 @@ private:
     Vec2i m_frameSize;
     bool m_repaint = false;
     bool m_fullScreen = false;
+    bool m_relative = false;
+    bool m_confined = false;
+    Vec2i m_relativeAnchor; // where the pointer was, in the window's pixels
+    // Telling a raw event from the server's second copy of it (see rawMotion).
+    bool m_rawPairs = true;
+    bool m_rawPending = false;
+    Time m_rawTime = 0;
+    int m_rawSource = 0;
+    Vec2 m_rawDelta;
     std::map<unsigned, ::Cursor> m_cursors;
     // The drag over the window (XDND), if any.
     ::Window m_dndSource = 0;
@@ -589,14 +855,27 @@ void WindowX11::handle(XEvent &event) {
     case FocusIn:
         m_focused = true;
         if (m_ic && m_textInput) XSetICFocus(m_ic);
+        if (m_confined && !m_relative) {
+            grabPointer(false); // a confined cursor is confined again
+        }
         focusChanged.emit(true);
         break;
     case FocusOut:
+        // The mouse goes back to the user with the focus.
+        if (m_relative) {
+            setRelativeMouse(false);
+        }
         m_focused = false;
+        if (m_confined) {
+            XUngrabPointer(display, CurrentTime);
+        }
         if (m_ic) XUnsetICFocus(m_ic);
         focusChanged.emit(false);
         break;
     case MotionNotify: {
+        if (m_relative) {
+            break; // movement arrives as raw motion; the pointer's place is not reported
+        }
         PointerEvent e;
         e.type = PointerEvent::Type::Move;
         e.position = logical(event.xmotion.x, event.xmotion.y);
@@ -605,6 +884,11 @@ void WindowX11::handle(XEvent &event) {
         break;
     }
     case LeaveNotify: {
+        // Not the crossings a grab makes (taking or releasing the pointer
+        // for relative mode or confinement): the pointer did not leave.
+        if (event.xcrossing.mode != NotifyNormal) {
+            break;
+        }
         PointerEvent e;
         e.type = PointerEvent::Type::Leave;
         e.position = logical(event.xcrossing.x, event.xcrossing.y);
@@ -615,7 +899,7 @@ void WindowX11::handle(XEvent &event) {
     case ButtonRelease: {
         const XButtonEvent &b = event.xbutton;
         PointerEvent e;
-        e.position = logical(b.x, b.y);
+        e.position = m_relative ? logical(m_relativeAnchor.x, m_relativeAnchor.y) : logical(b.x, b.y);
         e.modifiers = modifiersOf(b.state);
         if (b.button >= 4 && b.button <= 7) {
             if (event.type == ButtonPress) {
@@ -666,6 +950,7 @@ void WindowX11::handle(XEvent &event) {
             sym = XLookupKeysym(&k, 0);
         }
         e.key = keyOf(sym);
+        e.physicalKey = connection().physicalKeys[k.keycode & 0xFF];
         if (event.type == KeyRelease && XEventsQueued(display, QueuedAfterReading)) {
             // Auto-repeat arrives as release+press with the same time.
             XEvent next;
@@ -687,6 +972,21 @@ void WindowX11::handle(XEvent &event) {
     default:
         break;
     }
+}
+
+// A finger down, moving or up (XInput 2.2). The server marks the finger it
+// would have turned into the core pointer: that one is the primary contact.
+void WindowX11::touchEvent(const xi2::DeviceEvent &device) {
+    PointerEvent e;
+    e.kind = PointerKind::Touch;
+    e.id = std::uint32_t(device.detail);
+    e.primary = (device.flags & xi2::kTouchEmulatingPointer) != 0;
+    e.position = {float(device.event_x) / m_scale, float(device.event_y) / m_scale};
+    e.modifiers = modifiersOf(unsigned(device.mods.effective));
+    e.type = device.evtype == xi2::kTouchBegin ? PointerEvent::Type::Press
+           : device.evtype == xi2::kTouchEnd   ? PointerEvent::Type::Release
+                                               : PointerEvent::Type::Move;
+    deliverTouch(e);
 }
 
 void WindowX11::sendXdnd(::Window to, Atom type, long l1, long l2, long l3, long l4) {
@@ -1080,6 +1380,23 @@ bool processEvents(Duration maxWait) {
     while (XPending(display)) {
         XEvent event;
         XNextEvent(display, &event);
+        // XInput 2 events come as generic events whose data is fetched apart.
+        if (event.type == GenericEvent && event.xcookie.extension == c.xiOpcode && c.xiSelectEvents &&
+            XGetEventData(display, &event.xcookie)) {
+            if (event.xcookie.evtype == xi2::kRawMotion) {
+                if (c.relativeWindow) {
+                    c.relativeWindow->rawMotion(*static_cast<const xi2::RawEvent *>(event.xcookie.data));
+                }
+            } else if (event.xcookie.evtype >= xi2::kTouchBegin && event.xcookie.evtype <= xi2::kTouchEnd) {
+                const auto *device = static_cast<const xi2::DeviceEvent *>(event.xcookie.data);
+                const auto found = c.windows.find(device->event);
+                if (found != c.windows.end()) {
+                    found->second->touchEvent(*device);
+                }
+            }
+            XFreeEventData(display, &event.xcookie);
+            continue;
+        }
         if (XFilterEvent(&event, None)) {
             continue; // consumed by the input method
         }

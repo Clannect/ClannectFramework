@@ -3,7 +3,13 @@
 // produced by the Qt build of the engine (QQuaternion / QMatrix4x4, Qt 6.8.3)
 // and are pinned here, so the conventions survive after Qt is gone.
 
+#include <algorithm>
+#include <cmath>
+#include <cstdint>
+
+#include "cfw/core/Mat3.h"
 #include "cfw/core/Mat4.h"
+#include "cfw/core/MathUtil.h"
 #include "cfw/core/Quat.h"
 
 #include "cfw/test/Check.h"
@@ -96,6 +102,112 @@ void matrixRoundTrip() {
     checkQuat(Quat::fromRotationMatrix(flipped.toRotationMatrix()), flipped, "large-angle matrix round-trip");
 }
 
+// A small deterministic generator: the same rotations on every run.
+struct Random {
+    std::uint32_t state = 0x2545F491u;
+    float unit() { // 0 to 1
+        state = state * 1664525u + 1013904223u;
+        return float(state >> 8) / 16777216.0f;
+    }
+    float between(float low, float high) { return low + (high - low) * unit(); }
+};
+
+float lengthOf(Quat q) { return std::sqrt(q.lengthSquared()); }
+
+// The engine builds CFrames from three axes that are orthonormal only as far
+// as float arithmetic made them: fromAxes must give the rotation they
+// describe, as a unit quaternion, and give the axes back.
+void axesRoundTripThroughQuaternions() {
+    Random random;
+    float worstAxis = 0.0f, worstLength = 0.0f;
+    bool sameRotation = true;
+    const auto roundTrip = [&](Quat q) {
+        // Axes as a camera or a CFrame computes them: a normalised look
+        // direction, the right vector from a cross product, the up vector
+        // from another. Each step rounds.
+        const Vec3 z = q.rotate({0, 0, 1}).normalized();
+        const Vec3 x = q.rotate({0, 1, 0}).cross(z).normalized();
+        const Vec3 y = z.cross(x);
+        const Quat back = Quat::fromAxes(x, y, z);
+        sameRotation = sameRotation && nearlyEqual(back, q, 1e-5f);
+        worstLength = std::max(worstLength, std::abs(lengthOf(back) - 1.0f));
+        const Mat3 m = back.toRotationMatrix();
+        for (int c = 0; c < 3; ++c) {
+            const Vec3 d = m.column(c) - (c == 0 ? x : c == 1 ? y : z);
+            worstAxis = std::max({worstAxis, std::abs(d.x), std::abs(d.y), std::abs(d.z)});
+        }
+    };
+    for (int i = 0; i < 20000; ++i) {
+        roundTrip(Quat::fromAxisAngle({random.between(-1, 1), random.between(-1, 1), random.between(-1, 1)},
+                                      random.between(-180, 180)));
+    }
+    // The conversion picks one of four formulas by the matrix's diagonal;
+    // half turns about each axis, and rotations a hair away from them, sit
+    // on the borders between the four.
+    for (const Vec3 axis : {Vec3{1, 0, 0}, Vec3{0, 1, 0}, Vec3{0, 0, 1}, Vec3{1, 1, 0}, Vec3{0, 1, 1}, Vec3{1, 0, 1}, Vec3{1, 1, 1}}) {
+        for (const float degrees : {180.0f, 179.999f, -179.999f, 179.9f, 120.0f, 90.0f, 0.0f, 1e-3f}) {
+            roundTrip(Quat::fromAxisAngle(axis, degrees));
+        }
+    }
+    check(sameRotation, "fromAxes gives the rotation the axes describe (20,000 random and the borderline ones)");
+    check(worstLength < 2e-6f, "as a unit quaternion");
+    check(worstAxis < 3e-6f, "whose matrix gives the axes back");
+    if (!(worstLength < 2e-6f) || !(worstAxis < 3e-6f)) {
+        std::printf("      worst length error %g, worst axis error %g\n", double(worstLength), double(worstAxis));
+    }
+
+    // Axes that are off by more than rounding (a matrix multiplied a few
+    // hundred times without re-orthonormalising): still the nearest rotation
+    // to within the size of the error, and no NaN.
+    const Quat q = Quat::fromEulerDegrees({25, -130, 70});
+    const Mat3 exact = q.toRotationMatrix();
+    const Vec3 x = exact.column(0) * 1.0002f + exact.column(1) * 0.0003f;
+    const Vec3 y = exact.column(1) * 0.9997f;
+    const Vec3 z = exact.column(2) * 1.0001f - exact.column(0) * 0.0002f;
+    const Quat drifted = Quat::fromAxes(x, y, z);
+    check(drifted.w == drifted.w && nearlyEqual(drifted.normalized(), q, 5e-4f),
+          "axes a few parts in ten thousand off still give the rotation, to that accuracy");
+    // The identity's axes, exactly: the identity, exactly.
+    check(Quat::fromAxes({1, 0, 0}, {0, 1, 0}, {0, 0, 1}) == Quat::identity(), "the unit axes are the identity");
+}
+
+// Away from straight up and straight down, Euler angles survive the trip
+// through a quaternion and back.
+void eulerAnglesRoundTripAwayFromGimbalLock() {
+    Random random;
+    // The same angle, the short way round (179.99 and -179.99 are 0.02 apart).
+    const auto apart = [](float a, float b) {
+        const float d = std::fmod(std::abs(a - b), 360.0f);
+        return std::min(d, 360.0f - d);
+    };
+    float worstPitch = 0.0f, worstTurn = 0.0f;
+    bool sameRotation = true;
+    for (int i = 0; i < 20000; ++i) {
+        const Vec3 angles{random.between(-89.0f, 89.0f), random.between(-180.0f, 180.0f), random.between(-180.0f, 180.0f)};
+        const Quat q = Quat::fromEulerDegrees(angles);
+        const Vec3 back = q.toEulerDegrees();
+        worstPitch = std::max(worstPitch, std::abs(back.x - angles.x));
+        // Near the poles yaw and roll are found from ever smaller numbers, so
+        // their error grows as 1 / cos(pitch): judged at the scale that matters.
+        const float scale = std::cos(degreesToRadians(angles.x));
+        worstTurn = std::max({worstTurn, apart(back.y, angles.y) * scale, apart(back.z, angles.z) * scale});
+        sameRotation = sameRotation && nearlyEqual(Quat::fromEulerDegrees(back), q, 1e-5f);
+    }
+    check(worstPitch < 0.01f, "pitch comes back (to a hundredth of a degree, up to 89 degrees)");
+    check(worstTurn < 0.002f, "yaw and roll come back");
+    check(sameRotation, "and the angles that come back are the same rotation");
+    if (!(worstPitch < 0.01f) || !(worstTurn < 0.002f)) {
+        std::printf("      worst pitch error %g, worst yaw/roll error %g\n", double(worstPitch), double(worstTurn));
+    }
+    // The ranges the angles come back in: pitch within 90, yaw and roll within 180.
+    const Vec3 wrapped = Quat::fromEulerDegrees({10, 270, -200}).toEulerDegrees();
+    checkVec(wrapped, {10, -90, 160}, 1e-3f, "angles past a half turn come back in (-180, 180]");
+    const Quat over = Quat::fromEulerDegrees({135, 0, 0});
+    const Vec3 flipped = over.toEulerDegrees();
+    check(std::abs(flipped.x - 45.0f) < 2e-3f && nearlyEqual(Quat::fromEulerDegrees(flipped), over, 1e-5f),
+          "a pitch past 90 comes back as the same rotation with its pitch within 90");
+}
+
 void projectionsMatchTheRenderer() {
     checkMat(Mat4::perspective(60, 16.0f / 9.0f, 0.1f, 1000.0f),
              {0.9742786f, 0, 0, 0, 0, 1.732051f, 0, 0, 0, 0, -1.0002f, -0.20002f, 0, 0, -1, 0}, "perspective");
@@ -138,6 +250,8 @@ int main() {
     axisAngleAndRotation();
     directionalConstructors();
     matrixRoundTrip();
+    axesRoundTripThroughQuaternions();
+    eulerAnglesRoundTripAwayFromGimbalLock();
     projectionsMatchTheRenderer();
     composedTransformsAndInverse();
     return cfw::test::finish("RotationTest");

@@ -29,10 +29,12 @@ jobs:
       - name: Install tools
         # Xvfb gives the window, GL, clipboard and drop tests a display;
         # uim-xim is a real input method for the IME test; the AT-SPI registry
-        # and pyatspi read the windows as a screen reader does.
+        # and pyatspi read the windows as a screen reader does. libXi is what
+        # relative mouse mode and touch load at run time, and libXtst lets the
+        # input test press keys and move the mouse as hardware would.
         run: >
           sudo apt-get update && sudo apt-get install -y ninja-build libx11-dev xvfb
-          uim-xim uim-anthy at-spi2-core python3-pyatspi dbus
+          uim-xim uim-anthy at-spi2-core python3-pyatspi dbus libxi6 libxtst6
       - name: Configure
         run: cmake --preset ${{ matrix.preset }} -DCMAKE_CXX_COMPILER=${{ matrix.compiler }}
       - name: Build
@@ -116,7 +118,8 @@ jobs:
           mkdir -p fuzz-artifacts
           status=0
           for target in FuzzJson FuzzByteReader FuzzUrl FuzzWebSocketFrames FuzzHttp \
-              FuzzInflate FuzzPng FuzzJpeg FuzzWebP FuzzPaint FuzzText FuzzFont FuzzShape FuzzSvg; do
+              FuzzInflate FuzzPng FuzzJpeg FuzzWebP FuzzPaint FuzzText FuzzFont FuzzShape FuzzSvg \
+              FuzzWav FuzzFlac FuzzVorbis FuzzMp3 FuzzAudio; do
             mkdir -p "new-corpus/$target"
             echo "::group::$target"
             if ! build/fuzz/fuzz/$target "new-corpus/$target" "fuzz/corpus/$target" \

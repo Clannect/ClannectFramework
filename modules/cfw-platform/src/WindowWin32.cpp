@@ -4,8 +4,25 @@
 // (an OLE IDropTarget, and WM_DROPFILES from senders that post it). Input
 // methods through IMM32: the composition is drawn by the application, the
 // candidate window follows the caret, and the IME is off outside text.
+//
+// Keys carry their scan code, which is the key's position whatever the
+// layout: that is KeyEvent::physicalKey. Relative mouse mode is Raw Input
+// (WM_INPUT), which reports the mouse's own movement before pointer
+// acceleration, with the cursor clipped to the point it was at. Touch and
+// pen are the WM_POINTER messages (Windows 8 and later); handling them here
+// stops Windows turning the primary contact into mouse messages, so
+// Window::deliverTouch does that itself.
 
+// The pointer and raw input declarations need a recent Windows version
+// selected before the first system header.
+#if !defined(_WIN32_WINNT) || _WIN32_WINNT < 0x0A00
+#undef _WIN32_WINNT
+#define _WIN32_WINNT 0x0A00
+#endif
+
+#include "KeyCodes.h"
 #include "PixelCopy.h"
+#include "RelativeMotion.h"
 #include "cfw/image/Image.h"
 #include "cfw/platform/Window.h"
 
@@ -123,6 +140,40 @@ Key keyOf(WPARAM vk) {
     case VK_LWIN: case VK_RWIN: return Key::Meta;
     default: return Key::Unknown;
     }
+}
+
+// The key by position: from the message's scan code, or for a message that
+// has none (posted by another program), the one the layout gives its key.
+Key physicalKeyOf(WPARAM vk, LPARAM lParam) {
+    unsigned scanCode = unsigned(lParam >> 16) & 0xFF;
+    const bool extended = (lParam & (LPARAM(1) << 24)) != 0;
+    if (scanCode == 0) {
+        scanCode = MapVirtualKeyW(UINT(vk), MAPVK_VK_TO_VSC);
+    }
+    return detail::physicalKeyFromScanCode(scanCode, extended);
+}
+
+// user32's pointer functions, found at run time: they are missing before
+// Windows 8, where there are no WM_POINTER messages to ask about either.
+struct PointerApi {
+    BOOL(WINAPI *getType)(UINT32, POINTER_INPUT_TYPE *) = nullptr;
+    BOOL(WINAPI *getInfo)(UINT32, POINTER_INFO *) = nullptr;
+    BOOL(WINAPI *getTouchInfo)(UINT32, POINTER_TOUCH_INFO *) = nullptr;
+    BOOL(WINAPI *getPenInfo)(UINT32, POINTER_PEN_INFO *) = nullptr;
+
+    PointerApi() {
+        const HMODULE user32 = GetModuleHandleW(L"user32.dll");
+        const auto find = [user32](const char *name) { return reinterpret_cast<void *>(GetProcAddress(user32, name)); };
+        getType = reinterpret_cast<decltype(getType)>(find("GetPointerType"));
+        getInfo = reinterpret_cast<decltype(getInfo)>(find("GetPointerInfo"));
+        getTouchInfo = reinterpret_cast<decltype(getTouchInfo)>(find("GetPointerTouchInfo"));
+        getPenInfo = reinterpret_cast<decltype(getPenInfo)>(find("GetPointerPenInfo"));
+    }
+};
+
+const PointerApi &pointerApi() {
+    static const PointerApi api;
+    return api;
 }
 
 Modifier currentModifiers() {
@@ -272,6 +323,13 @@ public:
             m_dropTarget->detach();
             m_dropTarget->Release();
         }
+        if (m_relative) {
+            RAWINPUTDEVICE device{1, 2, RIDEV_REMOVE, nullptr};
+            RegisterRawInputDevices(&device, 1, sizeof device);
+        }
+        if (m_clipped) {
+            ClipCursor(nullptr);
+        }
         SetWindowLongPtrW(m_hwnd, GWLP_USERDATA, 0);
         DestroyWindow(m_hwnd);
         if (m_oleInitialized) {
@@ -415,7 +473,7 @@ public:
 
     void setCursor(Cursor cursor) override {
         m_cursor = cursor;
-        SetCursor(cursor == Cursor::Hidden ? nullptr : LoadCursorW(nullptr, cursorId(cursor)));
+        SetCursor(m_relative || cursor == Cursor::Hidden ? nullptr : LoadCursorW(nullptr, cursorId(cursor)));
     }
 
     void setPointerPosition(Vec2 position) override {
@@ -424,6 +482,40 @@ public:
         ClientToScreen(m_hwnd, &point);
         SetCursorPos(point.x, point.y);
     }
+
+    // Raw Input for the mouse's own movement; the cursor hidden and clipped
+    // to the pixel it is on, so it is in the same place when the mode ends
+    // and no click lands outside the window.
+    void setRelativeMouse(bool relative) override {
+        if (relative == m_relative) {
+            return;
+        }
+        if (relative) {
+            if (GetFocus() != m_hwnd) {
+                return; // only the focused window may take the mouse
+            }
+            RAWINPUTDEVICE device{1, 2, 0, m_hwnd}; // generic desktop, mouse
+            if (!RegisterRawInputDevices(&device, 1, sizeof device)) {
+                return;
+            }
+            GetCursorPos(&m_relativeAnchor);
+            m_motion.reset();
+        } else {
+            RAWINPUTDEVICE device{1, 2, RIDEV_REMOVE, nullptr};
+            RegisterRawInputDevices(&device, 1, sizeof device);
+        }
+        m_relative = relative;
+        applyClip();
+        SetCursor(relative || m_cursor == Cursor::Hidden ? nullptr : LoadCursorW(nullptr, cursorId(m_cursor)));
+        relativeMouseChanged.emit(relative);
+    }
+    bool isRelativeMouse() const override { return m_relative; }
+
+    void setCursorConfined(bool confined) override {
+        m_confined = confined;
+        applyClip();
+    }
+    bool isCursorConfined() const override { return m_confined; }
 
     void *nativeHandle() const override { return m_hwnd; }
 
@@ -449,6 +541,106 @@ private:
         info.bmiHeader.biCompression = BI_RGB;
         SetDIBitsToDevice(dc, 0, 0, DWORD(m_frameSize.x), DWORD(m_frameSize.y), 0, 0, 0, UINT(m_frameSize.y),
                           m_frame.data(), &info, DIB_RGB_COLORS);
+    }
+
+    // The cursor's clip for the current state: one pixel in relative mode,
+    // the client area when confined (and focused), else none. Windows drops
+    // the clip itself when another window is activated.
+    void applyClip() {
+        RECT clip{};
+        bool wanted = false;
+        if (m_relative) {
+            clip = RECT{m_relativeAnchor.x, m_relativeAnchor.y, m_relativeAnchor.x + 1, m_relativeAnchor.y + 1};
+            wanted = true;
+        } else if (m_confined && GetFocus() == m_hwnd) {
+            GetClientRect(m_hwnd, &clip);
+            MapWindowPoints(m_hwnd, nullptr, reinterpret_cast<POINT *>(&clip), 2);
+            wanted = clip.right > clip.left && clip.bottom > clip.top;
+        }
+        if (wanted) {
+            ClipCursor(&clip);
+            m_clipped = true;
+        } else if (m_clipped) {
+            ClipCursor(nullptr);
+            m_clipped = false;
+        }
+    }
+
+    // One raw mouse packet, in relative mode: a Move carrying its delta.
+    void rawMouse(const RAWMOUSE &raw) {
+        Vec2 delta;
+        if (raw.usFlags & MOUSE_MOVE_ABSOLUTE) {
+            // A tablet, a remote desktop or a virtual machine: positions.
+            const bool virtualDesktop = (raw.usFlags & MOUSE_VIRTUAL_DESKTOP) != 0;
+            const Vec2 screen{float(GetSystemMetrics(virtualDesktop ? SM_CXVIRTUALSCREEN : SM_CXSCREEN)),
+                              float(GetSystemMetrics(virtualDesktop ? SM_CYVIRTUALSCREEN : SM_CYSCREEN))};
+            delta = m_motion.absolute(float(raw.lLastX), float(raw.lLastY), 65535.0f, screen);
+        } else {
+            delta = m_motion.relative(float(raw.lLastX), float(raw.lLastY));
+        }
+        if (delta.x == 0.0f && delta.y == 0.0f) {
+            return;
+        }
+        POINT anchor = m_relativeAnchor;
+        ScreenToClient(m_hwnd, &anchor);
+        PointerEvent e;
+        e.type = PointerEvent::Type::Move;
+        e.position = {float(anchor.x) / m_scale, float(anchor.y) / m_scale};
+        e.modifiers = currentModifiers();
+        e.delta = delta;
+        pointer.emit(e);
+    }
+
+    // A WM_POINTER message. False if it is not a touch or a pen (the mouse
+    // keeps arriving as mouse messages).
+    bool pointerMessage(UINT message, WPARAM wParam) {
+        const PointerApi &api = pointerApi();
+        const UINT32 id = LOWORD(wParam);
+        POINTER_INPUT_TYPE type = PT_POINTER;
+        POINTER_INFO info{};
+        if (!api.getType || !api.getInfo || !api.getType(id, &type) || (type != PT_TOUCH && type != PT_PEN) ||
+            !api.getInfo(id, &info)) {
+            return false;
+        }
+        POINT at = info.ptPixelLocation;
+        ScreenToClient(m_hwnd, &at);
+        const bool contact = (info.pointerFlags & POINTER_FLAG_INCONTACT) != 0;
+        PointerEvent e;
+        e.kind = type == PT_PEN ? PointerKind::Pen : PointerKind::Touch;
+        e.id = id;
+        e.primary = (info.pointerFlags & POINTER_FLAG_PRIMARY) != 0;
+        e.position = {float(at.x) / m_scale, float(at.y) / m_scale};
+        e.modifiers = currentModifiers();
+        e.pressure = contact ? 1.0f : 0.0f;
+        if (type == PT_PEN) {
+            POINTER_PEN_INFO pen{};
+            if (api.getPenInfo && api.getPenInfo(id, &pen) && (pen.penMask & PEN_MASK_PRESSURE)) {
+                e.pressure = float(pen.pressure) / 1024.0f;
+            }
+        } else {
+            POINTER_TOUCH_INFO finger{};
+            if (api.getTouchInfo && api.getTouchInfo(id, &finger) && (finger.touchMask & TOUCH_MASK_PRESSURE) &&
+                finger.pressure > 0) {
+                e.pressure = float(finger.pressure) / 1024.0f;
+            }
+        }
+        if (message == WM_POINTERDOWN) {
+            e.type = PointerEvent::Type::Press;
+        } else if (message == WM_POINTERUP) {
+            const bool cancelled = (info.pointerFlags & POINTER_FLAG_CANCELED) != 0;
+            e.type = cancelled ? PointerEvent::Type::Cancel : PointerEvent::Type::Release;
+            e.pressure = 0.0f;
+        } else if (message == WM_POINTERCAPTURECHANGED) {
+            e.type = PointerEvent::Type::Cancel;
+            e.pressure = 0.0f;
+        } else {
+            if (!contact && type != PT_PEN) {
+                return true; // a finger hovering: nothing to report
+            }
+            e.type = PointerEvent::Type::Move;
+        }
+        deliverTouch(e);
+        return true;
     }
 
     Vec2 logical(LPARAM lParam) const {
@@ -482,6 +674,11 @@ private:
     std::vector<std::uint32_t> m_frame;
     Vec2i m_frameSize;
     Cursor m_cursor = Cursor::Arrow;
+    bool m_relative = false;
+    bool m_confined = false;
+    bool m_clipped = false; // this window set the cursor's clip
+    POINT m_relativeAnchor{};
+    detail::RelativeMotion m_motion;
     bool m_tracking = false;
     int m_buttonsDown = 0;
     wchar_t m_highSurrogate = 0;
@@ -501,8 +698,31 @@ LRESULT WindowWin32::handle(UINT message, WPARAM wParam, LPARAM lParam) {
             m_size = size;
             resized.emit(size);
         }
+        applyClip(); // a confined cursor follows the client area
         return 0;
     }
+    case WM_MOVE:
+        applyClip();
+        break;
+    case WM_INPUT:
+        if (m_relative) {
+            RAWINPUT raw{};
+            UINT size = sizeof raw;
+            if (GetRawInputData(reinterpret_cast<HRAWINPUT>(lParam), RID_INPUT, &raw, &size, sizeof(RAWINPUTHEADER)) !=
+                    UINT(-1) &&
+                raw.header.dwType == RIM_TYPEMOUSE) {
+                rawMouse(raw.data.mouse);
+            }
+        }
+        break; // DefWindowProc releases the packet
+    case WM_POINTERDOWN:
+    case WM_POINTERUPDATE:
+    case WM_POINTERUP:
+    case WM_POINTERCAPTURECHANGED:
+        if (pointerMessage(message, wParam)) {
+            return 0; // handled: Windows makes no mouse messages from it
+        }
+        break;
     case WM_PAINT: {
         PAINTSTRUCT ps;
         HDC dc = BeginPaint(m_hwnd, &ps);
@@ -575,9 +795,15 @@ LRESULT WindowWin32::handle(UINT message, WPARAM wParam, LPARAM lParam) {
         closeRequested.emit();
         return 0;
     case WM_SETFOCUS:
+        applyClip(); // a confined cursor is confined again
         focusChanged.emit(true);
         return 0;
     case WM_KILLFOCUS:
+        // The mouse goes back to the user with the focus.
+        if (m_relative) {
+            setRelativeMouse(false);
+        }
+        applyClip();
         focusChanged.emit(false);
         return 0;
     case WM_DPICHANGED: {
@@ -590,11 +816,14 @@ LRESULT WindowWin32::handle(UINT message, WPARAM wParam, LPARAM lParam) {
     }
     case WM_SETCURSOR:
         if (LOWORD(lParam) == HTCLIENT) {
-            SetCursor(m_cursor == Cursor::Hidden ? nullptr : LoadCursorW(nullptr, cursorId(m_cursor)));
+            SetCursor(m_relative || m_cursor == Cursor::Hidden ? nullptr : LoadCursorW(nullptr, cursorId(m_cursor)));
             return TRUE;
         }
         break;
     case WM_MOUSEMOVE:
+        if (m_relative) {
+            return 0; // movement arrives as WM_INPUT; the cursor itself is held still
+        }
         if (!m_tracking) {
             TRACKMOUSEEVENT track{sizeof track, TME_LEAVE, m_hwnd, 0};
             TrackMouseEvent(&track);
@@ -636,6 +865,7 @@ LRESULT WindowWin32::handle(UINT message, WPARAM wParam, LPARAM lParam) {
         const bool down = message == WM_KEYDOWN || message == WM_SYSKEYDOWN;
         e.type = down ? KeyEvent::Type::Press : KeyEvent::Type::Release;
         e.key = keyOf(wParam);
+        e.physicalKey = physicalKeyOf(wParam, lParam);
         e.modifiers = currentModifiers();
         e.repeat = down && (lParam & (1 << 30)) != 0;
         key.emit(e);

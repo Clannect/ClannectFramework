@@ -1,2 +1,5 @@
 # Fuzz inputs are arbitrary bytes: git must never convert their line endings.
 fuzz/corpus/** -text
+# Sound test files are binary too, and the script that makes them runs under sh.
+modules/cfw-audio/testdata/** -text
+*.sh text eol=lf

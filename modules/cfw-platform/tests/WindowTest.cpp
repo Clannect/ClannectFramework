@@ -3,6 +3,7 @@
 // another thread, and the clipboard. Skips (and passes) without a display.
 
 #include <chrono>
+#include <cstdlib>
 #include <cstring>
 #include <string>
 #include <vector>
@@ -17,6 +18,12 @@
 // Win32DropPoster.cpp: posts WM_DROPFILES as the shell does.
 bool postFileDrop(void *hwnd, const std::vector<std::u16string> &paths, int x, int y);
 bool imeCompose(void *hwnd, std::u16string text, bool commit);
+bool postKey(void *hwnd, unsigned virtualKey, unsigned scanCode, bool extended, bool down);
+bool focusWindow(void *hwnd);
+bool moveMouseBy(int dx, int dy);
+bool cursorClippedToClient(void *hwnd);
+void sendFocusLost(void *hwnd);
+void sendFocusGained(void *hwnd);
 #endif
 
 using namespace cfw;
@@ -147,6 +154,120 @@ int main() {
         check(typed.size() == 1 && typed[0] == "\u65e5\u672c", "the committed text arrives once, as text");
         check(!compositions.empty() && compositions.back().text.empty(), "and the composition ends");
         window->setTextInputArea(std::nullopt);
+    }
+#endif
+
+#if defined(_WIN32)
+    // Keys carry the layout's key and the key's position. Messages posted
+    // with the scan codes a keyboard sends.
+    {
+        std::vector<KeyEvent> keys;
+        ScopedConnection onKey = window->key.connect([&](const KeyEvent &e) { keys.push_back(e); });
+        struct Posted {
+            unsigned virtualKey;
+            unsigned scanCode;
+            bool extended;
+            Key key;
+            Key physical;
+            const char *what;
+        };
+        const Posted posted[] = {
+            {'W', 0x11, false, Key::W, Key::W, "W on a QWERTY layout: the same key both ways"},
+            // An AZERTY keyboard: the key in the Q position types A.
+            {'A', 0x10, false, Key::A, Key::Q, "the layout's A in the Q position (AZERTY)"},
+            {0x10 /* VK_SHIFT */, 0x2A, false, Key::Shift, Key::LeftShift, "left Shift"},
+            {0x10, 0x36, false, Key::Shift, Key::RightShift, "right Shift"},
+            {0x11 /* VK_CONTROL */, 0x1D, false, Key::Control, Key::LeftControl, "left Control"},
+            {0x11, 0x1D, true, Key::Control, Key::RightControl, "right Control"},
+            {0x5C /* VK_RWIN */, 0x5C, true, Key::Meta, Key::RightMeta, "right Windows key"},
+            {0x26 /* VK_UP */, 0x48, true, Key::Up, Key::Up, "the arrow key"},
+        };
+        for (const Posted &p : posted) {
+            keys.clear();
+            check(postKey(window->nativeHandle(), p.virtualKey, p.scanCode, p.extended, true), "key down posted");
+            postKey(window->nativeHandle(), p.virtualKey, p.scanCode, p.extended, false);
+            pumpUntil([&] { return keys.size() >= 2; });
+            check(keys.size() == 2 && keys[0].type == KeyEvent::Type::Press && keys[1].type == KeyEvent::Type::Release,
+                  "a press and a release arrive");
+            if (keys.size() == 2) {
+                checkEqual(keys[0].key, p.key, p.what);
+                checkEqual(keys[0].physicalKey, p.physical, "and its position");
+                checkEqual(keys[1].physicalKey, p.physical, "on the release too");
+            }
+        }
+    }
+
+    // Relative mouse mode: raw movement while the pointer's position holds
+    // still; it ends with the focus. And a confined cursor.
+    {
+        std::vector<PointerEvent> moves;
+        std::vector<bool> changes;
+        ScopedConnection onPointer = window->pointer.connect([&](const PointerEvent &e) {
+            if (e.type == PointerEvent::Type::Move) {
+                moves.push_back(e);
+            }
+        });
+        ScopedConnection onChange = window->relativeMouseChanged.connect([&](bool on) { changes.push_back(on); });
+        check(!window->isRelativeMouse() && !window->isCursorConfined(), "both modes start off");
+        if (!focusWindow(window->nativeHandle())) {
+            std::printf("WindowTest: the window could not take the focus; relative mouse mode not checked\n");
+            window->setRelativeMouse(true);
+            check(!window->isRelativeMouse(), "a window without the focus cannot take the mouse");
+        } else {
+            processEvents(std::chrono::milliseconds(20));
+            window->setRelativeMouse(true);
+            check(window->isRelativeMouse(), "relative mode turns on for the focused window");
+            check(changes == std::vector<bool>{true}, "and says so");
+            window->setRelativeMouse(true);
+            check(changes.size() == 1, "turning it on twice says so once");
+            moves.clear();
+            // Far more than the window's 220 pixels: no edge stops raw movement.
+            for (int i = 0; i < 4; ++i) {
+                moveMouseBy(500, -300);
+            }
+            Vec2 total;
+            const bool arrived = pumpUntil([&] {
+                total = {};
+                for (const PointerEvent &e : moves) {
+                    total = total + e.delta;
+                }
+                return total == Vec2{2000, -1200};
+            });
+            if (std::getenv("CFW_UNDER_WINE") && moves.empty()) {
+                std::printf("WindowTest: Wine delivered no raw input for injected movement (unchecked here)\n");
+            } else {
+                check(arrived, "raw movement arrives whole, past the window's size");
+                bool still = !moves.empty();
+                for (const PointerEvent &e : moves) {
+                    still = still && e.position == moves.front().position;
+                }
+                check(still, "while the pointer's position holds still");
+            }
+            // Alt+Tab: the mode ends by itself and says so.
+            sendFocusLost(window->nativeHandle());
+            check(!window->isRelativeMouse(), "relative mode ends when the focus goes");
+            check(changes == std::vector<bool>({true, false}), "and says so");
+            sendFocusGained(window->nativeHandle());
+            check(!window->isRelativeMouse(), "and does not come back by itself");
+            moves.clear();
+            moveMouseBy(3, 3);
+            pumpUntil([&] { return !moves.empty(); }, std::chrono::seconds(1));
+            check(moves.empty() || moves.back().delta == Vec2{}, "ordinary moves carry no delta");
+
+            window->setCursorConfined(true);
+            check(window->isCursorConfined() && cursorClippedToClient(window->nativeHandle()),
+                  "a confined cursor is clipped to the client area");
+            window->setSize({260, 110});
+            pumpUntil([&] { return window->pixelSize().x >= 260; });
+            check(cursorClippedToClient(window->nativeHandle()), "and the clip follows the window's size");
+            sendFocusLost(window->nativeHandle());
+            sendFocusGained(window->nativeHandle());
+            check(cursorClippedToClient(window->nativeHandle()), "and comes back with the focus");
+            window->setCursorConfined(false);
+            check(!window->isCursorConfined() && !cursorClippedToClient(window->nativeHandle()), "and off");
+            window->setSize({220, 90});
+            pumpUntil([&] { return window->pixelSize().x <= 220 * int(window->devicePixelRatio() + 0.99f); });
+        }
     }
 #endif
 

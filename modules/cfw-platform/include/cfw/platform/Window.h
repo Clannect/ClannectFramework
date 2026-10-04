@@ -14,6 +14,15 @@
 // Events are delivered by processEvents(), on the thread that created the
 // windows. Nothing is delivered from inside present() or other calls.
 //
+// Pointers arrive on two signals. `pointer` is the mouse, and whichever
+// finger or pen is acting as the mouse (the primary contact): code that only
+// knows the mouse works with touch through it. `touch` is every finger and
+// pen, each with its own id, for following several at once. A primary
+// contact is reported on both, so a handler uses one signal or the other.
+//
+// Keys carry both the key the layout produces and the key's position (see
+// KeyEvent in cfw/core/Input.h). Gamepads are separate: cfw/platform/Gamepad.h.
+//
 // Not yet: multiple monitors' work areas.
 //
 // Threads: windows and processEvents() on one thread; wakeUp() from any.
@@ -72,11 +81,35 @@ public:
     // Asks for a repaintRequested signal from the next processEvents().
     virtual void requestRepaint() = 0;
     virtual void setCursor(Cursor cursor) = 0;
-    // Moves the pointer to `position` (logical pixels in the client area), as
-    // a camera that turns with the mouse does to keep it from reaching the
-    // screen's edge. The move arrives as an ordinary pointer event. Does
-    // nothing where the platform cannot.
+    // Moves the pointer to `position` (logical pixels in the client area).
+    // The move arrives as an ordinary pointer event. Does nothing where the
+    // platform cannot. A camera that turns with the mouse should not use
+    // this to re-centre the pointer after every move (fast movement is lost
+    // at the screen's edge, and tablets and remote desktops report absolute
+    // positions that warping fights): use setRelativeMouse() instead.
     virtual void setPointerPosition(Vec2 position) { (void)position; }
+
+    // Relative mouse mode ("pointer lock"), for first-person cameras. While
+    // it is on the cursor is hidden and cannot leave the window, and every
+    // mouse movement arrives on `pointer` as a Move whose `delta` is the
+    // mouse's own movement: raw device counts, not accelerated and not
+    // stopped by the screen's edge. `position` stays where the pointer was
+    // when the mode began (so nothing under it changes), and the pointer is
+    // there again when the mode ends. Buttons and the wheel work as usual.
+    //
+    // The mode switches itself off when the window loses the keyboard focus
+    // (Alt+Tab, a system dialog) and says so through relativeMouseChanged;
+    // it does not come back by itself when the focus does. Turning it on
+    // fails silently where the platform cannot do it or the window is not
+    // focused: ask isRelativeMouse().
+    virtual void setRelativeMouse(bool relative) { (void)relative; }
+    [[nodiscard]] virtual bool isRelativeMouse() const { return false; }
+    // Keeps the (visible) cursor inside the client area, as a strategy
+    // game's map scrolling at the edges wants. Lifted while the window does
+    // not have the focus and restored when it has it again; switched off
+    // only by setCursorConfined(false). Independent of relative mode.
+    virtual void setCursorConfined(bool confined) { (void)confined; }
+    [[nodiscard]] virtual bool isCursorConfined() const { return false; }
     // Covers the whole monitor the window is on, without a frame (the
     // window manager's full-screen state on X11), or puts it back as it was.
     // Does nothing where the platform cannot.
@@ -94,6 +127,13 @@ public:
     [[nodiscard]] virtual void *nativeHandle() const = 0;
 
     Signal<const PointerEvent &> pointer;
+    // Every finger and pen on the window, the primary one included, each
+    // with its own id: Press, Move, Release, or Cancel when the system takes
+    // the contact away. A pen hovering sends Moves with no pressure.
+    Signal<const PointerEvent &> touch;
+    // Relative mouse mode turned on (true) or off, by setRelativeMouse() or
+    // by the window losing the focus.
+    Signal<bool> relativeMouseChanged;
     Signal<const KeyEvent &> key;
     Signal<const TextEvent &> text;
     Signal<const CompositionEvent &> composition;
@@ -108,6 +148,13 @@ public:
     // handler: the window refuses drops.
     void setDropHandler(std::function<bool(const DropEvent &)> handler) { m_dropHandler = std::move(handler); }
 
+    // Delivers one touch or pen contact as the platform backends do: to
+    // `touch`, and, when it is the primary contact, to `pointer` as the mouse
+    // it stands in for (the left button; a second press close to the first
+    // and soon after it is a double click). `event.kind` must be Touch or
+    // Pen. For tests, and for an embedder with its own source of touches.
+    void deliverTouch(PointerEvent event);
+
     // Windows only: sees each message before the window does; a value
     // handles it (the accessibility bridge answers WM_GETOBJECT this way).
     std::function<std::optional<std::intptr_t>(unsigned message, std::uintptr_t wParam, std::intptr_t lParam)>
@@ -119,6 +166,10 @@ protected:
 
 private:
     std::function<bool(const DropEvent &)> m_dropHandler;
+    // Double-tap detection for the primary contact.
+    TimePoint m_lastTapTime{};
+    Vec2 m_lastTapAt;
+    int m_tapCount = 0;
 };
 
 // Delivers the OS events waiting for every window, first waiting up to
