@@ -47,7 +47,7 @@ defaults:
 
 env:
   # Untracked, so the gates that read git's file list do not see it.
-  LOGS: ${{ github.workspace }}/.cfw-guard-logs
+  LOGS: ${{ github.workspace }}/cfw-guard-logs
 
 jobs:
   malware:
@@ -147,13 +147,13 @@ jobs:
         id: scan
         run: |
           # What clamscan counts: regular files that are not empty.
-          expected=$(find . -path ./.git -prune -o -path ./.cfw-guard-logs -prune -o -type f -size +0c -print | wc -l)
+          expected=$(find . -path ./.git -prune -o -path ./cfw-guard-logs -prune -o -type f -size +0c -print | wc -l)
           status=0
           # .git holds the same files compressed, which no signature matches;
           # the other exclusion is this job's own logs.
           # A file over a scan limit is reported, not skipped.
           clamscan --database="$CLAMAV_DB" --recursive --infected \
-            --exclude-dir='/\.git$' --exclude-dir='/\.cfw-guard-logs$' \
+            --exclude-dir='/\.git$' --exclude-dir='/cfw-guard-logs$' \
             --scan-archive=yes --alert-exceeds-max=yes \
             --max-filesize=1024M --max-scansize=2048M --max-files=100000 --max-recursion=24 \
             --log="$LOGS/clamav-scan.log" . || status=$?
@@ -198,7 +198,7 @@ jobs:
         with:
           name: security-logs-malware
           path: ${{ env.LOGS }}/
-          if-no-files-found: warn
+          if-no-files-found: error
           retention-days: 90
 
   sast:
@@ -262,7 +262,7 @@ jobs:
         with:
           name: security-logs-sast
           path: ${{ env.LOGS }}/
-          if-no-files-found: warn
+          if-no-files-found: error
           retention-days: 90
 
   supply-chain:
@@ -340,7 +340,7 @@ jobs:
         with:
           name: security-logs-supply-chain
           path: ${{ env.LOGS }}/
-          if-no-files-found: warn
+          if-no-files-found: error
           retention-days: 90
 
   verdict:
