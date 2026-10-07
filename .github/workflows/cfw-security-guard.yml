@@ -55,7 +55,11 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     env:
-      CLAMAV_DB: /home/runner/clamav-db
+      # Ubuntu's AppArmor profile confines freshclam to its packaged
+      # configuration and this directory, so the database stays there and is
+      # copied to and from a directory the cache can read.
+      CLAMAV_DB: /var/lib/clamav
+      CLAMAV_CACHE: /home/runner/clamav-db
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
@@ -67,24 +71,26 @@ jobs:
           sudo apt-get install -y --no-install-recommends clamav clamav-freshclam
           # The packaged updater daemon would hold the database lock.
           sudo systemctl stop clamav-freshclam.service || true
-          mkdir -p "$LOGS" "$CLAMAV_DB"
+          mkdir -p "$LOGS" "$CLAMAV_CACHE"
           clamscan --version | tee "$LOGS/clamav-version.log"
       # The cache only saves freshclam the full download: it still asks the
       # mirror for today's signatures, and a .cvd carries ClamAV's signature.
       - name: Restore the signature database
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: ${{ env.CLAMAV_DB }}
+          path: ${{ env.CLAMAV_CACHE }}
           key: clamav-db-${{ github.run_id }}
           restore-keys: clamav-db-
       - name: Update signatures
         id: update
         run: |
-          conf="$RUNNER_TEMP/freshclam.conf"
-          printf 'DatabaseDirectory %s\nDatabaseMirror database.clamav.net\n' "$CLAMAV_DB" > "$conf"
+          if ls "$CLAMAV_CACHE"/*.c[lv]d > /dev/null 2>&1; then
+            sudo cp -p "$CLAMAV_CACHE"/*.c[lv]d "$CLAMAV_DB"/
+            sudo chown clamav:clamav "$CLAMAV_DB"/*.c[lv]d
+          fi
           updated=no
           for attempt in 1 2 3; do
-            if freshclam --config-file="$conf" --stdout 2>&1 | tee -a "$LOGS/clamav-freshclam.log"; then
+            if sudo freshclam --stdout 2>&1 | tee -a "$LOGS/clamav-freshclam.log"; then
               updated=yes
               break
             fi
@@ -110,12 +116,17 @@ jobs:
             { basename "$file"; sigtool --info "$file" | grep -E '^(Build time|Version|Signatures):' | sed 's/^/  /'; } \
               | tee -a "$LOGS/clamav-signatures.log"
           done
+          if [ "$updated" = yes ]; then
+            rm -f "$CLAMAV_CACHE"/*
+            sudo cp -p "$CLAMAV_DB"/*.c[lv]d "$CLAMAV_CACHE"/
+            sudo chown -R "$(id -un)" "$CLAMAV_CACHE"
+          fi
           echo "updated=$updated" >> "$GITHUB_OUTPUT"
       - name: Save the signature database
         if: steps.update.outputs.updated == 'yes'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: ${{ env.CLAMAV_DB }}
+          path: ${{ env.CLAMAV_CACHE }}
           key: clamav-db-${{ github.run_id }}
       - name: Self-test (the scanner must detect EICAR)
         run: |
