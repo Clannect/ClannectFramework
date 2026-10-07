@@ -42,6 +42,14 @@ jobs:
           test -f "docs/releases/$version.md" || { echo "::error::docs/releases/$version.md is missing"; exit 1; }
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
+  # The malware, SAST and supply-chain gates over the tagged tree: nothing is
+  # published unless they all pass.
+  security:
+    name: security guard
+    uses: ./.github/workflows/cfw-security-guard.yml
+    with:
+      ref: ${{ inputs.tag || github.ref_name }}
+
   linux:
     name: linux x64
     needs: version
@@ -161,17 +169,31 @@ jobs:
 
   publish:
     name: publish the release
-    needs: [version, linux, windows, macos]
-    if: ${{ !cancelled() && needs.linux.result == 'success' && needs.windows.result == 'success' }}
+    needs: [version, security, linux, windows, macos]
+    if: >-
+      ${{ !cancelled() && needs.security.result == 'success'
+      && needs.linux.result == 'success' && needs.windows.result == 'success' }}
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ env.TAG }}
+      # By name: the security guard's logs are artifacts of this run too, and
+      # are not packages.
       - uses: actions/download-artifact@v4
         with:
+          name: linux
           path: packages
-          merge-multiple: true
+      - uses: actions/download-artifact@v4
+        with:
+          name: windows
+          path: packages
+      - uses: actions/download-artifact@v4
+        # Experimental: there is no macOS package when that job failed.
+        continue-on-error: true
+        with:
+          name: macos
+          path: packages
       - name: Create the release
         env:
           GH_TOKEN: ${{ github.token }}

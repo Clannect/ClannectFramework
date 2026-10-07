@@ -1,0 +1,379 @@
+# Security guard: malware, risky C/C++ and supply-chain gates over every
+# tracked file. Fail-closed: a detection fails the run, and so does a scanner
+# that could not update, could not read a file, or scanned nothing.
+#
+#   malware        ClamAV with signatures refreshed in the run; the scanner must
+#                  first detect the EICAR test file.
+#   sast           Flawfinder (levels 4 and 5) and the sensitive-API policy:
+#                  process spawning, code injection, run-time library loading.
+#   supply-chain   CMake, Python and shell that download or run things, Bandit,
+#                  and committed executables.
+#   verdict        the one result to require in branch protection.
+#
+# What the gates accept is .github/security/allowlist.txt; anything else found
+# fails. Each gate uploads its own logs as an artifact, for telling a false
+# positive from a threat. release.yml calls this workflow before publishing.
+#
+# A pull request runs the workflow as the pull request has it: protect
+# .github/ with CODEOWNERS and require the "verdict" check on main.
+
+name: cfw-security-guard
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  schedule:
+    # Daily: a signature published tomorrow can match a file committed today.
+    - cron: "23 4 * * *"
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      ref:
+        description: "Commit, branch or tag to scan (default: the triggering commit)"
+        type: string
+        required: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cfw-security-guard-${{ github.event_name }}-${{ inputs.ref || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  # Untracked, so the gates that read git's file list do not see it.
+  LOGS: ${{ github.workspace }}/.cfw-guard-logs
+
+jobs:
+  malware:
+    name: malware (ClamAV)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      CLAMAV_DB: /home/runner/clamav-db
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+      - name: Install ClamAV
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends clamav clamav-freshclam
+          # The packaged updater daemon would hold the database lock.
+          sudo systemctl stop clamav-freshclam.service || true
+          mkdir -p "$LOGS" "$CLAMAV_DB"
+          clamscan --version | tee "$LOGS/clamav-version.log"
+      # The cache only saves freshclam the full download: it still asks the
+      # mirror for today's signatures, and a .cvd carries ClamAV's signature.
+      - name: Restore the signature database
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ env.CLAMAV_DB }}
+          key: clamav-db-${{ github.run_id }}
+          restore-keys: clamav-db-
+      - name: Update signatures
+        id: update
+        run: |
+          conf="$RUNNER_TEMP/freshclam.conf"
+          printf 'DatabaseDirectory %s\nDatabaseMirror database.clamav.net\n' "$CLAMAV_DB" > "$conf"
+          updated=no
+          for attempt in 1 2 3; do
+            if freshclam --config-file="$conf" --stdout 2>&1 | tee -a "$LOGS/clamav-freshclam.log"; then
+              updated=yes
+              break
+            fi
+            echo "freshclam attempt $attempt failed" | tee -a "$LOGS/clamav-freshclam.log"
+            sleep 30
+          done
+          if [ "$updated" != yes ]; then
+            # The mirror rate-limits shared runner addresses. Signatures from
+            # the last three days still count; older or none do not.
+            if [ -n "$(find "$CLAMAV_DB" -name 'daily.c[lv]d' -mmin -4320)" ]; then
+              echo "::warning::freshclam failed; scanning with cached signatures less than three days old"
+            else
+              echo "::error::freshclam failed and there are no recent signatures to fall back on"
+              exit 1
+            fi
+          fi
+          for name in main daily bytecode; do
+            file=$(find "$CLAMAV_DB" -name "$name.c[lv]d" | head -n 1)
+            if [ -z "$file" ]; then
+              echo "::error::the $name signature database is missing"
+              exit 1
+            fi
+            { basename "$file"; sigtool --info "$file" | grep -E '^(Build time|Version|Signatures):' | sed 's/^/  /'; } \
+              | tee -a "$LOGS/clamav-signatures.log"
+          done
+          echo "updated=$updated" >> "$GITHUB_OUTPUT"
+      - name: Save the signature database
+        if: steps.update.outputs.updated == 'yes'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ env.CLAMAV_DB }}
+          key: clamav-db-${{ github.run_id }}
+      - name: Self-test (the scanner must detect EICAR)
+        run: |
+          probe="$RUNNER_TEMP/eicar-probe"
+          mkdir -p "$probe"
+          # In two halves, so that no scanner takes this workflow for the test file.
+          printf '%s%s' 'X5O!P%@AP[4\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTI' 'VIRUS-TEST-FILE!$H+H*' \
+            > "$probe/eicar.com"
+          status=0
+          clamscan --database="$CLAMAV_DB" --no-summary "$probe" > "$LOGS/clamav-selftest.log" 2>&1 || status=$?
+          cat "$LOGS/clamav-selftest.log"
+          rm -rf "$probe"
+          if [ "$status" -ne 1 ]; then
+            echo "::error::ClamAV did not detect the EICAR test file (exit $status): its verdicts cannot be trusted"
+            exit 1
+          fi
+      - name: Scan every file
+        id: scan
+        run: |
+          # What clamscan counts: regular files that are not empty.
+          expected=$(find . -path ./.git -prune -o -path ./.cfw-guard-logs -prune -o -type f -size +0c -print | wc -l)
+          status=0
+          # .git holds the same files compressed, which no signature matches;
+          # the other exclusion is this job's own logs.
+          # A file over a scan limit is reported, not skipped.
+          clamscan --database="$CLAMAV_DB" --recursive --infected \
+            --exclude-dir='/\.git$' --exclude-dir='/\.cfw-guard-logs$' \
+            --scan-archive=yes --alert-exceeds-max=yes \
+            --max-filesize=1024M --max-scansize=2048M --max-files=100000 --max-recursion=24 \
+            --log="$LOGS/clamav-scan.log" . || status=$?
+          scanned=$(sed -n 's/^Scanned files: *//p' "$LOGS/clamav-scan.log" | tail -n 1)
+          infected=$(sed -n 's/^Infected files: *//p' "$LOGS/clamav-scan.log" | tail -n 1)
+          grep ' FOUND$' "$LOGS/clamav-scan.log" > "$LOGS/clamav-detections.log" || true
+          {
+            echo "scanned=${scanned:-0}"
+            echo "infected=${infected:-unknown}"
+            echo "expected=$expected"
+          } >> "$GITHUB_OUTPUT"
+          if [ "$status" -eq 1 ]; then
+            echo "::error::ClamAV detected ${infected:-?} file(s); see clamav-detections.log"
+            exit 1
+          elif [ "$status" -ne 0 ]; then
+            echo "::error::clamscan failed (exit $status): an incomplete scan is not a clean scan"
+            exit 1
+          elif [ "${scanned:-0}" -lt "$expected" ] || [ "$infected" != 0 ]; then
+            echo "::error::clamscan scanned ${scanned:-0} of $expected files, infected: ${infected:-unknown}"
+            exit 1
+          fi
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "### Malware (ClamAV): ${{ job.status }}"
+            echo
+            echo "Scanned ${{ steps.scan.outputs.scanned || '0' }}" \
+              "of ${{ steps.scan.outputs.expected || '?' }} files," \
+              "infected: ${{ steps.scan.outputs.infected || 'unknown' }}." \
+              "Signatures updated in this run: ${{ steps.update.outputs.updated || 'no' }}."
+            if [ -s "$LOGS/clamav-signatures.log" ]; then
+              printf '\n```\n'; cat "$LOGS/clamav-signatures.log"; printf '```\n'
+            fi
+            if [ -s "$LOGS/clamav-detections.log" ]; then
+              printf '\nDetections:\n\n```\n'; head -n 50 "$LOGS/clamav-detections.log"; printf '```\n'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload the logs
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: security-logs-malware
+          path: ${{ env.LOGS }}/
+          if-no-files-found: warn
+          retention-days: 90
+
+  sast:
+    name: sast (Flawfinder, sensitive APIs)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+      - name: Install Flawfinder
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends flawfinder
+          mkdir -p "$LOGS"
+          flawfinder --version | tee "$LOGS/flawfinder-version.log"
+      - name: Flawfinder (levels 4 and 5)
+        id: flawfinder
+        run: |
+          # Named one by one: Flawfinder would skip .inc and .mm in a directory.
+          # --neverignore: a "Flawfinder: ignore" comment does not hide a hit.
+          sources=(-- '*.c' '*.cc' '*.cpp' '*.cxx' '*.h' '*.hh' '*.hpp' '*.hxx' '*.inc' '*.inl' '*.ipp' '*.m' '*.mm')
+          count=$(git ls-files "${sources[@]}" | wc -l)
+          echo "Flawfinder reads $count files"
+          [ "$count" -gt 0 ] || { echo "::error::no C/C++ sources found"; exit 1; }
+          git ls-files -z "${sources[@]}" \
+            | xargs -0 flawfinder --neverignore --minlevel=4 --dataonly --quiet --csv > "$LOGS/flawfinder.csv"
+          # The same hits, and level 3, as text with their source lines.
+          git ls-files -z "${sources[@]}" \
+            | xargs -0 flawfinder --neverignore --minlevel=3 --dataonly --quiet --columns --context \
+            > "$LOGS/flawfinder-level3-and-up.txt"
+          python3 .github/security/cfw_guard.py flawfinder "$LOGS/flawfinder.csv" --log "$LOGS/flawfinder-gate.log"
+      - name: Sensitive-API policy
+        id: policy
+        if: ${{ !cancelled() }}
+        run: |
+          mkdir -p "$LOGS"
+          python3 .github/security/cfw_guard.py cxx --log "$LOGS/sensitive-api-gate.log"
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "### SAST: ${{ job.status }}"
+            echo
+            echo "| Gate | Result |"
+            echo "| --- | --- |"
+            echo "| Flawfinder, levels 4 and 5 | ${{ steps.flawfinder.outcome || 'not run' }} |"
+            echo "| Sensitive-API policy | ${{ steps.policy.outcome || 'not run' }} |"
+            for log in flawfinder-gate sensitive-api-gate; do
+              if grep -q '^BLOCKED' "$LOGS/$log.log" 2>/dev/null; then
+                printf '\nBlocked by %s:\n\n```\n' "$log"
+                grep -A 12 '^BLOCKED' "$LOGS/$log.log" | head -n 80
+                printf '```\n'
+              fi
+            done
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload the logs
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: security-logs-sast
+          path: ${{ env.LOGS }}/
+          if-no-files-found: warn
+          retention-days: 90
+
+  supply-chain:
+    name: supply chain (CMake, Python, shell, binaries)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+      - name: Install Bandit
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends bandit
+          mkdir -p "$LOGS"
+          bandit --version | tee "$LOGS/bandit-version.log"
+      - name: Build-script policy and committed executables
+        id: policy
+        run: python3 .github/security/cfw_guard.py supply-chain --log "$LOGS/supply-chain-gate.log"
+      - name: Bandit (medium and high severity)
+        id: bandit
+        if: ${{ !cancelled() }}
+        run: |
+          mkdir -p "$LOGS"
+          count=$(git ls-files -- '*.py' '*.pyw' | wc -l)
+          if [ "$count" -eq 0 ]; then
+            echo "no Python files" | tee "$LOGS/bandit.txt"
+            exit 0
+          fi
+          # --ignore-nosec: a "# nosec" comment does not hide a finding.
+          # Bandit exits 1 for a finding of any severity: the verdict is taken
+          # from the report below, which also fails when Bandit skipped a file
+          # it could not parse.
+          rm -f "$LOGS/bandit.json"
+          git ls-files -z -- '*.py' '*.pyw' \
+            | xargs -0 bandit --ignore-nosec -f json -o "$LOGS/bandit.json" || true
+          EXPECTED="$count" python3 - "$LOGS/bandit.json" <<'PY' | tee "$LOGS/bandit.txt"
+          import json, os, sys
+          report = json.load(open(sys.argv[1], encoding="utf-8"))
+          expected = int(os.environ["EXPECTED"])
+          scanned = len([name for name in report["metrics"] if name != "_totals"])
+          serious = [r for r in report["results"] if r["issue_severity"] in ("MEDIUM", "HIGH")]
+          for r in report["results"]:
+              print("%s:%s: [%s/%s] %s %s" % (r["filename"], r["line_number"], r["issue_severity"],
+                                              r["issue_confidence"], r["test_id"], r["issue_text"]))
+          for e in report["errors"]:
+              print("NOT SCANNED %s: %s" % (e["filename"], e["reason"]))
+          print("Bandit scanned %d of %d files: %d finding(s), %d of medium or high severity, %d file(s) not scanned"
+                % (scanned, expected, len(report["results"]), len(serious), len(report["errors"])))
+          sys.exit(1 if serious or report["errors"] or scanned != expected else 0)
+          PY
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "### Supply chain: ${{ job.status }}"
+            echo
+            echo "| Gate | Result |"
+            echo "| --- | --- |"
+            echo "| CMake, Python and shell policy; committed executables | ${{ steps.policy.outcome || 'not run' }} |"
+            echo "| Bandit, medium and high severity | ${{ steps.bandit.outcome || 'not run' }} |"
+            if grep -q '^BLOCKED' "$LOGS/supply-chain-gate.log" 2>/dev/null; then
+              printf '\nBlocked by supply-chain-gate:\n\n```\n'
+              grep -A 12 '^BLOCKED' "$LOGS/supply-chain-gate.log" | head -n 80
+              printf '```\n'
+            fi
+            if [ -s "$LOGS/bandit.txt" ]; then
+              printf '\n```\n'; tail -n 20 "$LOGS/bandit.txt"; printf '```\n'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload the logs
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: security-logs-supply-chain
+          path: ${{ env.LOGS }}/
+          if-no-files-found: warn
+          retention-days: 90
+
+  verdict:
+    name: verdict
+    # Always: a gate that failed, was cancelled or never ran must end in a
+    # failed verdict, not in a skipped one that branch protection lets through.
+    if: always()
+    needs: [malware, sast, supply-chain]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Verdict
+        env:
+          MALWARE: ${{ needs.malware.result }}
+          SAST: ${{ needs.sast.result }}
+          SUPPLY_CHAIN: ${{ needs.supply-chain.result }}
+        run: |
+          if [ "$MALWARE" = success ] && [ "$SAST" = success ] && [ "$SUPPLY_CHAIN" = success ]; then
+            clean=yes
+          else
+            clean=no
+          fi
+          {
+            if [ "$clean" = yes ]; then
+              echo "# :) &nbsp; CLEAN"
+              echo
+              echo "Every security gate passed for \`${{ inputs.ref || github.sha }}\`."
+            else
+              echo "# :( &nbsp; CRITICAL FAILURE"
+              echo
+              echo "At least one security gate did not pass for \`${{ inputs.ref || github.sha }}\`." \
+                "**Do not merge or release this commit.**"
+            fi
+            echo
+            echo "| Gate | Result | Logs (artifact) |"
+            echo "| --- | --- | --- |"
+            echo "| Malware (ClamAV) | $MALWARE | security-logs-malware |"
+            echo "| SAST (Flawfinder, sensitive APIs) | $SAST | security-logs-sast |"
+            echo "| Supply chain (CMake, Python, shell, binaries) | $SUPPLY_CHAIN | security-logs-supply-chain |"
+            echo
+            echo "A gate that is not \`success\` (failure, cancelled, skipped) counts as a failure." \
+              "Accepted findings are listed in \`.github/security/allowlist.txt\`."
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$clean" != yes ]; then
+            echo "::error::security guard: malware=$MALWARE sast=$SAST supply-chain=$SUPPLY_CHAIN"
+            exit 1
+          fi

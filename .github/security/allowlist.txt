@@ -1,0 +1,66 @@
+# What the cfw-security-guard gates accept: <rule> <file> <count>.
+#
+# A (rule, file) pair that is not listed here, or that occurs more often than
+# its count, fails the workflow. To accept a new finding, read it in the gate's
+# log, then add or raise its line in the same pull request, so the reviewer
+# sees the exception next to the code that needs it. Lower a count when the
+# gate notes that it found fewer.
+#
+#   python3 .github/security/cfw_guard.py cxx --print-allowlist
+#
+# prints the current findings in this format (likewise supply-chain, and
+# flawfinder with a --csv report).
+#
+# Seeded from the tree at e075438 (release 0.2.1): the entries below record
+# what was there, they are not the result of an audit of each call.
+
+# Process spawning: cfw::io::Process, opening a file or URL with the desktop,
+# the installer starting its maintenance tool, and tests that start the
+# session services they talk to (D-Bus, AT-SPI, an input method).
+cxx-process-spawn            modules/cfw-app/src/Desktop.cpp                          1
+cxx-process-spawn            modules/cfw-app/tests/AtspiTest.cpp                      2
+cxx-process-spawn            modules/cfw-app/tests/DBusTest.cpp                       2
+cxx-process-spawn            modules/cfw-io/src/Process.cpp                           2
+cxx-process-spawn            modules/cfw-platform/tests/X11ImeTest.cpp                2
+cxx-process-spawn            tools/installer/src/main.cpp                             1
+
+# Run-time loading of system libraries that are optional or must not be a
+# link-time dependency: ALSA, OpenSSL, OpenGL, XInput, avrt, libXi, libXtst.
+cxx-dynamic-load             modules/cfw-audio/src/AudioDeviceAlsa.cpp                3
+cxx-dynamic-load             modules/cfw-audio/src/AudioDeviceWasapi.cpp              2
+cxx-dynamic-load             modules/cfw-net/src/TlsOpenSsl.cpp                       3
+cxx-dynamic-load             modules/cfw-platform/src/GamepadWin32.cpp                4
+cxx-dynamic-load             modules/cfw-platform/src/GlContextCocoa.mm               2
+cxx-dynamic-load             modules/cfw-platform/src/GlContextGlx.cpp                8
+cxx-dynamic-load             modules/cfw-platform/src/GlContextWgl.cpp                2
+cxx-dynamic-load             modules/cfw-platform/src/WindowWin32.cpp                 3
+cxx-dynamic-load             modules/cfw-platform/src/WindowX11.cpp                   3
+cxx-dynamic-load             modules/cfw-platform/tests/X11InputTest.cpp              4
+
+# CMake that runs a program: objdump over the built binaries (CheckNoQt) and
+# the installer end-to-end test. No CMake file downloads anything.
+cmake-exec                   cmake/CheckNoQt.cmake                                    1
+cmake-exec                   tools/installer/tests/EndToEnd.cmake                     3
+
+# Python: the zip oracle runs Info-ZIP; generate.py names where ppucd.txt
+# comes from in its docstring and does not fetch it; the guard itself runs
+# git ls-files.
+py-process                   .github/security/cfw_guard.py                            1
+py-process                   testing/zip-oracle/make_zip_testdata.py                  1
+py-url                       tools/unicode/generate.py                                1
+
+# Flawfinder, levels 4 and 5.
+flawfinder-access            modules/cfw-app/tests/AtspiTest.cpp                      1
+flawfinder-access            modules/cfw-io/src/Process.cpp                           2
+flawfinder-chmod             modules/cfw-app/tests/DesktopTest.cpp                    1
+flawfinder-execlp            modules/cfw-app/tests/DBusTest.cpp                       1
+flawfinder-execlp            modules/cfw-platform/tests/X11ImeTest.cpp                1
+flawfinder-execv             modules/cfw-io/src/Process.cpp                           1
+flawfinder-execvp            modules/cfw-app/tests/AtspiTest.cpp                      1
+flawfinder-fprintf           tools/installer/src/main.cpp                             1
+flawfinder-printf            modules/cfw-io/tests/ProcessTest.cpp                     3
+flawfinder-snprintf          modules/cfw-core/tests/CharConvTest.cpp                  1
+flawfinder-swprintf          modules/cfw-net/src/TlsSchannel.cpp                      1
+flawfinder-system            modules/cfw-app/tests/AtspiTest.cpp                      1
+flawfinder-system            modules/cfw-app/tests/DBusTest.cpp                       1
+flawfinder-system            modules/cfw-platform/tests/X11ImeTest.cpp                1
