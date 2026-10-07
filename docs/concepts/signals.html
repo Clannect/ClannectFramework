@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en" data-root="../">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Signals - Clannect Framework Docs</title>
+<meta name="description" content="Signals in Clannect Framework: typed notifications in plain C++, and the three ways a connection ends.">
+<link rel="stylesheet" href="../assets/site.css">
+<script>try{var t=localStorage.getItem("cfw-docs-theme");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body data-page="concepts/signals">
+<main>
+<h1>Signals</h1>
+<p class="lead">A signal tells whoever is listening that something happened. It is plain C++: no code
+generator and no macros.</p>
+
+<h2>Declare, connect, emit</h2>
+<p>A signal is a public member, with the types of what it sends. The functions connected to it are called
+slots.</p>
+<pre><code class="language-cpp">#include "cfw/core/Signal.h"
+
+class World {
+public:
+    cfw::Signal&lt;Instance &amp;&gt; instanceAdded;
+};
+
+// Listen:
+cfw::ScopedConnection connection = world.instanceAdded.connect([](Instance &amp;instance) {
+    // ...
+});
+
+// Tell every listener:
+world.instanceAdded.emit(part);</code></pre>
+<p>Widgets work the same way. A button's <code>clicked</code> is a signal, and so is a window's
+<code>pointer</code>.</p>
+
+<h2>Ending a connection</h2>
+<p><code>connect</code> returns a <code>Connection</code>. What you do with it decides how long the slot
+stays connected:</p>
+<table>
+    <thead>
+        <tr><th>Keep it as</th><th>The slot is disconnected</th></tr>
+    </thead>
+    <tbody>
+        <tr><td><code>Connection</code></td><td>Only when you call <code>disconnect()</code>. Destroying a <code>Connection</code> does <strong>not</strong> disconnect.</td></tr>
+        <tr><td><code>ScopedConnection</code></td><td>When the <code>ScopedConnection</code> is destroyed. It can be moved but not copied.</td></tr>
+        <tr><td>Nothing: pass a <code>SignalOwner</code> to <code>connect</code></td><td>When the owner is destroyed.</td></tr>
+    </tbody>
+</table>
+
+<div class="note warning">
+    <span class="note-title">Do not let a slot outlive what it uses</span>
+    <p>A slot that captures <code>this</code> or a local variable by reference must be disconnected before
+    that object is gone. Use a <code>ScopedConnection</code> or a <code>SignalOwner</code>, not a plain
+    <code>Connection</code>.</p>
+</div>
+
+<h3>SignalOwner</h3>
+<p>An object that listens to several signals can derive from <code>SignalOwner</code>, or hold one as a
+member. Every connection made through it ends when the object is destroyed:</p>
+<pre><code class="language-cpp">#include "cfw/core/SignalOwner.h"
+
+class Explorer : public cfw::SignalOwner {
+public:
+    explicit Explorer(World &amp;world) {
+        world.instanceAdded.connect(*this, [this](Instance &amp;instance) { addRow(instance); });
+    }
+};</code></pre>
+<p>As a base class, <code>SignalOwner</code> disconnects after the derived destructor has run. If a slot
+could be called while the derived part is being torn down, call <code>disconnectAll()</code> first thing in
+the derived destructor.</p>
+
+<h2>The rules of an emission</h2>
+<p>All of this is defined behaviour, and tested:</p>
+<ul>
+    <li>Slots run at once, on the calling thread, in the order they were connected.</li>
+    <li>A slot connected during an emission is not called by that emission.</li>
+    <li>A slot disconnected during an emission is not called for the rest of it. A slot may disconnect
+    itself.</li>
+    <li>A slot may emit the same signal again.</li>
+    <li>A slot may destroy the signal, or the object that owns it. The emission stops after that slot
+    returns, and nothing is left dangling.</li>
+    <li>Every slot sees the same arguments, so a signal cannot carry an rvalue reference.</li>
+</ul>
+
+<h2>Threads</h2>
+<p>A signal belongs to one thread, its owner's, and is not synchronised. It does not deliver across threads:
+to reach another thread, post to that thread's event loop and emit there.</p>
+
+<h2>Cost</h2>
+<p>Connecting allocates. Emitting does not.</p>
+
+<h2>Why it works this way</h2>
+<p>Signals, connections and running emissions can each be destroyed first, in any order. The record of that
+decision is
+<a href="https://github.com/Clannect/ClannectFramework/blob/main/docs/decisions/0004-signal-slot-lifetime.md">0004: signal and slot lifetime</a>.</p>
+</main>
+<script src="../assets/site.js"></script>
+</body>
+</html>

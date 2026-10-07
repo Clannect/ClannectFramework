@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en" data-root="../">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hello, window - Clannect Framework Docs</title>
+<meta name="description" content="A first Clannect Framework program: a window with a label and a button, explained line by line.">
+<link rel="stylesheet" href="../assets/site.css">
+<script>try{var t=localStorage.getItem("cfw-docs-theme");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body data-page="get-started/hello-window">
+<main>
+<h1>Hello, window</h1>
+<p class="lead">A first program: a window with a label and a button that counts its clicks.</p>
+
+<h2>The program</h2>
+<pre><code class="language-cpp">#include &lt;cstdio&gt;
+#include &lt;string&gt;
+
+#include "cfw/app/UiWindow.h"
+#include "cfw/ui/Controls.h"
+
+using namespace cfw;
+
+int main() {
+    auto created = UiWindow::create({"Hello, CFW", {480, 320}}, Theme::dark().withSystemFonts());
+    if (!created) {
+        std::fprintf(stderr, "no window: %s\n", created.error().message().c_str());
+        return 1;
+    }
+    UiWindow &amp;window = *created.value();
+
+    auto &amp;column = window.surface().root().add&lt;Stack&gt;(Stack::Direction::Column, 12.0f, 24.0f);
+    auto &amp;label = column.add&lt;Label&gt;("Hello from Clannect Framework");
+    auto &amp;button = column.add&lt;Button&gt;("Click me");
+
+    int clicks = 0;
+    ScopedConnection onClick = button.clicked.connect([&amp;] {
+        label.setText("Clicked " + std::to_string(++clicks) + " times");
+    });
+
+    runUntilClosed(window);
+}</code></pre>
+<p>Link it against <code>cfw::app</code>, as shown in
+<a href="use-in-your-project.html">Use CFW in your project</a>.</p>
+
+<h2>What each part does</h2>
+
+<h3>Create the window</h3>
+<pre><code class="language-cpp">auto created = UiWindow::create({"Hello, CFW", {480, 320}}, Theme::dark().withSystemFonts());</code></pre>
+<p><code>UiWindow</code> is a native window that shows a tree of widgets. It takes a title, a size, and a
+theme. <code>Theme::dark()</code> is the palette of Clannect's editor; there is a
+<code>Theme::light()</code> too. A theme has no fonts until you ask for them:
+<code>withSystemFonts()</code> gives it the platform's interface font.</p>
+
+<h3>Check that it worked</h3>
+<pre><code class="language-cpp">if (!created) {
+    std::fprintf(stderr, "no window: %s\n", created.error().message().c_str());
+    return 1;
+}</code></pre>
+<p>Creating a window can fail, for example on a machine with no display. CFW does not throw for errors:
+<code>create</code> returns a <code>Result</code>, which holds either the window or an <code>Error</code> that
+says why not. See <a href="../concepts/errors.html">Errors and Result</a>.</p>
+
+<h3>Add the widgets</h3>
+<pre><code class="language-cpp">auto &amp;column = window.surface().root().add&lt;Stack&gt;(Stack::Direction::Column, 12.0f, 24.0f);
+auto &amp;label = column.add&lt;Label&gt;("Hello from Clannect Framework");
+auto &amp;button = column.add&lt;Button&gt;("Click me");</code></pre>
+<p>A <code>Stack</code> lays its children out in a row or a column. Here it is a column with a spacing
+of 12 between the children and a padding of 24 around them. <code>add&lt;T&gt;(...)</code> creates a widget
+inside its parent and returns a reference to it; the parent owns it.</p>
+
+<h3>React to the click</h3>
+<pre><code class="language-cpp">ScopedConnection onClick = button.clicked.connect([&amp;] {
+    label.setText("Clicked " + std::to_string(++clicks) + " times");
+});</code></pre>
+<p><code>clicked</code> is a signal: connect a function to it and the button calls the function on every
+click. The <code>ScopedConnection</code> disconnects when it goes out of scope, so the function is never
+called after <code>clicks</code> and <code>label</code> are gone. See
+<a href="../concepts/signals.html">Signals</a>.</p>
+
+<h3>Run</h3>
+<pre><code class="language-cpp">runUntilClosed(window);</code></pre>
+<p>This handles events and paints frames until the window is closed.</p>
+
+<h2>Next</h2>
+<ul>
+    <li>See every widget in the gallery: <code>build/debug/examples/cfw-ui-gallery</code>. Its source is in
+    <code>examples/ui-gallery</code>.</li>
+    <li>Learn which module does what in <a href="../concepts/modules.html">Modules and platforms</a>.</li>
+</ul>
+</main>
+<script src="../assets/site.js"></script>
+</body>
+</html>

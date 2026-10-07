@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en" data-root="../">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Use CFW in your project - Clannect Framework Docs</title>
+<meta name="description" content="Add Clannect Framework to a CMake project with FetchContent, or install a release and use find_package.">
+<link rel="stylesheet" href="../assets/site.css">
+<script>try{var t=localStorage.getItem("cfw-docs-theme");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body data-page="get-started/use-in-your-project">
+<main>
+<h1>Use CFW in your project</h1>
+<p class="lead">Add CFW to a CMake project from source with FetchContent, or install a release and let
+<code>find_package</code> find it.</p>
+
+<h2>From source, with FetchContent</h2>
+<p>CMake downloads CFW and builds it as part of your project:</p>
+<pre><code class="language-cmake">include(FetchContent)
+FetchContent_Declare(
+    ClannectFramework
+    GIT_REPOSITORY https://github.com/Clannect/ClannectFramework.git
+    GIT_TAG        main   # or a specific commit
+)
+FetchContent_MakeAvailable(ClannectFramework)
+
+target_link_libraries(my_app PRIVATE cfw::app)   # or cfw::core, cfw::net, cfw::text...</code></pre>
+<p>As a subproject, CFW builds only its libraries: no tests, examples or benchmarks.</p>
+
+<div class="note tip">
+    <span class="note-title">Tip</span>
+    <p>Set <code>GIT_TAG</code> to a specific commit or release tag. CFW is pre-1.0 and its API may change
+    between versions, so <code>main</code> can break your build on any day.</p>
+</div>
+
+<h2>From a release</h2>
+<p>Prebuilt packages are on the
+<a href="https://github.com/Clannect/ClannectFramework/releases">Releases page</a>.</p>
+
+<h3>Windows</h3>
+<p>There are two installers:</p>
+<ul>
+    <li>The <strong>online installer</strong> downloads the version you choose, and can tell you when a new
+    one is released.</li>
+    <li>A version's <strong>offline installer</strong> has everything inside and needs no internet.</li>
+</ul>
+<p>Both can register the install with CMake, so <code>find_package</code> finds it with no path to set. A
+zip of the Windows package is on the Releases page too.</p>
+
+<h3>Linux and macOS</h3>
+<p>Unpack the package for Linux x64, or for macOS on Apple silicon (experimental), and point CMake at the
+folder:</p>
+<pre><code class="language-sh">cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/unpacked/folder</code></pre>
+
+<h3>In your CMakeLists.txt</h3>
+<pre><code class="language-cmake">find_package(ClannectFramework 0.2 REQUIRED)
+target_link_libraries(my_app PRIVATE cfw::app)</code></pre>
+<p>The packages also contain <code>cfw-ui-gallery</code>, a tour of the widgets.</p>
+
+<h2>Which target to link</h2>
+<p>Each module is a CMake target named <code>cfw::&lt;name&gt;</code>, and linking one brings in the modules
+it depends on. Link the highest one you use:</p>
+<table>
+    <thead>
+        <tr><th>You are writing</th><th>Link</th></tr>
+    </thead>
+    <tbody>
+        <tr><td>A desktop application with windows and widgets</td><td><code>cfw::app</code></td></tr>
+        <tr><td>A headless server</td><td><code>cfw::net</code>, and <code>cfw::io</code> for files and JSON (each brings <code>cfw::core</code>)</td></tr>
+        <tr><td>A tool that reads files, JSON or zip archives</td><td><code>cfw::io</code></td></tr>
+        <tr><td>Something that only plays or decodes sound</td><td><code>cfw::audio</code></td></tr>
+    </tbody>
+</table>
+<p>See <a href="../concepts/modules.html">Modules and platforms</a> for the whole list.</p>
+
+<h2>Next</h2>
+<p>Write your first program: <a href="hello-window.html">Hello, window</a>.</p>
+</main>
+<script src="../assets/site.js"></script>
+</body>
+</html>

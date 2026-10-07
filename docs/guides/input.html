@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en" data-root="../">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Read input - Clannect Framework Docs</title>
+<meta name="description" content="Relative mouse mode, keys by layout and by position, touch, pen and gamepads in Clannect Framework.">
+<link rel="stylesheet" href="../assets/site.css">
+<script>try{var t=localStorage.getItem("cfw-docs-theme");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body data-page="guides/input">
+<main>
+<h1>Read input</h1>
+<p class="lead">How a game or an editor reads the mouse, the keyboard, touch, a pen and gamepads through
+<code>cfw-platform</code>.</p>
+
+<h2>A first-person camera: relative mouse mode</h2>
+<p>For a camera you want the mouse's own movement, not the position of a cursor that stops at the edge of the
+screen. Turn on relative mode, and read <code>PointerEvent::delta</code>:</p>
+<pre><code class="language-cpp">window->setRelativeMouse(true);   // raw deltas, cursor hidden
+cfw::ScopedConnection c = window->pointer.connect([&amp;](const cfw::PointerEvent &amp;e) {
+    camera.turn(e.delta);
+});</code></pre>
+<ul>
+    <li>The cursor is hidden and held in place.</li>
+    <li><code>delta</code> is unaccelerated, and the screen's edge does not stop it.</li>
+    <li>Relative mode ends when the window loses the focus. The window says so through
+    <code>relativeMouseChanged</code>, so you can show a "click to continue" screen.</li>
+</ul>
+<p>To keep a <em>visible</em> cursor inside the window, use <code>Window::setCursorConfined</code> instead.</p>
+
+<h2>Keys: what was typed, and where it is</h2>
+<p>Every key event carries two answers, because games and shortcuts need different ones:</p>
+<table>
+    <thead>
+        <tr><th>Field</th><th>What it is</th><th>Use it for</th></tr>
+    </thead>
+    <tbody>
+        <tr><td><code>key</code></td><td>What the user's keyboard layout produces.</td><td>Shortcuts: Ctrl+S should be the key labelled S.</td></tr>
+        <tr><td><code>physicalKey</code></td><td>The position of the key, by its name on a US layout.</td><td>Movement: W, A, S, D should be the same four positions on every layout.</td></tr>
+    </tbody>
+</table>
+<p>Left and right modifiers are told apart in <code>physicalKey</code> (<code>Key::LeftShift</code>,
+<code>Key::RightShift</code> and so on). <code>key</code> stays <code>Key::Shift</code>.</p>
+
+<h2>Touch and pen</h2>
+<p><code>Window::touch</code> reports every contact, each with an id, so you can follow several fingers.</p>
+<p>The primary contact also arrives on <code>Window::pointer</code> as the left mouse button. Code written
+for the mouse works with a finger or a pen unchanged.</p>
+
+<h2>Gamepads</h2>
+<pre><code class="language-cpp">#include "cfw/platform/Gamepad.h"
+
+auto pads = cfw::Gamepads::create();
+// then, once a frame:
+pads->poll();</code></pre>
+<p>You get the standard layout, plus the raw buttons and axes for pads that do not fit it. You can read pads
+by polling or by events, and make them rumble. There are virtual pads for tests.</p>
+
+<h2>See every event</h2>
+<p>The example program <code>examples/input-events</code> prints every event it receives. Run it with a real
+mouse, keyboard and pad to see exactly what your hardware sends:</p>
+<pre><code class="language-sh">cfw-input-events</code></pre>
+
+<h2>What is verified</h2>
+<div class="note warning">
+    <span class="note-title">Much of this has not met real hardware</span>
+    <p>The input code is tested with injected events, not with physical devices. No gamepad, touch screen or
+    pen was at hand, and the macOS code has never been compiled by a person on a Mac.</p>
+</div>
+<table>
+    <thead>
+        <tr><th></th><th>Windows</th><th>Linux (X11)</th><th>macOS</th></tr>
+    </thead>
+    <tbody>
+        <tr><td>Relative mouse mode</td><td>Verified with injected movement.</td><td>Verified under Xvfb. Unverified on a physical X server and under XWayland.</td><td>Unverified.</td></tr>
+        <tr><td>Confined cursor</td><td>Verified.</td><td>Verified under Xvfb.</td><td>Not implemented.</td></tr>
+        <tr><td>Key position, left and right modifiers</td><td>Verified with posted key messages.</td><td>Verified under Xvfb.</td><td>Unverified.</td></tr>
+        <tr><td>Touch and pen</td><td>Unverified with a device.</td><td>Unverified.</td><td>Not implemented.</td></tr>
+        <tr><td>Gamepads</td><td>Mappings tested; unverified with hardware.</td><td>Mappings tested; unverified with hardware.</td><td>Unverified. No rumble.</td></tr>
+    </tbody>
+</table>
+<p>The README has <a href="https://github.com/Clannect/ClannectFramework#input">the full table</a>, with the
+system API behind each cell.</p>
+</main>
+<script src="../assets/site.js"></script>
+</body>
+</html>

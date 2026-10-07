@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en" data-root="../">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Build presets - Clannect Framework Docs</title>
+<meta name="description" content="The CMake presets of Clannect Framework: debug, release, the sanitizer builds, fuzzing, and cross-compiling for Windows.">
+<link rel="stylesheet" href="../assets/site.css">
+<script>try{var t=localStorage.getItem("cfw-docs-theme");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body data-page="reference/build-presets">
+<main>
+<h1>Build presets</h1>
+<p class="lead">The CMake presets in <code>CMakePresets.json</code>, and what each one is for.</p>
+
+<h2>Using a preset</h2>
+<p>A preset has the same name for configuring, building and testing. Each builds into
+<code>build/&lt;preset&gt;</code>.</p>
+<pre><code class="language-sh">cmake --preset release
+cmake --build --preset release
+ctest --preset release</code></pre>
+
+<h2>The presets</h2>
+<table>
+    <thead>
+        <tr><th>Preset</th><th>Use</th></tr>
+    </thead>
+    <tbody>
+        <tr><td><code>debug</code></td><td>Everyday development: contract checks and bounds-checked containers.</td></tr>
+        <tr><td><code>release</code></td><td>Optimised, checks off.</td></tr>
+        <tr><td><code>asan</code></td><td>AddressSanitizer, UndefinedBehaviorSanitizer and leak checks.</td></tr>
+        <tr><td><code>tsan</code></td><td>ThreadSanitizer (Linux).</td></tr>
+        <tr><td><code>ubsan-trap</code></td><td>UndefinedBehaviorSanitizer without a runtime library. Works with MinGW.</td></tr>
+        <tr><td><code>fuzz</code></td><td>Clang and libFuzzer: a fuzz target for every parser.</td></tr>
+    </tbody>
+</table>
+
+<div class="note">
+    <span class="note-title">Sanitizers on Windows</span>
+    <p>MinGW cannot run AddressSanitizer or ThreadSanitizer. On Windows use <code>ubsan-trap</code>; run
+    <code>asan</code>, <code>tsan</code> and <code>fuzz</code> on Linux, as CFW's CI does.</p>
+</div>
+
+<h2>Choosing a compiler</h2>
+<p>Pass the compiler when you configure:</p>
+<pre><code class="language-sh">cmake --preset debug -DCMAKE_CXX_COMPILER=clang++</code></pre>
+
+<h2>Building for Windows from Linux</h2>
+<p>CFW has a toolchain file for the MinGW-w64 cross-compiler:</p>
+<pre><code class="language-sh">cmake -S . -B build/windows -G Ninja -DCMAKE_TOOLCHAIN_FILE=cmake/toolchains/mingw-w64-cross.cmake
+cmake --build build/windows
+ctest --test-dir build/windows</code></pre>
+<p>The tests are Windows programs, and run under Wine.</p>
+
+<h2>Longer soak tests</h2>
+<p>The soak tests are long randomised runs of the network stack and the widget toolkit. Set
+<code>CFW_SOAK_SECONDS</code> to make them run longer:</p>
+<pre><code class="language-sh">CFW_SOAK_SECONDS=600 ctest --preset debug</code></pre>
+</main>
+<script src="../assets/site.js"></script>
+</body>
+</html>
