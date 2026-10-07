@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en" data-root="../">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Build and run the tests - Clannect Framework Docs</title>
+<meta name="description" content="Clone Clannect Framework, configure it with a CMake preset, build it, and run the test suite.">
+<link rel="stylesheet" href="../assets/site.css">
+<script>try{var t=localStorage.getItem("cfw-docs-theme");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body data-page="get-started/build">
+<main>
+<h1>Build and run the tests</h1>
+<p class="lead">Clone the repository, configure it with a CMake preset, build it, and run the test suite.</p>
+
+<h2>What you need</h2>
+<ul>
+    <li><strong>CMake</strong> 3.25 or newer.</li>
+    <li><strong>Ninja.</strong></li>
+    <li><strong>A C++20 compiler:</strong> GCC 13 (MinGW-w64 on Windows) or Clang 18.</li>
+</ul>
+<p>Nothing else is needed to build. CFW links only the C++ standard library and the operating system.</p>
+
+<div class="note">
+    <span class="note-title">Linux</span>
+    <p>Install the X11 development headers (<code>libx11-dev</code> on Debian and Ubuntu) to get windows.
+    Without them, CFW builds a headless stub.</p>
+</div>
+
+<h2>Build</h2>
+<pre><code class="language-sh">git clone https://github.com/Clannect/ClannectFramework.git
+cd ClannectFramework
+cmake --preset debug
+cmake --build --preset debug</code></pre>
+<p>The <code>debug</code> preset is the one for everyday work: it turns on contract checks and bounds-checked
+containers. The other presets are listed in <a href="../reference/build-presets.html">Build presets</a>.</p>
+
+<h2>Run the tests</h2>
+<pre><code class="language-sh">ctest --preset debug</code></pre>
+<p>Every test should pass. Warnings are errors in CFW's own code, so a clean build is also a build with no
+warnings.</p>
+
+<h2>Try the widget gallery</h2>
+<p>The gallery is a tour of the widgets in <code>cfw-ui</code>. After a debug build it is here:</p>
+<pre><code class="language-sh">build/debug/examples/cfw-ui-gallery</code></pre>
+
+<h2>Optional libraries at run time</h2>
+<p>On Linux, CFW loads two system libraries when the program runs, if they are installed, and does without
+them otherwise. Both are on every desktop system.</p>
+<table>
+    <thead>
+        <tr><th>Library</th><th>Used for</th></tr>
+    </thead>
+    <tbody>
+        <tr><td><code>libasound.so.2</code></td><td>Sound output.</td></tr>
+        <tr><td><code>libXi.so.6</code></td><td>Relative mouse mode and touch.</td></tr>
+    </tbody>
+</table>
+
+<h2>Next</h2>
+<p>CFW builds and its tests pass. Now <a href="use-in-your-project.html">use it in your own project</a>.</p>
+</main>
+<script src="../assets/site.js"></script>
+</body>
+</html>

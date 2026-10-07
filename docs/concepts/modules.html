@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en" data-root="../">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Modules and platforms - Clannect Framework Docs</title>
+<meta name="description" content="The ten modules of Clannect Framework, how they depend on each other, and the platforms it runs on.">
+<link rel="stylesheet" href="../assets/site.css">
+<script>try{var t=localStorage.getItem("cfw-docs-theme");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body data-page="concepts/modules">
+<main>
+<h1>Modules and platforms</h1>
+<p class="lead">CFW is ten modules in layers. You link the ones you use, and nothing else comes along.</p>
+
+<h2>The modules</h2>
+<table>
+    <thead>
+        <tr><th>Module</th><th>What it gives you</th></tr>
+    </thead>
+    <tbody>
+        <tr><td><code>cfw-core</code></td><td>Strings and UTF-8/16, containers, math (vectors, quaternions, matrices), colours, <code>Variant</code>, properties, signals, <code>Result</code> and <code>Error</code>, logging, arenas, SHA-256, UUIDs, URLs, locale-aware number formatting, and DEFLATE/zlib compression.</td></tr>
+        <tr><td><code>cfw-io</code></td><td>Files and paths (UTF-8, atomic writes, memory mapping), JSON with precise error positions, a binary reader and writer, zip archives, per-user settings and standard folders, processes.</td></tr>
+        <tr><td><code>cfw-net</code></td><td>An event loop, TCP, TLS 1.2 and 1.3 through the operating system, an HTTP/1.1 client, and WebSocket client and server.</td></tr>
+        <tr><td><code>cfw-image</code></td><td><code>Image</code>; PNG and JPEG decoding and encoding, WebP decoding; resizing and an atlas packer.</td></tr>
+        <tr><td><code>cfw-audio</code></td><td>Sound output through the system's default device; WAV, Ogg Vorbis, MP3 and FLAC decoders; resamplers. See <a href="../guides/sound.html">Play sound</a>.</td></tr>
+        <tr><td><code>cfw-text</code></td><td>Unicode 18 (grapheme clusters, line breaking, bidi), a TrueType/CFF font parser, OpenType shaping, text layout, font fallback and a glyph atlas.</td></tr>
+        <tr><td><code>cfw-gfx</code></td><td>A 2D <code>Painter</code>: paths, pens, dashes, gradients, images, transforms, clipping and blend modes, on an anti-aliased CPU rasteriser; SVG icons.</td></tr>
+        <tr><td><code>cfw-platform</code></td><td>Native windows, keyboard, mouse, touch and pen, gamepads, input methods, file drag and drop, the clipboard, cursors, high-DPI, and OpenGL 3.3 contexts. See <a href="../guides/input.html">Read input</a>.</td></tr>
+        <tr><td><code>cfw-ui</code></td><td>A retained widget toolkit: layout, focus, themes, buttons, text fields, menus, dropdowns, sliders, tree views, tabs, dockable panels, property grids, dialogs, a colour picker and more.</td></tr>
+        <tr><td><code>cfw-app</code></td><td>Puts it together: UI windows, screen reader support, native file and folder pickers, opening links.</td></tr>
+    </tbody>
+</table>
+
+<h2>How they depend on each other</h2>
+<p>Each module is a CMake target, <code>cfw::core</code> to <code>cfw::app</code>. Linking a module brings in
+the ones it depends on, directly or through another module:</p>
+<table>
+    <thead>
+        <tr><th>Module</th><th>Depends directly on</th></tr>
+    </thead>
+    <tbody>
+        <tr><td><code>cfw-core</code></td><td>Nothing: the C++ standard library and the operating system.</td></tr>
+        <tr><td><code>cfw-io</code></td><td><code>cfw-core</code></td></tr>
+        <tr><td><code>cfw-net</code></td><td><code>cfw-core</code></td></tr>
+        <tr><td><code>cfw-image</code></td><td><code>cfw-core</code></td></tr>
+        <tr><td><code>cfw-audio</code></td><td><code>cfw-core</code></td></tr>
+        <tr><td><code>cfw-text</code></td><td><code>cfw-image</code>, <code>cfw-io</code></td></tr>
+        <tr><td><code>cfw-gfx</code></td><td><code>cfw-image</code>, <code>cfw-text</code></td></tr>
+        <tr><td><code>cfw-platform</code></td><td><code>cfw-image</code></td></tr>
+        <tr><td><code>cfw-ui</code></td><td><code>cfw-gfx</code>, <code>cfw-text</code></td></tr>
+        <tr><td><code>cfw-app</code></td><td><code>cfw-io</code>, <code>cfw-platform</code>, <code>cfw-ui</code></td></tr>
+    </tbody>
+</table>
+<p>So a headless game server links <code>cfw::core</code>, <code>cfw::io</code> and <code>cfw::net</code>, and
+has no window, font or image code in it at all.</p>
+
+<h2>Platforms</h2>
+<table>
+    <thead>
+        <tr><th>Platform</th><th>Status</th></tr>
+    </thead>
+    <tbody>
+        <tr><td><strong>Windows</strong> (MinGW-w64 GCC 13)</td><td>Supported.</td></tr>
+        <tr><td><strong>Linux</strong> (X11; GCC 13 or Clang 18)</td><td>Supported.</td></tr>
+        <tr><td><strong>macOS</strong> 13.3 or newer (Apple silicon)</td><td>Experimental: it builds and passes the tests on GitHub's macOS runners, but no person has tried it on a real Mac yet.</td></tr>
+    </tbody>
+</table>
+<div class="note">
+    <span class="note-title">Wayland</span>
+    <p>There is no Wayland backend. On a Wayland desktop, CFW runs through XWayland.</p>
+</div>
+
+<h2>No third-party dependencies</h2>
+<p>Everything CFW needs, from PNG and MP3 decoding to OpenType shaping, is implemented in the repository. TLS
+is the one thing it does not implement: it uses the operating system's. The reasons are recorded in the
+<a href="https://github.com/Clannect/ClannectFramework/tree/main/docs/decisions">design decisions</a>.</p>
+</main>
+<script src="../assets/site.js"></script>
+</body>
+</html>

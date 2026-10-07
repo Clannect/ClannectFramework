@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en" data-root="../">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How CFW is tested - Clannect Framework Docs</title>
+<meta name="description" content="How Clannect Framework is tested: reference outputs, fuzzing, sanitizers, real system clients and soak tests.">
+<link rel="stylesheet" href="../assets/site.css">
+<script>try{var t=localStorage.getItem("cfw-docs-theme");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body data-page="project/testing">
+<main>
+<h1>How CFW is tested</h1>
+<p class="lead">CFW replaces libraries that have had decades of hardening, so it is tested against them
+directly.</p>
+
+<h2>Reference outputs</h2>
+<p>The reference implementations run outside the build to produce the expected results. They are never
+linked into CFW.</p>
+<table>
+    <thead>
+        <tr><th>Area</th><th>Checked against</th><th>How close</th></tr>
+    </thead>
+    <tbody>
+        <tr><td>PNG decoding</td><td>All of PngSuite</td><td>Exact.</td></tr>
+        <tr><td>JPEG and WebP decoding</td><td>libjpeg-turbo and libwebp</td><td>Exactly the same pixels.</td></tr>
+        <tr><td>FLAC decoding</td><td>The reference encoder's files</td><td>Bit for bit.</td></tr>
+        <tr><td>Vorbis and MP3 decoding</td><td>FFmpeg's decoders</td><td>Sample by sample, to float rounding.</td></tr>
+        <tr><td>Font parsing</td><td>fontTools and FreeType</td><td>Glyph for glyph.</td></tr>
+        <tr><td>Text shaping</td><td>HarfBuzz</td><td>Every glyph id, cluster and offset.</td></tr>
+        <tr><td>Text algorithms</td><td>Unicode's conformance tests</td><td>All pass.</td></tr>
+    </tbody>
+</table>
+
+<h2>Fuzzing</h2>
+<p>Every parser has a libFuzzer target: JSON, URLs, HTTP, WebSocket frames, compression, PNG, JPEG, WebP, the
+four sound formats, fonts, SVG, shaping and painting.</p>
+<p>The corpus is committed in <code>fuzz/corpus</code> and is replayed in every build, so an input that once
+crashed a parser is checked forever after.</p>
+
+<h2>Sanitizers</h2>
+<p>CI runs the whole suite under AddressSanitizer, UndefinedBehaviorSanitizer and LeakSanitizer, and the
+networking code under ThreadSanitizer. One report fails the job. The presets are in
+<a href="../reference/build-presets.html">Build presets</a>.</p>
+
+<h2>Real system clients</h2>
+<p>Some features only mean something next to the real system component, so that is what the tests use:</p>
+<ul>
+    <li><strong>Input methods:</strong> a real X input method.</li>
+    <li><strong>Screen reader support:</strong> the AT-SPI registry on Linux, and Windows' own accessibility
+    APIs under Wine.</li>
+    <li><strong>Drag and drop:</strong> the system's own protocol.</li>
+    <li><strong>Keyboard and mouse:</strong> input injected through the X server (XTEST) and the Windows
+    input stack.</li>
+</ul>
+
+<h2>Soak tests</h2>
+<p>Long randomised runs of the network stack and the widget toolkit. Set <code>CFW_SOAK_SECONDS</code> to
+make them run longer.</p>
+
+<h2>Warnings are errors</h2>
+<p>CFW's own code is built with warnings as errors, in every CI job.</p>
+
+<h2>What is not verified</h2>
+<p>Where something has not been checked on a real system, the README says so, cell by cell, in its tables
+for <a href="https://github.com/Clannect/ClannectFramework#sound-cfw-audio">sound</a> and
+<a href="https://github.com/Clannect/ClannectFramework#input">input</a>. The largest gaps today are macOS
+and physical input devices.</p>
+
+<h2>If you send a change</h2>
+<p>Add tests with it, and make sure <code>ctest --preset debug</code> passes with no warnings. Pull requests
+are also scanned by the <a href="security.html">security checks</a>.</p>
+</main>
+<script src="../assets/site.js"></script>
+</body>
+</html>

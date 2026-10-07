@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en" data-root="../">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Security checks - Clannect Framework Docs</title>
+<meta name="description" content="The security guard that scans every pull request to Clannect Framework, and what the allowlist is.">
+<link rel="stylesheet" href="../assets/site.css">
+<script>try{var t=localStorage.getItem("cfw-docs-theme");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body data-page="project/security">
+<main>
+<h1>Security checks</h1>
+<p class="lead">A workflow called <code>cfw-security-guard</code> scans the whole repository on every push
+and pull request, every day, and before every release.</p>
+
+<h2>Why it exists</h2>
+<p>CFW is built into other people's software. Harmful code that got into CFW would reach everyone who uses
+it. The guard is there so that a risky change cannot arrive unnoticed.</p>
+
+<h2>What it checks</h2>
+<table>
+    <thead>
+        <tr><th>Job</th><th>What it looks for</th><th>With</th></tr>
+    </thead>
+    <tbody>
+        <tr><td><code>malware</code></td><td>Known malware in any file.</td><td>ClamAV, with signatures updated in the run.</td></tr>
+        <tr><td><code>sast</code></td><td>Risky C and C++: starting other programs, injecting code, loading libraries at run time, unsafe copies and format strings.</td><td>Flawfinder (levels 4 and 5) and CFW's own scan.</td></tr>
+        <tr><td><code>supply-chain</code></td><td>CMake, Python and shell that download or run things; committed executables.</td><td>CFW's own scan and Bandit.</td></tr>
+        <tr><td><code>verdict</code></td><td>Whether every job above passed.</td><td></td></tr>
+    </tbody>
+</table>
+<p>The <code>verdict</code> job writes the result at the top of the run's summary: <strong>:) CLEAN</strong>
+or <strong>:( CRITICAL FAILURE</strong>.</p>
+
+<h2>It fails closed</h2>
+<p>A job fails when it finds something. It also fails when it could not do its work: when the malware
+signatures could not be updated, when a scanner could not read a file, or when it scanned fewer files than
+there are. A job that did not run counts as a failure too.</p>
+
+<h2>The allowlist</h2>
+<p>Some CFW code does risky-looking things on purpose. <code>cfw-io</code> starts other programs, because
+that is what its <code>Process</code> class is for. <code>cfw-audio</code> loads the system's sound library
+at run time.</p>
+<p>These accepted cases are listed in
+<a href="https://github.com/Clannect/ClannectFramework/blob/main/.github/security/allowlist.txt"><code>.github/security/allowlist.txt</code></a>,
+one line each: a rule, a file, and how many times it may occur. Anything that is not on the list, or occurs
+more often than the list says, fails the run.</p>
+
+<div class="note warning">
+    <span class="note-title">Changes near the allowlist take longer to review</span>
+    <p>A pull request that edits a file named in the allowlist, the allowlist itself, or anything under
+    <code>.github/</code> is inspected by hand by the Clannect team, even when the verdict is clean. See
+    <a href="https://github.com/Clannect/ClannectFramework/blob/main/CONTRIBUTE.md">CONTRIBUTE.md</a>.</p>
+</div>
+
+<h2>If your pull request fails</h2>
+<ol>
+    <li>Open the failed run and read its summary. It names the rule, the file and the line.</li>
+    <li>For more, download the logs from the run's artifacts: <code>security-logs-malware</code>,
+    <code>security-logs-sast</code> and <code>security-logs-supply-chain</code>.</li>
+    <li>If the finding is a mistake in your change, fix the code.</li>
+    <li>If the call is really needed, add or raise its line in the allowlist in the same pull request, and
+    say why in the description.</li>
+</ol>
+<p>You can run two of the scans yourself, from the repository's root:</p>
+<pre><code class="language-sh">python3 .github/security/cfw_guard.py cxx
+python3 .github/security/cfw_guard.py supply-chain</code></pre>
+
+<h2>What it cannot do</h2>
+<p>The source scans read the code as text. They catch a risky call that is written down, not one that is put
+together while the program runs. The guard is an alarm that makes a person look. It is not proof that the
+code is safe.</p>
+</main>
+<script src="../assets/site.js"></script>
+</body>
+</html>

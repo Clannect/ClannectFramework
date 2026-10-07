@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en" data-root="../">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Play sound - Clannect Framework Docs</title>
+<meta name="description" content="Decode WAV, Ogg Vorbis, MP3 and FLAC with cfw-audio and play them through the system's default device.">
+<link rel="stylesheet" href="../assets/site.css">
+<script>try{var t=localStorage.getItem("cfw-docs-theme");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body data-page="guides/sound">
+<main>
+<h1>Play sound</h1>
+<p class="lead">Decode WAV, Ogg Vorbis, MP3 and FLAC with <code>cfw-audio</code>, and play the result through
+the system's default device.</p>
+
+<h2>How it fits together</h2>
+<p>There are three parts, and you connect them yourself:</p>
+<ul>
+    <li>A <strong>decoder</strong> turns the bytes of a file into samples: interleaved floats.</li>
+    <li>A <strong>resampler</strong> brings those samples to the rate the device wants.</li>
+    <li>The <strong>device</strong> calls a function of yours whenever it needs more sound, and you fill its
+    buffer. The device always asks for 48 kHz stereo float.</li>
+</ul>
+<p>Link <code>cfw::audio</code>. It needs <code>cfw-core</code> only.</p>
+
+<h2>Play a short clip</h2>
+<p>Decode the whole file once, bring it to 48 kHz once, and keep it in memory:</p>
+<pre><code class="language-cpp">#include "cfw/audio/AudioDecoder.h"
+#include "cfw/audio/AudioDevice.h"
+#include "cfw/audio/Resampler.h"
+
+// The format is detected from the bytes.
+auto clip = cfw::decodeAudio(bytes);                       // Result&lt;AudioBuffer&gt;: float, interleaved
+auto ready = cfw::resample(clip.value(), cfw::AudioDevice::kSampleRate);
+
+// The device pulls 48 kHz stereo float whenever it needs more.
+auto device = cfw::AudioDevice::open([&amp;](float *stereo, int frames) { mixer.mix(stereo, frames); });
+if (device) device.value()->start();                       // no device: carry on silent</code></pre>
+<p><code>mixer</code> stands for your own code: whatever adds up the sounds that are playing and writes
+<code>frames</code> stereo frames into <code>stereo</code>.</p>
+
+<div class="note warning">
+    <span class="note-title">A machine may have no sound device</span>
+    <p><code>AudioDevice::open</code> returns a <code>Result</code>. On a server, in a container or with
+    nothing plugged in, it fails. Check it, and carry on without sound.</p>
+</div>
+
+<h2>Play long music</h2>
+<p>Do not decode a long file up front. <code>AudioStream::open(bytes)</code> reads a piece at a time and can
+seek, and <code>StreamResampler</code> converts it block by block.</p>
+<p>The example program <code>examples/play-audio</code> does both ways:</p>
+<pre><code class="language-sh">cfw-play-audio music.ogg            # decode it all, then play
+cfw-play-audio music.ogg --stream   # decode while playing</code></pre>
+
+<h2>Formats</h2>
+<table>
+    <thead>
+        <tr><th>Format</th><th>Checked against</th></tr>
+    </thead>
+    <tbody>
+        <tr><td>WAV</td><td>Files built in the tests, bit for bit.</td></tr>
+        <tr><td>FLAC</td><td>The reference <code>flac</code> encoder's files, bit for bit.</td></tr>
+        <tr><td>Ogg Vorbis</td><td>FFmpeg's decoder on libvorbis' files, within 2e-5 a sample. Seeking is exact to the sample.</td></tr>
+        <tr><td>MP3</td><td>FFmpeg's decoder on LAME's files (MPEG-1, 2 and 2.5), within 1e-4 a sample, with gapless trimming and seeking.</td></tr>
+    </tbody>
+</table>
+
+<h3>Not supported</h3>
+<ul>
+    <li>MPEG Layer I and II, and free-format MP3 streams.</li>
+    <li>Vorbis floor type 0, which only encoders from before 2001 produce.</li>
+    <li>Ogg files with several logical streams: the first one is played.</li>
+    <li>Channel layouts beyond passing every channel through.</li>
+</ul>
+<div class="note">
+    <span class="note-title">Unverified</span>
+    <p>MP3 intensity stereo is implemented but has not been checked: no encoder at hand produces it.</p>
+</div>
+
+<h2>Devices</h2>
+<table>
+    <thead>
+        <tr><th>System</th><th>Output</th><th>State</th></tr>
+    </thead>
+    <tbody>
+        <tr><td>Windows</td><td>WASAPI, shared mode</td><td>Verified on one Windows 11 machine.</td></tr>
+        <tr><td>Linux</td><td>ALSA, loaded at run time</td><td>Verified in a container against ALSA's <code>null</code> device. Not yet verified on real hardware.</td></tr>
+        <tr><td>macOS</td><td>CoreAudio</td><td>Unverified: written without a Mac.</td></tr>
+    </tbody>
+</table>
+<p>The README has the full table of
+<a href="https://github.com/Clannect/ClannectFramework#sound-cfw-audio">what is verified where</a>, part by
+part.</p>
+</main>
+<script src="../assets/site.js"></script>
+</body>
+</html>

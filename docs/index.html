@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en" data-root="">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Clannect Framework Docs</title>
+<meta name="description" content="Documentation for Clannect Framework (CFW), a C++20 application framework with no third-party dependencies.">
+<link rel="stylesheet" href="assets/site.css">
+<script>try{var t=localStorage.getItem("cfw-docs-theme");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body data-page="">
+<main>
+<section class="hero">
+    <div class="hero-inner">
+        <h1>Clannect Framework documentation</h1>
+        <p>A C++20 application framework with no third-party dependencies: windows, text, images, sound,
+        networking and a full widget toolkit, written from scratch.</p>
+        <div class="hero-actions">
+            <a class="button primary" href="get-started/build.html">Get started</a>
+            <a class="button" href="get-started/hello-window.html">Hello, window</a>
+            <a class="button" href="https://github.com/Clannect/ClannectFramework/releases">Download a release</a>
+        </div>
+    </div>
+</section>
+
+<section class="home-section">
+    <h2>Start here</h2>
+    <p>From an empty folder to a window on the screen.</p>
+    <div class="cards">
+        <a class="card" href="get-started/build.html">
+            <h3>Build and run the tests</h3>
+            <p>Clone the repository, configure with a CMake preset, build, and run the test suite.</p>
+        </a>
+        <a class="card" href="get-started/use-in-your-project.html">
+            <h3>Use CFW in your project</h3>
+            <p>Add it with FetchContent, or install a release and let <code>find_package</code> find it.</p>
+        </a>
+        <a class="card" href="get-started/hello-window.html">
+            <h3>Hello, window</h3>
+            <p>A window with a label and a button, explained line by line.</p>
+        </a>
+    </div>
+</section>
+
+<section class="home-section">
+    <h2>Concepts</h2>
+    <p>The few ideas that the whole framework is built on.</p>
+    <div class="cards">
+        <a class="card" href="concepts/modules.html">
+            <h3>Modules and platforms</h3>
+            <p>Ten modules in layers, so a headless server links three of them and nothing else.</p>
+        </a>
+        <a class="card" href="concepts/errors.html">
+            <h3>Errors and Result</h3>
+            <p>CFW does not throw for errors. A call that can fail returns <code>Result&lt;T&gt;</code>.</p>
+        </a>
+        <a class="card" href="concepts/signals.html">
+            <h3>Signals</h3>
+            <p>Typed notifications in plain C++: no code generator, no macros.</p>
+        </a>
+    </div>
+</section>
+
+<section class="home-section">
+    <h2>Guides</h2>
+    <p>How to do one thing, with code you can copy.</p>
+    <div class="cards">
+        <a class="card" href="guides/sound.html">
+            <h3>Play sound</h3>
+            <p>Decode WAV, Ogg Vorbis, MP3 and FLAC, and play through the system's default device.</p>
+        </a>
+        <a class="card" href="guides/input.html">
+            <h3>Read input</h3>
+            <p>Relative mouse mode for cameras, keys by layout and by position, touch, pen and gamepads.</p>
+        </a>
+        <a class="card" href="reference/build-presets.html">
+            <h3>Build presets</h3>
+            <p>Debug, release, the sanitizer builds, fuzzing, and cross-compiling for Windows.</p>
+        </a>
+    </div>
+</section>
+
+<section class="home-section">
+    <h2>The project</h2>
+    <p>How CFW is checked, and how to take part.</p>
+    <div class="cards">
+        <a class="card" href="project/testing.html">
+            <h3>How CFW is tested</h3>
+            <p>Against the reference implementations it replaces, under fuzzers and sanitizers.</p>
+        </a>
+        <a class="card" href="project/security.html">
+            <h3>Security checks</h3>
+            <p>What scans every pull request, and why some changes take longer to review.</p>
+        </a>
+        <a class="card" href="https://github.com/Clannect/ClannectFramework/tree/main/docs/decisions">
+            <h3>Design decisions</h3>
+            <p>Why things are the way they are, one short record per decision.</p>
+        </a>
+    </div>
+</section>
+</main>
+<script src="assets/site.js"></script>
+</body>
+</html>

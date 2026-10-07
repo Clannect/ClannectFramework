@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en" data-root="../">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Errors and Result - Clannect Framework Docs</title>
+<meta name="description" content="Clannect Framework does not throw for errors: a call that can fail returns Result<T>, a value or an Error.">
+<link rel="stylesheet" href="../assets/site.css">
+<script>try{var t=localStorage.getItem("cfw-docs-theme");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body data-page="concepts/errors">
+<main>
+<h1>Errors and Result</h1>
+<p class="lead">CFW does not throw exceptions for errors. A call that can fail returns a
+<code>Result&lt;T&gt;</code>: either the value, or an <code>Error</code> that says why not.</p>
+
+<h2>Reading a Result</h2>
+<p>Check it, then take the value or the error:</p>
+<pre><code class="language-cpp">#include "cfw/core/Result.h"
+
+auto created = UiWindow::create({"Hello", {480, 320}}, Theme::dark().withSystemFonts());
+if (!created) {
+    std::fprintf(stderr, "%s\n", created.error().describe().c_str());
+    return 1;
+}
+UiWindow &amp;window = *created.value();</code></pre>
+<table>
+    <thead>
+        <tr><th>Member</th><th>What it does</th></tr>
+    </thead>
+    <tbody>
+        <tr><td><code>ok()</code>, or use it as a <code>bool</code></td><td>True if it holds a value.</td></tr>
+        <tr><td><code>value()</code></td><td>The value. Only call it on a successful result.</td></tr>
+        <tr><td><code>error()</code></td><td>The <code>Error</code>. Only call it on a failed result.</td></tr>
+        <tr><td><code>valueOr(fallback)</code></td><td>The value, or <code>fallback</code> if it failed. The error is dropped on purpose.</td></tr>
+    </tbody>
+</table>
+
+<div class="note caution">
+    <span class="note-title">Check before you read</span>
+    <p>Calling <code>value()</code> on a failed result, or <code>error()</code> on a successful one, is a
+    contract violation. It stops the program, in every build, release builds too.</p>
+</div>
+
+<h2>You cannot ignore one by accident</h2>
+<p><code>Result</code> is marked <code>[[nodiscard]]</code>, so the compiler warns when a returned result is
+thrown away. CFW's own code is built with warnings as errors, so there it does not compile.</p>
+
+<h2>Returning a Result</h2>
+<p>Return the value for success, or an <code>Error</code> for failure. Both convert to the result:</p>
+<pre><code class="language-cpp">#include "cfw/core/Result.h"
+
+cfw::Result&lt;int&gt; parsePort(const cfw::String &amp;text) {
+    int port = 0;
+    if (!toInt(text, port)) {   // toInt stands for your own parsing
+        return cfw::Error(cfw::ErrorCode::ParseError, "not a number").with("text", text);
+    }
+    if (port &lt; 1 || port &gt; 65535) {
+        return cfw::Error(cfw::ErrorCode::OutOfRange, "port out of range");
+    }
+    return port;
+}</code></pre>
+<p>A function that produces no value returns <code>Result&lt;void&gt;</code>. Return
+<code>cfw::success()</code> when it worked:</p>
+<pre><code class="language-cpp">cfw::Result&lt;void&gt; save(const Settings &amp;settings) {
+    if (!settings.valid()) {
+        return cfw::Error(cfw::ErrorCode::InvalidArgument, "settings are incomplete");
+    }
+    // ...
+    return cfw::success();
+}</code></pre>
+
+<h2>What an Error holds</h2>
+<table>
+    <thead>
+        <tr><th>Member</th><th>What it is</th></tr>
+    </thead>
+    <tbody>
+        <tr><td><code>code()</code></td><td>An <code>ErrorCode</code>: the kind of failure, for code to switch on.</td></tr>
+        <tr><td><code>message()</code></td><td>A sentence for a person.</td></tr>
+        <tr><td><code>context()</code></td><td>Optional key and value pairs, such as a file name, a line or a byte offset.</td></tr>
+        <tr><td><code>with(key, value)</code></td><td>Adds context and returns the error, so it chains on a <code>return</code>.</td></tr>
+        <tr><td><code>describe()</code></td><td>All of it in one line, for example <code>ParseError: bad token (line=3, column=7)</code>.</td></tr>
+    </tbody>
+</table>
+
+<h2>Error codes</h2>
+<p>The codes are stable. They are logged and may be saved or sent over the network, so their values never
+change; new ones are added at the end.</p>
+<table>
+    <thead>
+        <tr><th>Code</th><th>Value</th></tr>
+    </thead>
+    <tbody>
+        <tr><td><code>Unknown</code></td><td>0</td></tr>
+        <tr><td><code>InvalidArgument</code></td><td>1</td></tr>
+        <tr><td><code>OutOfRange</code></td><td>2</td></tr>
+        <tr><td><code>ParseError</code></td><td>3</td></tr>
+        <tr><td><code>TypeMismatch</code></td><td>4</td></tr>
+        <tr><td><code>LimitExceeded</code></td><td>5</td></tr>
+        <tr><td><code>NotFound</code></td><td>6</td></tr>
+        <tr><td><code>AlreadyExists</code></td><td>7</td></tr>
+        <tr><td><code>PermissionDenied</code></td><td>8</td></tr>
+        <tr><td><code>IoError</code></td><td>9</td></tr>
+        <tr><td><code>Unsupported</code></td><td>10</td></tr>
+        <tr><td><code>Cancelled</code></td><td>11</td></tr>
+        <tr><td><code>Timeout</code></td><td>12</td></tr>
+        <tr><td><code>OutOfMemory</code></td><td>13</td></tr>
+        <tr><td><code>Corrupt</code></td><td>14</td></tr>
+        <tr><td><code>NetworkError</code></td><td>15</td></tr>
+    </tbody>
+</table>
+
+<h2>Limits</h2>
+<ul>
+    <li><code>Result&lt;T&amp;&gt;</code> is not supported. Return a pointer, or a <code>Result&lt;T*&gt;</code>.</li>
+    <li><code>Result&lt;Error&gt;</code> is not allowed: it would be ambiguous.</li>
+</ul>
+</main>
+<script src="../assets/site.js"></script>
+</body>
+</html>
