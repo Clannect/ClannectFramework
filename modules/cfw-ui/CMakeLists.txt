@@ -23,6 +23,7 @@ cfw_add_module(cfw-ui
         src/Views.cpp
         src/Theme.cpp
         src/Toast.cpp
+        src/Timeline.cpp
     DEPENDS
         cfw-gfx
         cfw-text
@@ -41,6 +42,7 @@ if(CFW_BUILD_TESTS)
     cfw_add_test(cfw-ui CompositionTest)
     cfw_add_test(cfw-ui AccessibilityTest)
     cfw_add_test(cfw-ui LayoutTest)
+    cfw_add_test(cfw-ui TimelineTest)
     cfw_add_test(cfw-ui SoakUiTest)
     set_tests_properties(SoakUiTest PROPERTIES LABELS "cfw-ui;soak" TIMEOUT 600)
 endif()
