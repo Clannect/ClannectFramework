@@ -302,5 +302,26 @@ int main() {
     window->hide();
     window.reset();
     processEvents(std::chrono::milliseconds(0));
+
+    // A frameless window: its own title bar, the system's states. Under a
+    // window manager (not plain Xvfb) maximizing is honoured; the calls must
+    // be safe everywhere.
+    WindowOptions frameless{"CFW frameless", {200, 140}, true, true};
+    frameless.frameless = true;
+    if (auto made = Window::create(frameless)) {
+        std::unique_ptr<Window> bare = std::move(made).value();
+        check(bare->isFrameless(), "a frameless window says so");
+        check(bare->pixelSize().x >= 200 && bare->pixelSize().y >= 140, "with the requested client area");
+        processEvents(std::chrono::milliseconds(50));
+        bare->setMaximized(true);
+        processEvents(std::chrono::milliseconds(50));
+        bare->setMaximized(false);
+        bare->beginSystemMove(); // no button is down: the window manager ignores it
+        processEvents(std::chrono::milliseconds(20));
+        bare->minimize();
+        processEvents(std::chrono::milliseconds(20));
+        bare.reset();
+        processEvents(std::chrono::milliseconds(0));
+    }
     return cfw::test::finish("WindowTest");
 }

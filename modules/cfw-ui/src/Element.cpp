@@ -103,6 +103,12 @@ void Element::invalidatePaint() {
     }
 }
 
+void Element::invalidatePaint(const RectF &area) {
+    if (Surface *s = surface()) {
+        s->addDamage(area);
+    }
+}
+
 void Element::setVisible(bool visible) {
     if (m_visible == visible) {
         return;
@@ -195,6 +201,7 @@ bool Element::accessibleAction(AccessibleAction action, std::optional<std::uint6
 }
 std::optional<RectF> Element::textInputArea() const { return std::nullopt; }
 void Element::onHoverChanged(bool) {}
+void Element::onHoverWithinChanged(bool) {}
 void Element::onPressedChanged(bool) {}
 void Element::onFocusChanged(bool) {}
 

@@ -78,6 +78,9 @@ public:
     void setFocus(Element *element);
     // Tab order: focusable, enabled, visible elements in tree order.
     void focusNext(bool backwards = false);
+    // The focus came from the keyboard (Tab), not from a press (CSS
+    // :focus-visible): controls that draw no ring after a click ask this.
+    [[nodiscard]] bool focusVisible() const noexcept { return m_focusVisible; }
 
     // Popups: menus, dropdown lists and tooltips are layers inside the
     // surface, above the root (not separate OS windows; one decision for all
@@ -202,6 +205,7 @@ private:
     Element *m_hovered = nullptr;
     Element *m_pressed = nullptr;
     Element *m_focus = nullptr;
+    bool m_focusVisible = true;
     Element *m_dropTarget = nullptr;
     String m_clipboard;
     struct Popup {

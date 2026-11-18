@@ -34,7 +34,7 @@ void collectFocusable(Element &element, std::vector<Element *> &out) {
 }
 
 Element *hitTestIn(Element &element, Vec2 point) {
-    if (!element.isVisible() || !inside(element.rect(), point)) {
+    if (!element.isVisible() || element.isTransparentForInput() || !inside(element.rect(), point)) {
         return nullptr;
     }
     const auto children = element.children();
@@ -296,6 +296,14 @@ void Surface::addDamage(const RectF &rect) { m_damage = m_damage.united(rect); }
 
 void Surface::elementRemoved(Element &element) {
     if (contains(element, m_hovered)) {
+        // The hovered element goes (removed, hidden or disabled): the
+        // pointer is no longer within it or any of its ancestors.
+        for (Element *e = m_hovered; e; e = e->parent()) {
+            if (e->m_hoverWithin) {
+                e->m_hoverWithin = false;
+                e->onHoverWithinChanged(false);
+            }
+        }
         m_hovered = nullptr;
     }
     if (contains(element, m_pressed)) {
@@ -351,6 +359,28 @@ void Surface::setHovered(Element *element) {
     if (element) {
         element->onHoverChanged(true);
     }
+    // Hover within: the old element's ancestors that are not the new one's
+    // lose it, then the new chain gains it (each told once).
+    const auto isAncestorOrSelf = [](const Element *candidate, const Element *of) {
+        for (; of; of = of->parent()) {
+            if (of == candidate) {
+                return true;
+            }
+        }
+        return false;
+    };
+    for (Element *e = old; e; e = e->parent()) {
+        if (e->m_hoverWithin && !isAncestorOrSelf(e, element)) {
+            e->m_hoverWithin = false;
+            e->onHoverWithinChanged(false);
+        }
+    }
+    for (Element *e = element; e; e = e->parent()) {
+        if (!e->m_hoverWithin) {
+            e->m_hoverWithin = true;
+            e->onHoverWithinChanged(true);
+        }
+    }
 }
 
 // Checks, when a dispatch or focus change is over, whether the node with
@@ -383,6 +413,7 @@ void Surface::setFocus(Element *element) {
 }
 
 void Surface::focusNext(bool backwards) {
+    m_focusVisible = true;
     std::vector<Element *> order;
     const std::ptrdiff_t modal = topModal();
     collectFocusable(modal >= 0 ? *m_popups[std::size_t(modal)].element : *m_root, order);
@@ -672,6 +703,7 @@ bool Surface::dispatch(const PointerEvent &event) {
         while (focusable && !focusable->isFocusable()) {
             focusable = focusable->parent();
         }
+        m_focusVisible = false;
         setFocus(focusable);
     }
 

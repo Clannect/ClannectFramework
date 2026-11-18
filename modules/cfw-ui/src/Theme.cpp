@@ -30,6 +30,10 @@ Theme Theme::dark() {
     t.textDisabled = hex(0x5a616b);
     t.scrim = Color{0.0f, 0.0f, 0.0f, 0.45f};
     t.error = hex(0xf05a4f);
+    t.success = hex(0x3fb27f);
+    t.warning = hex(0xd9a441);
+    t.info = hex(0x5b8def);
+    t.controlRaised = hex(0x3a3f47);
     return t;
 }
 
@@ -49,6 +53,10 @@ Theme Theme::light() {
     t.textDisabled = hex(0xa4aab3);
     t.scrim = Color{0.0f, 0.0f, 0.0f, 0.25f};
     t.error = hex(0xd23c32);
+    t.success = hex(0x1f8a5a);
+    t.warning = hex(0xb7791f);
+    t.info = hex(0x2f6fe4);
+    t.controlRaised = hex(0xffffff);
     return t;
 }
 

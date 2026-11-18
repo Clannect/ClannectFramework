@@ -68,6 +68,9 @@ public:
     void arrange(const RectF &rect);
     void invalidateLayout();
     void invalidatePaint();
+    // Only `area` (surface coordinates) changed: a large element animating a
+    // small part of itself.
+    void invalidatePaint(const RectF &area);
 
     // ---- State ----
     void setVisible(bool visible);
@@ -78,10 +81,18 @@ public:
     void setFocusable(bool focusable) noexcept { m_focusable = focusable; }
     [[nodiscard]] bool isFocusable() const noexcept { return m_focusable; }
     [[nodiscard]] bool isHovered() const noexcept;
+    // The pointer is over this element or one of its descendants (CSS
+    // :hover): a card highlights while the pointer is on its text.
+    [[nodiscard]] bool isHoverWithin() const noexcept { return m_hoverWithin; }
     [[nodiscard]] bool isPressed() const noexcept;
     [[nodiscard]] bool hasFocus() const noexcept;
     void setClipsChildren(bool clips) noexcept { m_clips = clips; }
     [[nodiscard]] bool clipsChildren() const noexcept { return m_clips; }
+    // The pointer passes through this element and its children to what is
+    // under them (CSS pointer-events: none): an overlay that only shows
+    // things, such as toasts or a drop indicator.
+    void setTransparentForInput(bool transparent) noexcept { m_inputTransparent = transparent; }
+    [[nodiscard]] bool isTransparentForInput() const noexcept { return m_inputTransparent; }
 
     // ---- Pointer shape and tooltip ----
     // The pointer's shape over this element (unset: the parent's, and Arrow
@@ -137,6 +148,8 @@ public:
     // the element has focus; nothing for elements that take no text.
     [[nodiscard]] virtual std::optional<RectF> textInputArea() const;
     virtual void onHoverChanged(bool hovered);
+    // isHoverWithin() changed (after onHoverChanged on the element itself).
+    virtual void onHoverWithinChanged(bool within);
     virtual void onPressedChanged(bool pressed);
     virtual void onFocusChanged(bool focused);
 
@@ -170,6 +183,8 @@ private:
     bool m_enabled = true;
     bool m_focusable = false;
     bool m_clips = false;
+    bool m_hoverWithin = false;
+    bool m_inputTransparent = false;
 };
 
 // Lays children out in a row or a column, with spacing and padding. Spare

@@ -51,7 +51,22 @@ public:
     // Frames painted so far (idle behaviour is testable).
     [[nodiscard]] std::size_t framesPainted() const noexcept { return m_frames; }
 
+    // ---- Frameless windows (WindowOptions::frameless) ----
+    // An application title bar calls beginMove() from a left press on its
+    // empty part (and toggleMaximized() on a double click): the window
+    // manager moves the window, and the press is cancelled in the surface.
+    // A frameless window's edges resize it (kResizeBorder logical pixels,
+    // over the content; on Windows the system's own hit test does this).
+    void beginMove();
+    void beginResize(WindowEdge edge);
+    void toggleMaximized();
+    static constexpr float kResizeBorder = 5.0f;
+    [[nodiscard]] std::optional<WindowEdge> frameEdgeAt(Vec2 position) const;
+
 private:
+    bool handleFrameEdge(const PointerEvent &event);
+    void endPress();
+    bool m_onEdge = false; // the pointer is on a frameless window's resize edge
     UiWindow(std::unique_ptr<Window> window, Theme theme);
     void resize(Vec2i pixels);
     void updateCursor();

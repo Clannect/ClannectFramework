@@ -408,10 +408,31 @@ public:
     }
     bool isFullScreen() const override { return m_fullScreen; }
 
+    // ---- Frameless windows ----
+    // The window keeps WS_OVERLAPPEDWINDOW (so it snaps, and minimizes and
+    // maximizes with the system's animations); WM_NCCALCSIZE gives the whole
+    // window to the client area and WM_NCHITTEST keeps the edges resizable.
+    void minimize() override { ShowWindow(m_hwnd, SW_MINIMIZE); }
+    void setMaximized(bool maximized) override { ShowWindow(m_hwnd, maximized ? SW_MAXIMIZE : SW_RESTORE); }
+    bool isMaximized() const override { return IsZoomed(m_hwnd) != FALSE; }
+    bool isFrameless() const override { return m_frameless; }
+    void setFrameless(bool frameless) noexcept { m_frameless = frameless; }
+
+    // Posted, not sent: the system's move loop then runs from the next
+    // processEvents(), not inside this call.
+    void beginSystemMove() override { postNonClientPress(HTCAPTION); }
+    void beginSystemResize(WindowEdge edge) override {
+        static constexpr WPARAM kHit[] = {HTLEFT, HTRIGHT, HTTOP, HTBOTTOM,
+                                          HTTOPLEFT, HTTOPRIGHT, HTBOTTOMLEFT, HTBOTTOMRIGHT}; // WindowEdge's order
+        postNonClientPress(kHit[std::size_t(edge)]);
+    }
+
     void setSize(Vec2i size) override {
         RECT r{0, 0, LONG(std::lround(float(size.x) * m_scale)), LONG(std::lround(float(size.y) * m_scale))};
-        AdjustWindowRectEx(&r, DWORD(GetWindowLongPtrW(m_hwnd, GWL_STYLE)), FALSE,
-                           DWORD(GetWindowLongPtrW(m_hwnd, GWL_EXSTYLE)));
+        if (!m_frameless) { // frameless: the client area is the whole window
+            AdjustWindowRectEx(&r, DWORD(GetWindowLongPtrW(m_hwnd, GWL_STYLE)), FALSE,
+                               DWORD(GetWindowLongPtrW(m_hwnd, GWL_EXSTYLE)));
+        }
         SetWindowPos(m_hwnd, nullptr, 0, 0, r.right - r.left, r.bottom - r.top, SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
     }
 
@@ -663,10 +684,21 @@ private:
         pointer.emit(e);
     }
 
+    // A press on the non-client part `hit` at the cursor, as the system's
+    // frame would get it: starts its move or resize loop.
+    void postNonClientPress(WPARAM hit) {
+        POINT at{};
+        GetCursorPos(&at);
+        m_buttonsDown = 0;
+        ReleaseCapture();
+        PostMessageW(m_hwnd, WM_NCLBUTTONDOWN, hit, MAKELPARAM(at.x, at.y));
+    }
+
     HWND m_hwnd;
     DropTarget *m_dropTarget = nullptr;
     bool m_oleInitialized = false;
     bool m_fullScreen = false;
+    bool m_frameless = false;
     LONG_PTR m_savedStyle = 0;
     WINDOWPLACEMENT m_savedPlacement{};
     float m_scale = 1.0f;
@@ -692,6 +724,46 @@ LRESULT WindowWin32::handle(UINT message, WPARAM wParam, LPARAM lParam) {
         }
     }
     switch (message) {
+    case WM_NCCALCSIZE:
+        if (m_frameless && wParam) {
+            // The client area is the whole window. A maximized window is
+            // larger than its monitor by the frame it no longer shows: keep
+            // the client area to the work area.
+            auto *params = reinterpret_cast<NCCALCSIZE_PARAMS *>(lParam);
+            if (IsZoomed(m_hwnd)) {
+                MONITORINFO monitor{};
+                monitor.cbSize = sizeof monitor;
+                if (GetMonitorInfoW(MonitorFromWindow(m_hwnd, MONITOR_DEFAULTTONEAREST), &monitor)) {
+                    params->rgrc[0] = monitor.rcWork;
+                }
+            }
+            return 0;
+        }
+        break;
+    case WM_NCHITTEST:
+        if (m_frameless && !IsZoomed(m_hwnd) && !m_fullScreen) {
+            // The edges resize (6 logical pixels, inside the client area);
+            // the rest is client area, title bar included: the application
+            // calls beginSystemMove() from its own.
+            POINT at{short(LOWORD(lParam)), short(HIWORD(lParam))};
+            RECT r{};
+            GetWindowRect(m_hwnd, &r);
+            const LONG border = LONG(std::lround(6.0f * m_scale));
+            const bool left = at.x < r.left + border;
+            const bool right = at.x >= r.right - border;
+            const bool top = at.y < r.top + border;
+            const bool bottom = at.y >= r.bottom - border;
+            if (top && left) return HTTOPLEFT;
+            if (top && right) return HTTOPRIGHT;
+            if (bottom && left) return HTBOTTOMLEFT;
+            if (bottom && right) return HTBOTTOMRIGHT;
+            if (left) return HTLEFT;
+            if (right) return HTRIGHT;
+            if (top) return HTTOP;
+            if (bottom) return HTBOTTOM;
+            return HTCLIENT;
+        }
+        break;
     case WM_SIZE: {
         const Vec2i size{int(LOWORD(lParam)), int(HIWORD(lParam))};
         if (!(size == m_size) && wParam != SIZE_MINIMIZED) {
@@ -948,6 +1020,12 @@ Result<std::unique_ptr<Window>> Window::create(const WindowOptions &options) {
         return Error(ErrorCode::Unsupported, "CreateWindowExW failed");
     }
     auto window = std::make_unique<WindowWin32>(hwnd);
+    if (options.frameless) {
+        window->setFrameless(true);
+        // Recompute the frame now that WM_NCCALCSIZE removes it.
+        SetWindowPos(hwnd, nullptr, 0, 0, 0, 0,
+                     SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
+    }
     window->setSize(options.size); // the client area, at the window's DPI
     if (options.visible) {
         window->show(); // the first WM_PAINT arrives through processEvents()

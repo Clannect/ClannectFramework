@@ -45,31 +45,96 @@ void Label::setMuted(bool muted) {
     invalidatePaint();
 }
 
+void Label::setFont(std::shared_ptr<const FontFace> font, float pixelSize) {
+    m_font = std::move(font);
+    m_pixelSize = pixelSize;
+    m_layoutWidth = -1.0f;
+    invalidateLayout();
+    invalidatePaint();
+}
+
+void Label::setColor(std::optional<Color> color) {
+    m_color = color;
+    invalidatePaint();
+}
+
+void Label::setElide(bool elide) {
+    m_elide = elide;
+    m_layoutWidth = -1.0f;
+    invalidateLayout();
+}
+
+void Label::setAlign(TextAlign align) {
+    m_align = align;
+    m_layoutWidth = -1.0f;
+    invalidatePaint();
+}
+
+void Label::setLineSpacing(float multiple) {
+    m_lineSpacing = multiple;
+    m_layoutWidth = -1.0f;
+    invalidateLayout();
+}
+
+float Label::pixelSize() const { return m_pixelSize > 0.0f ? m_pixelSize : theme().fontSize; }
+
 void Label::layoutText(float width) {
-    const float key = m_wrap ? width : 0.0f;
+    const bool bounded = m_wrap || m_elide || m_align != TextAlign::Start;
+    const float key = bounded ? width : 0.0f;
     if (m_layoutWidth == key) {
         return;
     }
     m_layoutWidth = key;
-    layoutIn(m_layout, m_text, theme(), m_wrap ? width : std::numeric_limits<float>::infinity(), m_wrap,
-             TextAlign::Start);
+    const Theme &t = theme();
+    if (!m_font && m_lineSpacing == 1.0f && !m_elide) {
+        layoutIn(m_layout, m_text, t, bounded ? width : std::numeric_limits<float>::infinity(), m_wrap, m_align);
+        return;
+    }
+    TextStyle style;
+    style.font = m_font ? m_font : t.font;
+    style.pixelSize = pixelSize();
+    style.fallback = t.fonts.get();
+    if (!style.font) {
+        return;
+    }
+    TextLayoutOptions options;
+    options.maxWidth = bounded ? width : std::numeric_limits<float>::infinity();
+    options.wrap = m_wrap;
+    options.align = m_align;
+    options.lineSpacing = m_lineSpacing;
+    if (m_elide) {
+        options.elide = true;
+        options.maxLines = m_wrap ? 0 : 1;
+    }
+    m_layout.setText(m_text);
+    m_layout.layout(style, options);
 }
 
 Vec2 Label::measureContent(Vec2 available) {
-    if (!theme().font) {
+    if (!theme().font && !m_font) {
         return {};
     }
     m_layoutWidth = -1.0f; // the theme may have changed
+    if (m_elide && !m_wrap) {
+        // As wide as the text, but no wider than the parent offers.
+        layoutText(std::numeric_limits<float>::infinity());
+        const float natural = std::ceil(m_layout.size().x);
+        m_layoutWidth = -1.0f;
+        return {std::min(natural, available.x), std::ceil(std::max(m_layout.size().y, pixelSize()))};
+    }
     layoutText(available.x);
-    return {std::ceil(m_layout.size().x), std::ceil(std::max(m_layout.size().y, theme().fontSize))};
+    return {std::ceil(m_layout.size().x), std::ceil(std::max(m_layout.size().y, pixelSize()))};
 }
 
 void Label::paint(Painter &painter, const Theme &theme) {
-    if (!theme.font || m_text.empty()) {
+    if ((!theme.font && !m_font) || m_text.empty()) {
         return;
     }
     layoutText(rect().width);
-    const Color color = !isEnabled() ? theme.textDisabled : m_muted ? theme.textMuted : theme.text;
+    const Color color = !isEnabled() ? theme.textDisabled
+                        : m_color    ? *m_color
+                        : m_muted    ? theme.textMuted
+                                     : theme.text;
     painter.drawText(m_layout, centredOrigin(m_layout, rect()), color);
 }
 

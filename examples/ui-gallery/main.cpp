@@ -18,6 +18,9 @@
 #include "cfw/ui/Chrome.h"
 #include "cfw/ui/Controls.h"
 #include "cfw/ui/Dialog.h"
+#include "cfw/ui/Layout.h"
+#include "cfw/ui/Switches.h"
+#include "cfw/ui/Toast.h"
 #include "cfw/ui/Views.h"
 
 using namespace cfw;
@@ -156,6 +159,47 @@ void build(Surface &surface, SceneModel &model, LogModel &log) {
     sliderRow.add<Slider>(0.0, 10.0, 3.0).setStretch(1);
     auto &progress = form.add<ProgressBar>();
     progress.setValue(0.62f);
+
+    // Layout boxes, switches, segmented controls and toasts.
+    const Theme &theme = surface.theme();
+    auto &card = form.add<Box>(Box::Direction::Column, 10.0f);
+    card.setPadding(Insets::all(14));
+    card.setBackground(theme.panel);
+    card.setBorder(theme.border);
+    card.setRadius(theme.radiusLarge);
+    auto &cardHeader = card.add<Box>(Box::Direction::Row, 8.0f);
+    cardHeader.setAlign(Box::Align::Center);
+    auto &cardTitle = cardHeader.add<Label>("Instant replay keeps the last 60 seconds in memory");
+    cardTitle.setElide(true);
+    cardTitle.setStretch(1);
+    cardHeader.add<ToggleSwitch>(true, "Instant replay");
+    auto &aspect = card.add<SegmentedControl>(std::vector<String>{"16:9", "9:16", "1:1", "4:5"}, 0);
+    aspect.setFill(true);
+    auto &chips = card.add<Box>(Box::Direction::Row, 6.0f);
+    chips.setWrap(true);
+    for (const char *chip : {"All", "Clips", "Full sessions", "Instant replays", "Exports", "Favorites"}) {
+        auto &c = chips.add<Box>(Box::Direction::Row);
+        c.setPadding(Insets::symmetric(11, 5));
+        c.setRadius(14);
+        c.setBorder(theme.border);
+        c.setHoverBorder(theme.textMuted);
+        c.setClickable(true);
+        c.add<Label>(chip);
+    }
+    auto &grid = card.add<Grid>(3, 8.0f);
+    for (int i = 1; i <= 6; ++i) {
+        auto &cell = grid.add<Box>(Box::Direction::Column);
+        cell.setPadding(Insets::all(10));
+        cell.setBackground(theme.window);
+        cell.setHoverBackground(theme.control);
+        cell.setRadius(theme.radius);
+        cell.setClickable(true);
+        cell.add<Label>("Cell " + std::to_string(i));
+    }
+    auto &toastButton = card.add<Button>("Show a toast");
+    // Toasts overlay the whole window: the host is the root's last child.
+    auto &toasts = surface.root().add<ToastHost>();
+    static_cast<void>(toastButton.clicked.connect([&toasts] { toasts.show("Saved to Library"); }));
     auto &wrapped = form.add<Label>("Text wraps to the width of its column, and the scroll area on the right "
                                     "appears when the content is taller than the window.");
     wrapped.setWrap(true);

@@ -24,6 +24,17 @@ public:
     [[nodiscard]] const String &text() const noexcept { return m_text; }
     void setWrap(bool wrap);
     void setMuted(bool muted); // secondary text colour
+    // ---- Typography beyond the theme's body text (all optional) ----
+    // A face and size of its own (a heading, a monospaced timecode); null
+    // or 0 keeps the theme's.
+    void setFont(std::shared_ptr<const FontFace> font, float pixelSize = 0.0f);
+    // A colour of its own instead of text / textMuted (unset: the theme's).
+    void setColor(std::optional<Color> color);
+    // One line ending in "…" when it does not fit its width (a file name in
+    // a card); measures as narrow as its parent allows.
+    void setElide(bool elide);
+    void setAlign(TextAlign align);
+    void setLineSpacing(float multiple);
     void describeAccessible(AccessibleNode &node) const override;
 
     void paint(Painter &painter, const Theme &theme) override;
@@ -33,11 +44,18 @@ protected:
 
 private:
     void layoutText(float width);
+    [[nodiscard]] float pixelSize() const;
     String m_text;
     TextLayout m_layout;
     float m_layoutWidth = -1.0f;
     bool m_wrap = false;
     bool m_muted = false;
+    bool m_elide = false;
+    std::shared_ptr<const FontFace> m_font;
+    float m_pixelSize = 0.0f;
+    std::optional<Color> m_color;
+    TextAlign m_align = TextAlign::Start;
+    float m_lineSpacing = 1.0f;
 };
 
 // A push button: click with the pointer (press and release inside), or

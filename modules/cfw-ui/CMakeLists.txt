@@ -11,15 +11,18 @@ cfw_add_module(cfw-ui
         src/Dock.cpp
         src/Element.cpp
         src/Icon.cpp
+        src/Layout.cpp
         src/PropertyGrid.cpp
         src/ScrollArea.cpp
         src/Shortcut.cpp
         src/Surface.cpp
+        src/Switches.cpp
         src/Accessibility.cpp
         src/AccessibleControls.cpp
         src/TextField.cpp
         src/Views.cpp
         src/Theme.cpp
+        src/Toast.cpp
     DEPENDS
         cfw-gfx
         cfw-text
@@ -37,6 +40,7 @@ if(CFW_BUILD_TESTS)
     cfw_add_test(cfw-ui DropTest)
     cfw_add_test(cfw-ui CompositionTest)
     cfw_add_test(cfw-ui AccessibilityTest)
+    cfw_add_test(cfw-ui LayoutTest)
     cfw_add_test(cfw-ui SoakUiTest)
     set_tests_properties(SoakUiTest PROPERTIES LABELS "cfw-ui;soak" TIMEOUT 600)
 endif()

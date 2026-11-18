@@ -50,7 +50,16 @@ struct WindowOptions {
     Vec2i size{1280, 720}; // client area, logical pixels
     bool resizable = true;
     bool visible = true;
+    // No system title bar or border: the application draws its own title bar
+    // and hands drags on it to the window manager (beginSystemMove(),
+    // beginSystemResize()). The window still snaps, minimizes and maximizes
+    // as a normal one does. On Windows the edges keep their native resize
+    // hit area; elsewhere the application (UiWindow) provides it.
+    bool frameless = false;
 };
+
+// An edge or corner of a window, for beginSystemResize().
+enum class WindowEdge : std::uint8_t { Left, Right, Top, Bottom, TopLeft, TopRight, BottomLeft, BottomRight };
 
 class Window {
 public:
@@ -115,6 +124,22 @@ public:
     // Does nothing where the platform cannot.
     virtual void setFullScreen(bool fullScreen) { (void)fullScreen; }
     [[nodiscard]] virtual bool isFullScreen() const { return false; }
+
+    // ---- Window state, for applications that draw their own title bar ----
+    // Minimizes (iconifies) the window.
+    virtual void minimize() {}
+    // Maximizes the window to its monitor's work area, or restores it.
+    virtual void setMaximized(bool maximized) { (void)maximized; }
+    [[nodiscard]] virtual bool isMaximized() const { return false; }
+    [[nodiscard]] virtual bool isFrameless() const { return false; }
+    // Hands the left-button drag in progress to the window manager, which
+    // moves (or resizes from `edge`) the window until the button is
+    // released. Call it from the press, or a move while the button is down.
+    // The application sees no release for that press: end it itself
+    // (UiWindow::beginMove() sends its surface a Cancel). Does nothing where
+    // the platform cannot.
+    virtual void beginSystemMove() {}
+    virtual void beginSystemResize(WindowEdge edge) { (void)edge; }
     // Where the text caret is (logical pixels), so an input method places its
     // candidate window beside it; nothing when no text is being edited, which
     // turns the input method off (keys then reach the application as keys).

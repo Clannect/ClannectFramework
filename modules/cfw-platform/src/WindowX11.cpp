@@ -610,6 +610,71 @@ public:
     }
     bool isFullScreen() const override { return m_fullScreen; }
 
+    // ---- Frameless windows (EWMH) ----
+    void minimize() override {
+        X11Connection &c = connection();
+        XIconifyWindow(c.display, m_window, DefaultScreen(c.display));
+        XFlush(c.display);
+    }
+
+    // _NET_WM_STATE_MAXIMIZED_VERT and _HORZ together, asked of the window
+    // manager.
+    void setMaximized(bool maximized) override {
+        X11Connection &c = connection();
+        XEvent event{};
+        event.xclient.type = ClientMessage;
+        event.xclient.window = m_window;
+        event.xclient.message_type = XInternAtom(c.display, "_NET_WM_STATE", False);
+        event.xclient.format = 32;
+        event.xclient.data.l[0] = maximized ? 1 : 0; // _NET_WM_STATE_ADD / _REMOVE
+        event.xclient.data.l[1] = long(XInternAtom(c.display, "_NET_WM_STATE_MAXIMIZED_VERT", False));
+        event.xclient.data.l[2] = long(XInternAtom(c.display, "_NET_WM_STATE_MAXIMIZED_HORZ", False));
+        event.xclient.data.l[3] = 1; // a normal application
+        XSendEvent(c.display, DefaultRootWindow(c.display), False, SubstructureRedirectMask | SubstructureNotifyMask,
+                   &event);
+        XFlush(c.display);
+    }
+
+    // What the window manager says now (it may have maximized the window
+    // itself: a double click on a snapped edge, a keyboard shortcut).
+    bool isMaximized() const override {
+        X11Connection &c = connection();
+        const Atom vertical = XInternAtom(c.display, "_NET_WM_STATE_MAXIMIZED_VERT", False);
+        const Atom horizontal = XInternAtom(c.display, "_NET_WM_STATE_MAXIMIZED_HORZ", False);
+        Atom type = None;
+        int format = 0;
+        unsigned long count = 0;
+        unsigned long remaining = 0;
+        unsigned char *data = nullptr;
+        bool vert = false;
+        bool horz = false;
+        if (XGetWindowProperty(c.display, m_window, XInternAtom(c.display, "_NET_WM_STATE", False), 0, 64, False,
+                               XA_ATOM, &type, &format, &count, &remaining, &data) == Success &&
+            data && format == 32) {
+            const auto *atoms = reinterpret_cast<const Atom *>(data);
+            for (unsigned long i = 0; i < count; ++i) {
+                vert = vert || atoms[i] == vertical;
+                horz = horz || atoms[i] == horizontal;
+            }
+        }
+        if (data) {
+            XFree(data);
+        }
+        return vert && horz;
+    }
+
+    bool isFrameless() const override { return m_frameless; }
+
+    void beginSystemMove() override { moveResize(8); } // _NET_WM_MOVERESIZE_MOVE
+
+    void beginSystemResize(WindowEdge edge) override {
+        // _NET_WM_MOVERESIZE_SIZE_TOPLEFT (0) ... _SIZE_LEFT (7), clockwise.
+        static constexpr long kDirection[] = {7, 3, 1, 5, 0, 2, 6, 4}; // in WindowEdge's order
+        moveResize(kDirection[std::size_t(edge)]);
+    }
+
+    void setFrameless(bool frameless) noexcept { m_frameless = frameless; }
+
     void setTitle(StringView title) override {
         X11Connection &c = connection();
         const String text(title);
@@ -789,6 +854,37 @@ private:
     XIMCallback m_preeditCaret{};
     detail::Preedit m_preedit;
     bool m_textInput = true; // until told otherwise
+    // EWMH _NET_WM_MOVERESIZE: the window manager takes the pointer (our
+    // implicit grab from the press is released first) and moves or resizes
+    // the window until the button comes up.
+    void moveResize(long direction) {
+        X11Connection &c = connection();
+        ::Window root = None;
+        ::Window child = None;
+        int rootX = 0;
+        int rootY = 0;
+        int x = 0;
+        int y = 0;
+        unsigned int mask = 0;
+        if (!XQueryPointer(c.display, m_window, &root, &child, &rootX, &rootY, &x, &y, &mask)) {
+            return;
+        }
+        XUngrabPointer(c.display, CurrentTime);
+        XEvent event{};
+        event.xclient.type = ClientMessage;
+        event.xclient.window = m_window;
+        event.xclient.message_type = XInternAtom(c.display, "_NET_WM_MOVERESIZE", False);
+        event.xclient.format = 32;
+        event.xclient.data.l[0] = rootX;
+        event.xclient.data.l[1] = rootY;
+        event.xclient.data.l[2] = direction;
+        event.xclient.data.l[3] = Button1;
+        event.xclient.data.l[4] = 1; // a normal application
+        XSendEvent(c.display, DefaultRootWindow(c.display), False, SubstructureRedirectMask | SubstructureNotifyMask,
+                   &event);
+        XFlush(c.display);
+    }
+
     bool m_focused = false;
     float m_scale;
     Vec2i m_size;
@@ -796,6 +892,7 @@ private:
     Vec2i m_frameSize;
     bool m_repaint = false;
     bool m_fullScreen = false;
+    bool m_frameless = false;
     bool m_relative = false;
     bool m_confined = false;
     Vec2i m_relativeAnchor; // where the pointer was, in the window's pixels
@@ -1150,7 +1247,20 @@ Result<std::unique_ptr<Window>> Window::create(const WindowOptions &options) {
         XSetWMNormalHints(display, window, hints);
         XFree(hints);
     }
+    if (options.frameless) {
+        // Motif hints, which every EWMH window manager reads: no decorations
+        // (title bar and border), every function (move, resize, maximize...).
+        struct MotifHints {
+            unsigned long flags, functions, decorations;
+            long inputMode;
+            unsigned long status;
+        } motif{2, 0, 0, 0, 0}; // MWM_HINTS_DECORATIONS
+        const Atom hints = XInternAtom(display, "_MOTIF_WM_HINTS", False);
+        XChangeProperty(display, window, hints, hints, 32, PropModeReplace, reinterpret_cast<unsigned char *>(&motif),
+                        5);
+    }
     auto result = std::make_unique<WindowX11>(window, scale, size);
+    result->setFrameless(options.frameless);
     result->setTitle(options.title);
     if (options.visible) {
         result->show();

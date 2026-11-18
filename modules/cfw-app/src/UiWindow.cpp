@@ -25,6 +25,9 @@ UiWindow::UiWindow(std::unique_ptr<Window> window, Theme theme) : m_window(std::
     m_surface.writeClipboard = [](StringView text) { setClipboardText(text); };
     resize(m_window->pixelSize());
     m_connections.push_back(m_window->pointer.connect([this](const PointerEvent &e) {
+        if (handleFrameEdge(e)) {
+            return;
+        }
         m_surface.dispatch(e);
         updateCursor();
     }));
@@ -65,7 +68,82 @@ void UiWindow::resize(Vec2i pixels) {
     m_fullRepaint = true;
 }
 
+void UiWindow::beginMove() {
+    endPress();
+    m_window->beginSystemMove();
+}
+
+void UiWindow::beginResize(WindowEdge edge) {
+    endPress();
+    m_window->beginSystemResize(edge);
+}
+
+void UiWindow::toggleMaximized() { m_window->setMaximized(!m_window->isMaximized()); }
+
+void UiWindow::endPress() {
+    // The window manager has the pointer until the button comes up, and we
+    // see no release: end the press so the element under it does not stay
+    // pressed (and does not click).
+    PointerEvent cancel;
+    cancel.type = PointerEvent::Type::Cancel;
+    m_surface.dispatch(cancel);
+}
+
+std::optional<WindowEdge> UiWindow::frameEdgeAt(Vec2 p) const {
+    const Vec2 size = m_surface.size();
+    const float b = kResizeBorder;
+    const bool left = p.x < b;
+    const bool right = p.x >= size.x - b;
+    const bool top = p.y < b;
+    const bool bottom = p.y >= size.y - b;
+    if (top && left) return WindowEdge::TopLeft;
+    if (top && right) return WindowEdge::TopRight;
+    if (bottom && left) return WindowEdge::BottomLeft;
+    if (bottom && right) return WindowEdge::BottomRight;
+    if (left) return WindowEdge::Left;
+    if (right) return WindowEdge::Right;
+    if (top) return WindowEdge::Top;
+    if (bottom) return WindowEdge::Bottom;
+    return std::nullopt;
+}
+
+bool UiWindow::handleFrameEdge(const PointerEvent &e) {
+    if (!m_window->isFrameless() || m_surface.pressed() || m_surface.popupCount() > 0) {
+        return false;
+    }
+    if (e.type != PointerEvent::Type::Move && !(e.type == PointerEvent::Type::Press && e.button == PointerButton::Left)) {
+        return false;
+    }
+    const std::optional<WindowEdge> edge = frameEdgeAt(e.position);
+    if (!edge || m_window->isMaximized()) {
+        if (m_onEdge) {
+            m_onEdge = false;
+            updateCursor();
+        }
+        return false;
+    }
+    if (e.type == PointerEvent::Type::Press) {
+        m_onEdge = false;
+        beginResize(*edge);
+        return true;
+    }
+    static constexpr Cursor kShapes[] = {Cursor::SizeHorizontal, Cursor::SizeHorizontal, Cursor::SizeVertical,
+                                         Cursor::SizeVertical,   Cursor::SizeDiagonal,   Cursor::SizeAntiDiagonal,
+                                         Cursor::SizeAntiDiagonal, Cursor::SizeDiagonal}; // WindowEdge's order
+    m_onEdge = true;
+    m_cursor = kShapes[std::size_t(*edge)];
+    m_window->setCursor(m_cursor);
+    // The surface still sees the move (hover ends on the element below).
+    PointerEvent leave = e;
+    leave.type = PointerEvent::Type::Leave;
+    m_surface.dispatch(leave);
+    return true;
+}
+
 void UiWindow::updateCursor() {
+    if (m_onEdge) {
+        return;
+    }
     const Cursor wanted = m_surface.cursor();
     if (wanted != m_cursor) {
         m_cursor = wanted;
