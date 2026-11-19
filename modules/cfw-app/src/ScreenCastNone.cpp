@@ -12,6 +12,10 @@ ScreenCast::~ScreenCast() = default;
 int ScreenCast::pipeWireFd() const noexcept { return -1; }
 std::uint32_t ScreenCast::nodeId() const noexcept { return 0; }
 Vec2i ScreenCast::size() const noexcept { return {}; }
+const std::vector<ScreenCastStream> &ScreenCast::streams() const noexcept {
+    static const std::vector<ScreenCastStream> none;
+    return none;
+}
 const String &ScreenCast::restoreToken() const noexcept {
     static const String none;
     return none;

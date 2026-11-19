@@ -16,6 +16,7 @@
 #include <optional>
 #include <vector>
 
+#include "cfw/core/Rect.h"
 #include "cfw/core/Result.h"
 #include "cfw/core/String.h"
 #include "cfw/io/Path.h"
@@ -53,5 +54,18 @@ struct ChooseFolderOptions {
 
 // Opens an http(s) link in the default browser.
 [[nodiscard]] Result<void> openUrl(StringView url);
+
+// The monitor that holds the focused window (any application's), for
+// example to record or show something where the user is working.
+struct FocusedScreen {
+    String name;        // the system's name for the monitor: "HDMI-A-1", \\.\DISPLAY1
+    Recti geometry;     // on the desktop, in the desktop's coordinates
+    String application; // the focused window's application class, when known
+};
+
+// Windows asks the window manager; on Linux, KWin (Plasma), through a short
+// KWin script. Elsewhere (GNOME, other Wayland desktops, macOS) Unsupported.
+// Takes a few milliseconds; call it from any thread.
+[[nodiscard]] Result<FocusedScreen> focusedScreen();
 
 } // namespace cfw

@@ -89,9 +89,27 @@ void standIns() {
 
 } // namespace
 
+// Wherever it runs, focusedScreen answers or says it cannot; an answer is a
+// real monitor (with KWin or Windows present).
+void focused() {
+    auto f = focusedScreen();
+    if (f) {
+        check(f.value().geometry.width > 0 && f.value().geometry.height > 0, "the focused screen has a size");
+        std::printf("focused screen: %s %d,%d %dx%d (%s)\n", f.value().name.c_str(), f.value().geometry.x,
+                    f.value().geometry.y, f.value().geometry.width, f.value().geometry.height,
+                    f.value().application.c_str());
+    } else {
+        std::printf("focused screen: not known (%s)\n", f.error().message().c_str());
+        const ErrorCode c = f.error().code();
+        check(c == ErrorCode::Unsupported || c == ErrorCode::NotFound || c == ErrorCode::Timeout,
+              "or it says why not");
+    }
+}
+
 int main() {
 #if !defined(_WIN32) && !defined(__APPLE__)
     standIns();
 #endif
+    focused();
     return cfw::test::finish("DesktopTest");
 }

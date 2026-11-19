@@ -5,9 +5,10 @@
 if(WIN32)
     set(CFW_APP_ACCESSIBILITY src/AccessibilityWin32.cpp src/ScreenCastNone.cpp)
 elseif(UNIX AND NOT APPLE)
-    set(CFW_APP_ACCESSIBILITY src/linux/DBus.cpp src/linux/AccessibilityAtspi.cpp src/linux/ScreenCastPortal.cpp)
+    set(CFW_APP_ACCESSIBILITY src/linux/DBus.cpp src/linux/AccessibilityAtspi.cpp src/linux/ScreenCastPortal.cpp
+        src/linux/FocusedScreen.cpp)
 else()
-    set(CFW_APP_ACCESSIBILITY src/AccessibilityNone.cpp src/ScreenCastNone.cpp)
+    set(CFW_APP_ACCESSIBILITY src/AccessibilityNone.cpp src/ScreenCastNone.cpp src/FocusedScreenNone.cpp)
 endif()
 set(CFW_APP_PLATFORM_SOURCES)
 if(APPLE)

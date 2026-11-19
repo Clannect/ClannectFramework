@@ -28,6 +28,7 @@
 #include <chrono>
 #include <cstdint>
 #include <memory>
+#include <vector>
 
 #include "cfw/core/Result.h"
 #include "cfw/core/String.h"
@@ -40,8 +41,19 @@ struct ScreenCastOptions {
     bool monitors = true;
     bool windows = true;
     bool cursor = true;       // drawn into the frames when the desktop can
+    bool multiple = false;    // the user may share several sources (see streams())
     String restoreToken;      // from an earlier ScreenCast: reuse its choice
     std::chrono::seconds timeout{300}; // for the user to choose
+};
+
+// One shared source. A monitor's position is where it sits on the desktop
+// (when the desktop says; GNOME and KDE do).
+struct ScreenCastStream {
+    std::uint32_t nodeId = 0;
+    Vec2i position;
+    Vec2i size;
+    bool hasPosition = false;
+    std::uint32_t sourceType = 0; // 1 monitor, 2 window, 4 virtual (0: not said)
 };
 
 class ScreenCast {
@@ -58,10 +70,13 @@ public:
     // A connection to PipeWire for this stream (owned here; pass a copy or
     // the descriptor itself to a child process).
     [[nodiscard]] int pipeWireFd() const noexcept;
-    // The stream's PipeWire node.
+    // The (first) stream's PipeWire node.
     [[nodiscard]] std::uint32_t nodeId() const noexcept;
-    // The source's size in pixels, when the desktop says (else 0, 0).
+    // The (first) source's size in pixels, when the desktop says (else 0, 0).
     [[nodiscard]] Vec2i size() const noexcept;
+    // Every shared source (one unless `multiple` was asked for); all are
+    // reachable through the same pipeWireFd.
+    [[nodiscard]] const std::vector<ScreenCastStream> &streams() const noexcept;
     // Pass to the next start() to skip the dialog (empty when the desktop
     // does not remember).
     [[nodiscard]] const String &restoreToken() const noexcept;

@@ -172,6 +172,39 @@ Result<void> showInFileManager(const Path &folder) {
 
 Result<void> openUrl(StringView url) { return shellOpen(wide(url)); }
 
+namespace {
+String narrow(const wchar_t *text) {
+    const std::wstring w(text);
+    return utf16ToUtf8Lossy(std::u16string_view(reinterpret_cast<const char16_t *>(w.data()), w.size()));
+}
+} // namespace
+
+Result<FocusedScreen> focusedScreen() {
+    HWND window = GetForegroundWindow();
+    HMONITOR monitor = window ? MonitorFromWindow(window, MONITOR_DEFAULTTONEAREST) : nullptr;
+    if (!monitor) {
+        POINT cursor{};
+        GetCursorPos(&cursor);
+        monitor = MonitorFromPoint(cursor, MONITOR_DEFAULTTOPRIMARY);
+    }
+    MONITORINFOEXW info{};
+    info.cbSize = sizeof info;
+    if (!monitor || !GetMonitorInfoW(monitor, &info)) {
+        return Error(ErrorCode::IoError, "the focused window's monitor is not known");
+    }
+    FocusedScreen f;
+    f.name = narrow(info.szDevice);
+    f.geometry = {int(info.rcMonitor.left), int(info.rcMonitor.top), int(info.rcMonitor.right - info.rcMonitor.left),
+                  int(info.rcMonitor.bottom - info.rcMonitor.top)};
+    if (window) {
+        wchar_t cls[256] = {};
+        if (GetClassNameW(window, cls, 256) > 0) {
+            f.application = narrow(cls);
+        }
+    }
+    return f;
+}
+
 #elif !defined(__APPLE__) // macOS: mac/DesktopCocoa.mm
 
 namespace {

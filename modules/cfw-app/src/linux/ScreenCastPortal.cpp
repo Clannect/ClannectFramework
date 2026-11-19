@@ -155,6 +155,7 @@ struct ScreenCast::Impl {
     int fd = -1;
     std::uint32_t node = 0;
     Vec2i size;
+    std::vector<ScreenCastStream> streams;
     String restoreToken;
     ~Impl() {
         if (fd >= 0) {
@@ -172,6 +173,7 @@ ScreenCast::~ScreenCast() = default;
 int ScreenCast::pipeWireFd() const noexcept { return m_impl->fd; }
 std::uint32_t ScreenCast::nodeId() const noexcept { return m_impl->node; }
 Vec2i ScreenCast::size() const noexcept { return m_impl->size; }
+const std::vector<ScreenCastStream> &ScreenCast::streams() const noexcept { return m_impl->streams; }
 const String &ScreenCast::restoreToken() const noexcept { return m_impl->restoreToken; }
 
 bool ScreenCast::available() {
@@ -223,7 +225,7 @@ Result<std::unique_ptr<ScreenCast>> ScreenCast::start(const ScreenCastOptions &o
             types = offered;
         }
         std::vector<Value> opts{entry("handle_token", Value::string(token)), entry("types", Value::uint32(types)),
-                                entry("multiple", Value::boolean(false))};
+                                entry("multiple", Value::boolean(o.multiple))};
         const std::uint32_t cursors = property(bus, iface, "AvailableCursorModes").value_or(1);
         if (o.cursor && (cursors & 2u)) {
             opts.push_back(entry("cursor_mode", Value::uint32(2))); // embedded
@@ -257,15 +259,37 @@ Result<std::unique_ptr<ScreenCast>> ScreenCast::start(const ScreenCastOptions &o
         if (streams.items.empty() || streams.items[0].items.empty()) {
             return Error(ErrorCode::Corrupt, "the portal gave no stream");
         }
-        const Value &stream = streams.items[0];
-        impl->node = std::uint32_t(stream.items[0].unsignedInteger ? stream.items[0].unsignedInteger
-                                                                   : std::uint64_t(stream.items[0].integer));
-        if (stream.items.size() > 1) {
-            auto props = dict(stream.items[1]);
-            if (auto it = props.find("size"); it != props.end() && it->second.items.size() == 2) {
-                impl->size = {int(it->second.items[0].integer), int(it->second.items[1].integer)};
+        auto number = [](const Value &v) {
+            const bool isUnsigned = v.kind == Value::Kind::UInt16 || v.kind == Value::Kind::UInt32 ||
+                                    v.kind == Value::Kind::UInt64 || v.kind == Value::Kind::Byte;
+            return isUnsigned ? std::int64_t(v.unsignedInteger) : v.integer; // positions may be negative
+        };
+        for (const Value &stream : streams.items) {
+            if (stream.items.empty()) {
+                continue;
             }
+            ScreenCastStream info;
+            info.nodeId = std::uint32_t(number(stream.items[0]));
+            if (stream.items.size() > 1) {
+                auto props = dict(stream.items[1]);
+                if (auto it = props.find("size"); it != props.end() && it->second.items.size() == 2) {
+                    info.size = {int(number(it->second.items[0])), int(number(it->second.items[1]))};
+                }
+                if (auto it = props.find("position"); it != props.end() && it->second.items.size() == 2) {
+                    info.position = {int(number(it->second.items[0])), int(number(it->second.items[1]))};
+                    info.hasPosition = true;
+                }
+                if (auto it = props.find("source_type"); it != props.end()) {
+                    info.sourceType = std::uint32_t(number(it->second));
+                }
+            }
+            impl->streams.push_back(info);
         }
+        if (impl->streams.empty()) {
+            return Error(ErrorCode::Corrupt, "the portal gave no stream");
+        }
+        impl->node = impl->streams.front().nodeId;
+        impl->size = impl->streams.front().size;
         if (auto it = results.find("restore_token"); it != results.end()) {
             impl->restoreToken = it->second.text;
         }
