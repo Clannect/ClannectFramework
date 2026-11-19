@@ -464,6 +464,7 @@ Result<std::optional<std::pair<Message, std::size_t>>> decode(const std::uint8_t
         case 6: m.destination = v.text; break;
         case 7: m.sender = v.text; break;
         case 8: signature = v.text; break;
+        case 9: m.unixFdCount = std::uint32_t(v.unsignedInteger); break;
         default: break;
         }
     }
@@ -598,6 +599,12 @@ Result<std::unique_ptr<Connection>> Connection::open(StringView address, std::ch
     if (!answer || answer->substr(0, 3) != "OK ") {
         return Error(ErrorCode::PermissionDenied, "D-Bus: the bus refused EXTERNAL authentication");
     }
+    // Descriptors (the screen-cast portal hands out a PipeWire socket).
+    const String negotiate = "NEGOTIATE_UNIX_FD\r\n";
+    if (writeAll(fd, negotiate.data(), negotiate.size())) {
+        const std::optional<String> agreed = readLine(fd, timeout);
+        connection->m_unixFds = agreed && *agreed == "AGREE_UNIX_FD";
+    }
     const String begin = "BEGIN\r\n";
     if (!writeAll(fd, begin.data(), begin.size())) {
         return Error(ErrorCode::IoError, "D-Bus: authentication failed");
@@ -623,6 +630,14 @@ Result<std::unique_ptr<Connection>> Connection::session(std::chrono::millisecond
 }
 
 Connection::~Connection() {
+    for (int fd : m_receivedFds) {
+        ::close(fd);
+    }
+    for (Message &m : m_pending) {
+        for (int fd : m.fds) {
+            ::close(fd);
+        }
+    }
     if (m_fd >= 0) {
         ::close(m_fd);
     }
@@ -648,8 +663,26 @@ bool Connection::readAvailable(int timeoutMs) {
     }
     std::uint8_t buffer[65536];
     for (;;) {
-        const ssize_t n = ::recv(m_fd, buffer, sizeof buffer, MSG_DONTWAIT);
+        // recvmsg: descriptors arrive as ancillary data with their message's bytes.
+        alignas(cmsghdr) char control[CMSG_SPACE(sizeof(int) * 16)];
+        iovec io{buffer, sizeof buffer};
+        msghdr msg{};
+        msg.msg_iov = &io;
+        msg.msg_iovlen = 1;
+        msg.msg_control = control;
+        msg.msg_controllen = sizeof control;
+        const ssize_t n = ::recvmsg(m_fd, &msg, MSG_DONTWAIT | MSG_CMSG_CLOEXEC);
         if (n > 0) {
+            for (cmsghdr *c = CMSG_FIRSTHDR(&msg); c; c = CMSG_NXTHDR(&msg, c)) {
+                if (c->cmsg_level == SOL_SOCKET && c->cmsg_type == SCM_RIGHTS) {
+                    const std::size_t count = (c->cmsg_len - CMSG_LEN(0)) / sizeof(int);
+                    for (std::size_t i = 0; i < count; ++i) {
+                        int received = -1;
+                        std::memcpy(&received, CMSG_DATA(c) + i * sizeof(int), sizeof(int));
+                        m_receivedFds.push_back(received);
+                    }
+                }
+            }
             m_input.insert(m_input.end(), buffer, buffer + n);
             continue;
         }
@@ -670,7 +703,12 @@ bool Connection::readAvailable(int timeoutMs) {
             break;
         }
         used += decoded.value()->second;
-        m_pending.push_back(std::move(decoded.value()->first));
+        Message &m = decoded.value()->first;
+        for (std::uint32_t i = 0; i < m.unixFdCount && !m_receivedFds.empty(); ++i) {
+            m.fds.push_back(m_receivedFds.front());
+            m_receivedFds.pop_front();
+        }
+        m_pending.push_back(std::move(m));
     }
     m_input.erase(m_input.begin(), m_input.begin() + std::ptrdiff_t(used));
     return !m_closed;

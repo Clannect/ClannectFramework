@@ -3,11 +3,11 @@
 
 # Assistive technology: MSAA on Windows, AT-SPI on Linux.
 if(WIN32)
-    set(CFW_APP_ACCESSIBILITY src/AccessibilityWin32.cpp)
+    set(CFW_APP_ACCESSIBILITY src/AccessibilityWin32.cpp src/ScreenCastNone.cpp)
 elseif(UNIX AND NOT APPLE)
-    set(CFW_APP_ACCESSIBILITY src/linux/DBus.cpp src/linux/AccessibilityAtspi.cpp)
+    set(CFW_APP_ACCESSIBILITY src/linux/DBus.cpp src/linux/AccessibilityAtspi.cpp src/linux/ScreenCastPortal.cpp)
 else()
-    set(CFW_APP_ACCESSIBILITY src/AccessibilityNone.cpp)
+    set(CFW_APP_ACCESSIBILITY src/AccessibilityNone.cpp src/ScreenCastNone.cpp)
 endif()
 set(CFW_APP_PLATFORM_SOURCES)
 if(APPLE)

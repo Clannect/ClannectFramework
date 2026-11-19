@@ -1,5 +1,9 @@
 #include "cfw/app/UiWindow.h"
 
+#include <cstdlib>
+
+#include <cmath>
+
 #include "AccessibilityBridge.h"
 
 #include <algorithm>
@@ -165,22 +169,57 @@ bool UiWindow::frame() {
         m_textInputArea = textInput;
         m_window->setTextInputArea(textInput);
     }
-    const RectF damage = m_surface.takeDamage();
-    if (!m_fullRepaint && damage.isEmpty()) {
+    const std::vector<RectF> damage = m_surface.takeDamageRects();
+    if (!m_fullRepaint && damage.empty()) {
         return false;
     }
+    const float ratio = m_window->devicePixelRatio();
+    // Damaged areas in whole physical pixels (a pixel of margin for
+    // antialiased edges). CFW_FULL_REPAINT=1 repaints everything each time.
+    static const bool forceFull = [] {
+        const char *v = std::getenv("CFW_FULL_REPAINT");
+        return v && *v && *v != '0';
+    }();
+    const int cw = int(m_canvas.width()), ch = int(m_canvas.height());
+    std::vector<Window::PixelRect> rects;
+    if (!m_fullRepaint && !forceFull) {
+        for (const RectF &d : damage) {
+            const int x0 = std::max(0, int(std::floor(d.x * ratio)) - 1);
+            const int y0 = std::max(0, int(std::floor(d.y * ratio)) - 1);
+            const int x1 = std::min(cw, int(std::ceil((d.x + d.width) * ratio)) + 1);
+            const int y1 = std::min(ch, int(std::ceil((d.y + d.height) * ratio)) + 1);
+            if (x1 > x0 && y1 > y0) {
+                rects.push_back({x0, y0, x1 - x0, y1 - y0});
+            }
+        }
+    }
+    const bool full = m_fullRepaint || forceFull || rects.empty();
     m_fullRepaint = false;
-    // The whole surface is repainted; damage only decides whether to. (A
-    // damage-clipped repaint is a later optimisation.)
-    std::fill(m_canvas.pixels().begin(), m_canvas.pixels().end(), std::uint8_t(0));
-    {
+    if (full) {
+        std::fill(m_canvas.pixels().begin(), m_canvas.pixels().end(), std::uint8_t(0));
         RasterPaintBackend backend(m_canvas);
         Painter painter(backend);
-        const float ratio = m_window->devicePixelRatio();
         painter.scale(ratio, ratio);
         m_surface.paint(painter);
+    } else {
+        for (const Window::PixelRect &r : rects) {
+            for (int y = r.y; y < r.y + r.height; ++y) {
+                std::uint8_t *row = m_canvas.row(std::uint32_t(y)).data();
+                std::fill(row + std::size_t(r.x) * 4u, row + std::size_t(r.x + r.width) * 4u, std::uint8_t(0));
+            }
+            RasterPaintBackend backend(m_canvas);
+            Painter painter(backend);
+            painter.clipRect({float(r.x), float(r.y), float(r.width), float(r.height)});
+            painter.scale(ratio, ratio);
+            m_surface.paint(painter, {float(r.x) / ratio, float(r.y) / ratio, float(r.width) / ratio,
+                                      float(r.height) / ratio});
+        }
     }
-    m_window->present(m_canvas);
+    if (full) {
+        m_window->present(m_canvas);
+    } else {
+        m_window->presentChanged(m_canvas, rects);
+    }
     ++m_frames;
     return true;
 }

@@ -447,6 +447,22 @@ public:
         ReleaseDC(m_hwnd, dc);
     }
 
+    // Converts only what changed; the blit stays whole (GDI copies fast,
+    // and a top-down DIB's partial source origin differs between versions).
+    void presentChanged(const Image &image, const std::vector<PixelRect> &changed) override {
+        const Vec2i size{int(image.width()), int(image.height())};
+        if (size != m_frameSize || m_frame.size() != std::size_t(size.x) * std::size_t(size.y)) {
+            present(image);
+            return;
+        }
+        for (const PixelRect &r : changed) {
+            detail::toBgrx(image, m_frame, r.x, r.y, r.width, r.height);
+        }
+        HDC dc = GetDC(m_hwnd);
+        blit(dc);
+        ReleaseDC(m_hwnd, dc);
+    }
+
     Result<Image> capture() const override {
         HDC windowDc = GetDC(m_hwnd);
         HDC memory = CreateCompatibleDC(windowDc);

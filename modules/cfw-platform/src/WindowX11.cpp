@@ -699,6 +699,18 @@ public:
         blit();
     }
 
+    void presentChanged(const Image &image, const std::vector<PixelRect> &changed) override {
+        const Vec2i size{int(image.width()), int(image.height())};
+        if (size != m_frameSize || m_frame.size() != std::size_t(size.x) * std::size_t(size.y)) {
+            present(image);
+            return;
+        }
+        for (const PixelRect &r : changed) {
+            detail::toBgrx(image, m_frame, r.x, r.y, r.width, r.height);
+        }
+        blit(&changed);
+    }
+
     Result<Image> capture() const override {
         Display *display = connection().display;
         XSync(display, False);
@@ -772,7 +784,7 @@ public:
     }
 
 private:
-    void blit() {
+    void blit(const std::vector<PixelRect> *only = nullptr) {
         if (m_frame.empty()) {
             return;
         }
@@ -793,8 +805,19 @@ private:
         image.green_mask = 0x00FF00;
         image.blue_mask = 0x0000FF;
         XInitImage(&image);
-        XPutImage(display, m_window, DefaultGC(display, DefaultScreen(display)), &image, 0, 0, 0, 0,
-                  unsigned(std::min(m_frameSize.x, m_size.x)), unsigned(std::min(m_frameSize.y, m_size.y)));
+        GC gc = DefaultGC(display, DefaultScreen(display));
+        const int w = std::min(m_frameSize.x, m_size.x), h = std::min(m_frameSize.y, m_size.y);
+        if (only) {
+            for (const PixelRect &r : *only) {
+                const int x0 = std::max(0, r.x), y0 = std::max(0, r.y);
+                const int x1 = std::min(w, r.x + r.width), y1 = std::min(h, r.y + r.height);
+                if (x1 > x0 && y1 > y0) {
+                    XPutImage(display, m_window, gc, &image, x0, y0, x0, y0, unsigned(x1 - x0), unsigned(y1 - y0));
+                }
+            }
+        } else {
+            XPutImage(display, m_window, gc, &image, 0, 0, 0, 0, unsigned(w), unsigned(h));
+        }
         XFlush(display);
     }
 

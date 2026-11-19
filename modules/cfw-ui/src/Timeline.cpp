@@ -101,10 +101,20 @@ void Timeline::setIcons(Icons icons) {
 
 void Timeline::setPlayhead(double seconds) {
     seconds = std::max(0.0, seconds);
-    if (seconds != m_playhead) {
-        m_playhead = seconds;
-        invalidatePaint();
+    if (seconds == m_playhead) {
+        return;
     }
+    // Only the line's old and new places (with the marker on top) and the
+    // time in the corner change.
+    const RectF r = rect();
+    auto strip = [&](double t) {
+        const float x = std::round(xAt(t));
+        invalidatePaint({x - 8.0f, r.y, 17.0f, r.height});
+    };
+    strip(m_playhead);
+    m_playhead = seconds;
+    strip(m_playhead);
+    invalidatePaint({r.x, r.y, m_headerWidth, kRulerHeight});
 }
 
 void Timeline::setZoom(double pixelsPerSecond) {

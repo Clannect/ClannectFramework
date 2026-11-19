@@ -1,5 +1,7 @@
 #pragma once
 
+#include <vector>
+
 // Native top-level windows: Win32 on Windows, X11 on Linux and
 // other Unix desktops, AppKit on macOS (decision 0016: not yet compiled
 // or run on a Mac; CI's macos job is its first check).
@@ -84,6 +86,17 @@ public:
     // Shows `image` (straight or premultiplied RGBA, drawn over black) at
     // the client area's top-left. Kept, so the OS can repaint from it.
     virtual void present(const Image &image) = 0;
+    // A rectangle in physical pixels.
+    struct PixelRect {
+        int x = 0, y = 0, width = 0, height = 0;
+    };
+    // The same, when only `changed` differs from the last present: windows
+    // that can copy just those parts do (the rest of `image` must equal what
+    // was presented before). The default presents everything.
+    virtual void presentChanged(const Image &image, const std::vector<PixelRect> &changed) {
+        static_cast<void>(changed);
+        present(image);
+    }
     // What the window system shows for the client area now (screenshots and
     // tests).
     [[nodiscard]] virtual Result<Image> capture() const = 0;

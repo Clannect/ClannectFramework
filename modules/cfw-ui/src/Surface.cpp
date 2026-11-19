@@ -258,6 +258,42 @@ void Surface::paint(Painter &painter) {
     }
 }
 
+void Surface::paint(Painter &painter, const RectF &area) {
+    layout();
+    painter.fillRect(area, m_theme.window);
+    paintTree(painter, *m_root, area);
+    for (Popup &popup : m_popups) {
+        if (popup.options.modal) {
+            painter.fillRect(area, m_theme.scrim);
+        }
+        paintTree(painter, *popup.element, area);
+    }
+}
+
+void Surface::paintTree(Painter &painter, Element &element, const RectF &area) {
+    if (!element.isVisible() || element.rect().isEmpty()) {
+        return;
+    }
+    const RectF r = element.rect();
+    const RectF reach{r.x - kPaintOverflow, r.y - kPaintOverflow, r.width + 2 * kPaintOverflow,
+                      r.height + 2 * kPaintOverflow};
+    if (!reach.intersects(area)) {
+        return; // nothing of it (or of its children, which stay inside or near it) shows there
+    }
+    element.paint(painter, m_theme);
+    if (!element.children().empty()) {
+        painter.save();
+        if (element.clipsChildren()) {
+            painter.clipRect(element.rect());
+        }
+        for (const auto &child : element.children()) {
+            paintTree(painter, *child, area);
+        }
+        painter.restore();
+    }
+    element.paintOverlay(painter, m_theme);
+}
+
 void Surface::paintTree(Painter &painter, Element &element) {
     if (!element.isVisible() || element.rect().isEmpty()) {
         return;
@@ -287,12 +323,56 @@ void Surface::setClipboardText(StringView text) {
 }
 
 RectF Surface::takeDamage() {
-    const RectF damage = m_damage.intersected({0, 0, m_size.x, m_size.y});
-    m_damage = {};
-    return damage;
+    RectF all;
+    for (const RectF &r : takeDamageRects()) {
+        all = all.isEmpty() ? r : all.united(r);
+    }
+    return all;
 }
 
-void Surface::addDamage(const RectF &rect) { m_damage = m_damage.united(rect); }
+std::vector<RectF> Surface::takeDamageRects() {
+    std::vector<RectF> out;
+    const RectF bounds{0, 0, m_size.x, m_size.y};
+    for (const RectF &r : m_damage) {
+        const RectF c = r.intersected(bounds);
+        if (!c.isEmpty()) {
+            out.push_back(c);
+        }
+    }
+    m_damage.clear();
+    return out;
+}
+
+void Surface::addDamage(const RectF &rect) {
+    if (rect.isEmpty()) {
+        return;
+    }
+    // Merge with rectangles it touches or nearly touches (painting a little
+    // more beats painting the same pixels twice), repeatedly.
+    constexpr float kNear = 16.0f;
+    RectF r = rect;
+    for (bool merged = true; merged;) {
+        merged = false;
+        for (std::size_t i = 0; i < m_damage.size(); ++i) {
+            const RectF &d = m_damage[i];
+            const RectF grown{d.x - kNear, d.y - kNear, d.width + 2 * kNear, d.height + 2 * kNear};
+            if (grown.intersects(r)) {
+                r = r.united(d);
+                m_damage.erase(m_damage.begin() + std::ptrdiff_t(i));
+                merged = true;
+                break;
+            }
+        }
+    }
+    m_damage.push_back(r);
+    if (m_damage.size() > kMaxDamageRects) {
+        RectF all = m_damage.front();
+        for (const RectF &d : m_damage) {
+            all = all.united(d);
+        }
+        m_damage.assign(1, all);
+    }
+}
 
 void Surface::elementRemoved(Element &element) {
     if (contains(element, m_hovered)) {

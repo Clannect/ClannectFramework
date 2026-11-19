@@ -24,6 +24,7 @@ cfw_add_module(cfw-io
         src/MappedFile.cpp
         src/Path.cpp
         src/Process.cpp
+        src/ChildProcess.cpp
         src/Settings.cpp
         src/TemporaryDirectory.cpp
         src/Zip.cpp
@@ -39,6 +40,7 @@ if(CFW_BUILD_TESTS)
     cfw_add_test(cfw-io ByteBufferTest)
     cfw_add_test(cfw-io FileSystemTest)
     cfw_add_test(cfw-io ProcessTest)
+    cfw_add_test(cfw-io ChildProcessTest)
     target_compile_definitions(JsonTest PRIVATE CFW_IO_TESTDATA="${CMAKE_CURRENT_SOURCE_DIR}/testdata")
     cfw_add_test(cfw-io ZipTest)
     target_compile_definitions(ZipTest PRIVATE CFW_IO_TESTDATA="${CMAKE_CURRENT_SOURCE_DIR}/testdata")

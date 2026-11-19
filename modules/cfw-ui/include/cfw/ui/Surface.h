@@ -50,8 +50,19 @@ public:
     [[nodiscard]] bool needsLayout() const noexcept { return m_layoutDirty; }
     // Paints the whole tree (after layout()).
     void paint(Painter &painter);
-    // What changed since the last call (empty: nothing to repaint).
+    // Repaints only `area`: its background and the elements that reach into
+    // it (the painter should clip to `area`; a window's frame() does).
+    // Elements may draw kPaintOverflow beyond their rectangle (shadows,
+    // focus rings, glows) and are still repainted when that much reaches in.
+    void paint(Painter &painter, const RectF &area);
+    static constexpr float kPaintOverflow = 48.0f;
+    // What changed since the last call (empty: nothing to repaint), as one
+    // rectangle covering it all.
     [[nodiscard]] RectF takeDamage();
+    // The same as a few rectangles (at most kMaxDamageRects; near ones are
+    // merged), so separate small changes repaint separately.
+    [[nodiscard]] std::vector<RectF> takeDamageRects();
+    static constexpr std::size_t kMaxDamageRects = 8;
 
     // Input. Returns whether an element handled it. One pointer at a time:
     // the mouse, or the primary touch standing in for it (Window::pointer).
@@ -192,6 +203,7 @@ private:
     void elementRemoved(Element &element);
     void setHovered(Element *element);
     void paintTree(Painter &painter, Element &element);
+    void paintTree(Painter &painter, Element &element, const RectF &area);
     [[nodiscard]] std::ptrdiff_t topModal() const noexcept;
     [[nodiscard]] bool acceptsInput(const Element *element) const noexcept;
     void hideToolTip();
@@ -201,7 +213,7 @@ private:
     std::unique_ptr<Element> m_root;
     Vec2 m_size;
     bool m_layoutDirty = true;
-    RectF m_damage;
+    std::vector<RectF> m_damage;
     Element *m_hovered = nullptr;
     Element *m_pressed = nullptr;
     Element *m_focus = nullptr;

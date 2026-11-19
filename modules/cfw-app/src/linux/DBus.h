@@ -71,6 +71,10 @@ struct Message {
     String destination;
     String sender;
     std::vector<Value> body;
+    // Received file descriptors ('h' values index this); the receiver owns
+    // them and closes the ones it does not keep.
+    std::vector<int> fds;
+    std::uint32_t unixFdCount = 0; // from the header, while decoding
 
     [[nodiscard]] String bodySignature() const;
     static Message methodCall(String destination, String path, String interface, String member,
@@ -116,9 +120,14 @@ public:
     // the connection is gone.
     bool dispatch();
 
+    // Whether the bus agreed to pass file descriptors.
+    [[nodiscard]] bool passesDescriptors() const noexcept { return m_unixFds; }
+
 private:
     Connection() = default;
     bool readAvailable(int timeoutMs);
+    std::deque<int> m_receivedFds; // not yet claimed by a message
+    bool m_unixFds = false;
     void handle(Message message);
 
     int m_fd = -1;
