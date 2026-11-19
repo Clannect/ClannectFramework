@@ -43,7 +43,7 @@ Element *hitTestIn(Element &element, Vec2 point) {
             return hit;
         }
     }
-    return &element;
+    return element.isInputOnlyInChildren() ? nullptr : &element;
 }
 
 // The small panel a tooltip is: one muted-border box with the text.

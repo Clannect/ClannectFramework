@@ -93,6 +93,11 @@ public:
     // things, such as toasts or a drop indicator.
     void setTransparentForInput(bool transparent) noexcept { m_inputTransparent = transparent; }
     [[nodiscard]] bool isTransparentForInput() const noexcept { return m_inputTransparent; }
+    // The element itself takes no pointer input but its children do: an
+    // overlay layer (a drawer, a floating bar) that covers the window and
+    // lets presses between its children through to what is underneath.
+    void setInputOnlyInChildren(bool only) noexcept { m_inputOnlyInChildren = only; }
+    [[nodiscard]] bool isInputOnlyInChildren() const noexcept { return m_inputOnlyInChildren; }
 
     // ---- Pointer shape and tooltip ----
     // The pointer's shape over this element (unset: the parent's, and Arrow
@@ -185,6 +190,7 @@ private:
     bool m_clips = false;
     bool m_hoverWithin = false;
     bool m_inputTransparent = false;
+    bool m_inputOnlyInChildren = false;
 };
 
 // Lays children out in a row or a column, with spacing and padding. Spare

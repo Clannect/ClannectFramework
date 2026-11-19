@@ -356,6 +356,29 @@ void labels() {
 
 } // namespace
 
+void inputOnlyInChildren() {
+    Surface surface;
+    surface.setSize({200, 100});
+    auto &under = surface.root().add<Box>();
+    under.setClickable(true);
+    int underClicks = 0;
+    ScopedConnection a = under.clicked.connect([&] { ++underClicks; });
+    auto &layer = surface.root().add<Box>(Box::Direction::Row);
+    layer.setInputOnlyInChildren(true);
+    layer.setJustify(Box::Justify::End);
+    auto &panel = layer.add<Box>();
+    panel.setFixedSize({50, 100});
+    panel.setClickable(true);
+    int panelClicks = 0;
+    ScopedConnection b = panel.clicked.connect([&] { ++panelClicks; });
+    surface.layout();
+    click(surface, {20, 50});
+    checkEqual(underClicks, 1, "a press between an overlay's children reaches what is under it");
+    click(surface, {180, 50});
+    checkEqual(panelClicks, 1, "the overlay's children take presses");
+    checkEqual(underClicks, 1, "and keep them");
+}
+
 int main() {
     rows();
     justifyAndShrink();
@@ -367,5 +390,6 @@ int main() {
     segments();
     toasts();
     labels();
+    inputOnlyInChildren();
     return cfw::test::finish("LayoutTest");
 }
