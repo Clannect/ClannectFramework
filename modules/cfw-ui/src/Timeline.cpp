@@ -206,11 +206,11 @@ void Timeline::setTool(Tool tool) {
 }
 
 void Timeline::setSelectedClip(std::optional<std::uint64_t> id) {
-    std::vector<std::uint64_t> only;
+    // In place (GCC 13 at -O3 warns, wrongly, about copying a one-element vector).
+    m_selection.clear();
     if (id) {
-        only.push_back(*id);
+        m_selection.push_back(*id);
     }
-    m_selection = only;
     if (id != m_selected) {
         m_selected = id;
         invalidatePaint();
