@@ -20,6 +20,7 @@
 cxx-process-spawn            modules/cfw-app/src/Desktop.cpp                          1
 cxx-process-spawn            modules/cfw-app/tests/AtspiTest.cpp                      2
 cxx-process-spawn            modules/cfw-app/tests/DBusTest.cpp                       2
+cxx-process-spawn            modules/cfw-io/src/ChildProcess.cpp                      2
 cxx-process-spawn            modules/cfw-io/src/Process.cpp                           2
 cxx-process-spawn            modules/cfw-platform/tests/X11ImeTest.cpp                2
 cxx-process-spawn            tools/installer/src/main.cpp                             1
@@ -55,6 +56,7 @@ flawfinder-access            modules/cfw-io/src/Process.cpp                     
 flawfinder-chmod             modules/cfw-app/tests/DesktopTest.cpp                    1
 flawfinder-execlp            modules/cfw-app/tests/DBusTest.cpp                       1
 flawfinder-execlp            modules/cfw-platform/tests/X11ImeTest.cpp                1
+flawfinder-execv             modules/cfw-io/src/ChildProcess.cpp                      1
 flawfinder-execv             modules/cfw-io/src/Process.cpp                           1
 flawfinder-execvp            modules/cfw-app/tests/AtspiTest.cpp                      1
 flawfinder-fprintf           tools/installer/src/main.cpp                             1
