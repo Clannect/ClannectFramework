@@ -7,6 +7,7 @@
 
 #include "cfw/gfx/Painter.h"
 #include "cfw/ui/Accessibility.h"
+#include "cfw/ui/Controls.h"
 #include "cfw/ui/Surface.h"
 #include "cfw/ui/Theme.h"
 
@@ -54,12 +55,79 @@ Timeline::Timeline() {
     setRole(Role::Group);
     setAccessibleName("Timeline");
     setClipsChildren(true);
+    m_nameEditor = &add<TextField>();
+    m_nameEditor->setVisible(false);
+    m_nameEditor->setAccessibleName("Track name");
+    static_cast<void>(m_nameEditor->submitted.connect([this](const String &) { finishRename(true); }));
+    static_cast<void>(m_nameEditor->focusLost.connect([this] { finishRename(true); }));
+}
+
+// ---- Renaming tracks ----------------------------------------------------------------
+
+RectF Timeline::trackNameRect(std::size_t track) const {
+    if (track >= m_tracks.size()) {
+        return {};
+    }
+    const float h = std::min(24.0f, m_tracks[track].height - 4.0f);
+    const float top = trackTop(track) + (m_tracks[track].height - 1.0f - h) / 2.0f;
+    return {rect().x + 33.0f, top, std::max(40.0f, m_headerWidth - 33.0f - 60.0f), h};
+}
+
+void Timeline::renameTrack(std::size_t track) {
+    if (track >= m_tracks.size()) {
+        return;
+    }
+    m_renaming = track;
+    m_nameEditor->setText(m_tracks[track].name);
+    m_nameEditor->setVisible(true);
+    m_nameEditor->arrange(trackNameRect(track));
+    m_nameEditor->selectAll();
+    if (Surface *s = surface()) {
+        s->setFocus(m_nameEditor);
+    }
+    invalidatePaint();
+}
+
+void Timeline::finishRename(bool keep) {
+    if (!m_renaming) {
+        return;
+    }
+    const std::size_t track = *m_renaming;
+    m_renaming.reset(); // first: losing focus below calls here again
+    String name = m_nameEditor->text();
+    while (!name.empty() && name.back() == ' ') {
+        name.pop_back();
+    }
+    while (!name.empty() && name.front() == ' ') {
+        name.erase(0, 1);
+    }
+    m_nameEditor->setVisible(false);
+    if (Surface *s = surface(); s && s->focus() == m_nameEditor) {
+        s->setFocus(nullptr);
+    }
+    invalidatePaint();
+    if (keep && !name.empty() && track < m_tracks.size() && name != m_tracks[track].name) {
+        m_tracks[track].name = name;
+        trackRenamed.emit(track, name);
+    }
+}
+
+bool Timeline::onKey(const KeyEvent &event) {
+    // Keys the name field leaves (it bubbles them here).
+    if (m_renaming && event.type == KeyEvent::Type::Press && event.key == Key::Escape) {
+        finishRename(false);
+        return true;
+    }
+    return false;
 }
 
 // ---- Content ------------------------------------------------------------------------
 
 void Timeline::setTracks(std::vector<Track> tracks) {
     m_tracks = std::move(tracks);
+    if (m_renaming && *m_renaming >= m_tracks.size()) {
+        finishRename(false);
+    }
     clampScroll();
     invalidatePaint();
 }
@@ -67,6 +135,7 @@ void Timeline::setTracks(std::vector<Track> tracks) {
 void Timeline::setClips(std::vector<Clip> clips) {
     m_clips = std::move(clips);
     m_drag = Drag::None;
+    std::erase_if(m_selection, [&](std::uint64_t id) { return !clip(id); });
     if (m_selected && !clip(*m_selected)) {
         m_selected.reset();
     }
@@ -137,10 +206,53 @@ void Timeline::setTool(Tool tool) {
 }
 
 void Timeline::setSelectedClip(std::optional<std::uint64_t> id) {
+    std::vector<std::uint64_t> only;
+    if (id) {
+        only.push_back(*id);
+    }
+    m_selection = only;
     if (id != m_selected) {
         m_selected = id;
         invalidatePaint();
     }
+}
+
+void Timeline::setSelectedClips(std::vector<std::uint64_t> ids) {
+    m_selection = std::move(ids);
+    if (m_selected && !isSelected(*m_selected)) {
+        m_selected.reset();
+    }
+    if (!m_selected && !m_selection.empty()) {
+        m_selected = m_selection.back();
+    }
+    invalidatePaint();
+}
+
+bool Timeline::isSelected(std::uint64_t id) const {
+    return std::find(m_selection.begin(), m_selection.end(), id) != m_selection.end();
+}
+
+void Timeline::selectionDidChange() {
+    invalidatePaint();
+    selectionChanged.emit(m_selection);
+}
+
+void Timeline::boxSelect() {
+    const RectF box{std::min(m_boxFrom.x, m_boxTo.x), std::min(m_boxFrom.y, m_boxTo.y), std::abs(m_boxTo.x - m_boxFrom.x),
+                    std::abs(m_boxTo.y - m_boxFrom.y)};
+    std::vector<std::uint64_t> next = m_boxBase;
+    for (const Clip &c : m_clips) {
+        if (c.track < m_tracks.size() && !m_tracks[c.track].locked && clipRect(c).intersects(box) &&
+            std::find(next.begin(), next.end(), c.id) == next.end()) {
+            next.push_back(c.id);
+        }
+    }
+    if (next != m_selection) {
+        m_selection = std::move(next);
+        m_selected = m_selection.empty() ? std::nullopt : std::optional<std::uint64_t>(m_selection.back());
+        selectionDidChange();
+    }
+    invalidatePaint();
 }
 
 void Timeline::setSelectedBadge(std::optional<std::uint64_t> id) {
@@ -237,7 +349,12 @@ Vec2 Timeline::measureContent(Vec2 available) {
     return {available.x, std::min(available.y, kRulerHeight + tracksHeight())};
 }
 
-void Timeline::arrangeContent(const RectF &) { clampScroll(); }
+void Timeline::arrangeContent(const RectF &) {
+    clampScroll();
+    if (m_renaming) {
+        m_nameEditor->arrange(trackNameRect(*m_renaming));
+    }
+}
 
 // ---- Hit testing --------------------------------------------------------------------
 
@@ -377,6 +494,11 @@ void Timeline::drag(Vec2 position) {
         seeked.emit(t);
         return;
     }
+    if (m_drag == Drag::Box) {
+        m_boxTo = position;
+        boxSelect();
+        return;
+    }
     if (m_original.empty()) {
         return;
     }
@@ -403,7 +525,12 @@ void Timeline::drag(Vec2 position) {
         } else if (snapB) {
             ns = b;
         }
-        c.start = std::max(0.0, std::round(ns * 100.0) / 100.0);
+        // Everything dragged keeps its distance; the earliest stops at 0.
+        double earliest = o.start;
+        for (const Original &x : m_original) {
+            earliest = std::min(earliest, x.start);
+        }
+        c.start = std::max(o.start - earliest, std::round(ns * 100.0) / 100.0);
         for (std::size_t i = 1; i < m_original.size(); ++i) {
             m_clips[m_original[i].index].start = std::max(0.0, m_original[i].start + (c.start - o.start));
         }
@@ -430,6 +557,7 @@ bool Timeline::onPointer(const PointerEvent &event) {
     using Type = PointerEvent::Type;
     switch (event.type) {
     case Type::Wheel: {
+        finishRename(true); // the name would scroll away from its field
         if (hasModifier(event.modifiers, Modifier::Control)) {
             // Zoom around the pointer: the time under it stays put.
             const double t = timeAt(event.position.x);
@@ -459,6 +587,7 @@ bool Timeline::onPointer(const PointerEvent &event) {
         return false;
     }
     case Type::Press: {
+        finishRename(true); // a press anywhere else on the timeline keeps the name
         const Hit hit = hitTest(event.position);
         if (event.button == PointerButton::Right) {
             if (hit.part == Part::Clip || hit.part == Part::LeftHandle || hit.part == Part::RightHandle) {
@@ -506,10 +635,30 @@ bool Timeline::onPointer(const PointerEvent &event) {
                 razor.emit(c.id, timeAt(event.position.x));
                 return true;
             }
+            // Shift or Ctrl: add it to the selection, or take it out.
+            if (hasModifier(event.modifiers, Modifier::Shift) || hasModifier(event.modifiers, Modifier::Control)) {
+                if (isSelected(c.id)) {
+                    std::erase(m_selection, c.id);
+                    m_selected = m_selection.empty() ? std::nullopt : std::optional<std::uint64_t>(m_selection.back());
+                } else {
+                    m_selection.push_back(c.id);
+                    m_selected = c.id;
+                }
+                m_selectedBadge.reset();
+                clipSelected.emit(m_selected);
+                selectionDidChange();
+                return true;
+            }
+            const bool many = isSelected(c.id) && m_selection.size() > 1 && hit.part == Part::Clip;
+            m_pressedInMany = many; // a click without a drag then selects only this one
+            if (!many) {
+                m_selection = {c.id};
+            }
             m_selected = c.id;
             m_selectedBadge.reset();
             invalidatePaint();
             clipSelected.emit(c.id);
+            selectionChanged.emit(m_selection);
             m_drag = hit.part == Part::LeftHandle    ? Drag::TrimLeft
                      : hit.part == Part::RightHandle ? Drag::TrimRight
                                                      : Drag::Move;
@@ -517,23 +666,46 @@ bool Timeline::onPointer(const PointerEvent &event) {
             m_moved = false;
             m_original.clear();
             m_original.push_back({hit.clip, c.start, c.duration});
-            if (c.group != 0) {
-                for (std::size_t i = 0; i < m_clips.size(); ++i) {
-                    if (i != hit.clip && m_clips[i].group == c.group) {
-                        m_original.push_back({i, m_clips[i].start, m_clips[i].duration});
+            // What moves along: its group, and (moving a selected clip) the
+            // other selected clips and their groups.
+            for (std::size_t i = 0; i < m_clips.size(); ++i) {
+                const Clip &x = m_clips[i];
+                const bool sameGroup = c.group != 0 && x.group == c.group;
+                bool selectedToo = false;
+                if (many) {
+                    for (std::uint64_t id : m_selection) {
+                        const Clip *s = clip(id);
+                        selectedToo = selectedToo || x.id == id || (s && s->group != 0 && x.group == s->group);
                     }
+                }
+                if (i != hit.clip && (sameGroup || selectedToo) && !m_tracks[x.track].locked) {
+                    m_original.push_back({i, x.start, x.duration});
                 }
             }
             return true;
         }
-        case Part::Lane:
-            if (m_selected || m_selectedBadge) {
+        case Part::Header:
+            if (m_namesEditable && event.clickCount == 2 && trackNameRect(hit.track).contains(event.position)) {
+                renameTrack(hit.track);
+                return true;
+            }
+            return false;
+        case Part::Lane: {
+            // A box drag from here selects what it touches (Shift: adds).
+            const bool adding = hasModifier(event.modifiers, Modifier::Shift) || hasModifier(event.modifiers, Modifier::Control);
+            m_boxBase = adding ? m_selection : std::vector<std::uint64_t>{};
+            m_boxFrom = m_boxTo = event.position;
+            m_drag = Drag::Box;
+            if (!adding && (m_selected || m_selectedBadge || !m_selection.empty())) {
                 m_selected.reset();
+                m_selection.clear();
                 m_selectedBadge.reset();
                 invalidatePaint();
                 clipSelected.emit(std::nullopt);
+                selectionChanged.emit(m_selection);
             }
             return true;
+        }
         default: return false;
         }
     }
@@ -563,6 +735,25 @@ bool Timeline::onPointer(const PointerEvent &event) {
     case Type::Cancel: {
         const Drag was = m_drag;
         m_drag = Drag::None;
+        if (was == Drag::Box) {
+            invalidatePaint(); // the box goes
+            // A click (not a drag) on an empty spot moves the playhead there.
+            if (event.type == Type::Release && std::abs(m_boxTo.x - m_boxFrom.x) < 3.0f &&
+                std::abs(m_boxTo.y - m_boxFrom.y) < 3.0f) {
+                const double t = std::clamp(timeAt(m_boxFrom.x), 0.0, duration());
+                setPlayhead(t);
+                seeked.emit(t);
+            }
+            return true;
+        }
+        if (was == Drag::Move && !m_moved && m_pressedInMany && !m_original.empty() && event.type == Type::Release) {
+            // A click on one of several selected clips (not a drag of them
+            // all): just that one is selected now.
+            m_selection = {m_clips[m_original.front().index].id};
+            m_selected = m_selection.front();
+            selectionDidChange();
+        }
+        m_pressedInMany = false;
         if ((was == Drag::Move || was == Drag::TrimLeft || was == Drag::TrimRight) && m_moved && !m_original.empty()) {
             const std::uint64_t id = m_clips[m_original.front().index].id;
             m_original.clear();
@@ -640,7 +831,7 @@ void Timeline::paint(Painter &painter, const Theme &theme) {
         painter.fillRect({lanes.x, top + h - 1.0f, lanes.width, 1.0f}, line);
     }
     for (const Clip &c : m_clips) {
-        if (m_selected && c.id == *m_selected) {
+        if (isSelected(c.id) || (m_selected && c.id == *m_selected)) {
             continue; // on top
         }
         if (c.track < m_tracks.size()) {
@@ -648,11 +839,24 @@ void Timeline::paint(Painter &painter, const Theme &theme) {
             paintClip(painter, theme, c, t.muted || t.hidden);
         }
     }
+    for (std::uint64_t id : m_selection) {
+        if (const Clip *c = clip(id); c && c->track < m_tracks.size() && !(m_selected && id == *m_selected)) {
+            const Track &t = m_tracks[c->track];
+            paintClip(painter, theme, *c, t.muted || t.hidden);
+        }
+    }
     if (m_selected) {
         if (const Clip *c = clip(*m_selected); c && c->track < m_tracks.size()) {
             const Track &t = m_tracks[c->track];
             paintClip(painter, theme, *c, t.muted || t.hidden);
         }
+    }
+    if (m_drag == Drag::Box) {
+        // The selection box.
+        const RectF box{std::min(m_boxFrom.x, m_boxTo.x), std::min(m_boxFrom.y, m_boxTo.y),
+                        std::abs(m_boxTo.x - m_boxFrom.x), std::abs(m_boxTo.y - m_boxFrom.y)};
+        painter.fillRect(box, Color{1, 1, 1, 0.06f});
+        painter.strokeRect(box, Pen(Color{1, 1, 1, 0.45f}, 1.0f));
     }
     for (const Badge &b : m_badges) {
         if (b.track >= m_tracks.size()) {
@@ -691,7 +895,7 @@ void Timeline::paint(Painter &painter, const Theme &theme) {
                              mix(theme.textMuted, theme.window, 0.18f));
         }
         const TextLayout &name = textLayout(t.name, strong, 12.0f, theme);
-        if (!name.lines().empty()) {
+        if (!name.lines().empty() && m_renaming != i) { // the name field covers it while renaming
             const auto &ln = name.lines()[0];
             painter.save();
             painter.clipRect({r.x + 37.0f, top, m_headerWidth - 37.0f - 64.0f, t.height});
@@ -807,7 +1011,7 @@ void Timeline::paintClip(Painter &painter, const Theme &theme, const Clip &c, bo
     if (cr.right() < lanes.x || cr.x > lanes.right() || cr.bottom() < lanes.y || cr.y > lanes.bottom()) {
         return;
     }
-    const bool selected = m_selected && *m_selected == c.id;
+    const bool selected = isSelected(c.id) || (m_selected && *m_selected == c.id);
     const Track &track = m_tracks[c.track];
     painter.save();
     if (dimmed) {
@@ -821,7 +1025,7 @@ void Timeline::paintClip(Painter &painter, const Theme &theme, const Clip &c, bo
     }
     PainterPath shape;
     shape.addRoundedRect(cr, 5.0f, 5.0f);
-    painter.fillPath(shape, track.color);
+    painter.fillPath(shape, c.color.value_or(track.color));
     painter.save();
     painter.clipPath(shape);
     if (paintClipBody) {

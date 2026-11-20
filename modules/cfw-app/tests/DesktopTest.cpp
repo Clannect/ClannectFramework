@@ -95,9 +95,10 @@ void focused() {
     auto f = focusedScreen();
     if (f) {
         check(f.value().geometry.width > 0 && f.value().geometry.height > 0, "the focused screen has a size");
-        std::printf("focused screen: %s %d,%d %dx%d (%s)\n", f.value().name.c_str(), f.value().geometry.x,
+        std::printf("focused screen: %s %d,%d %dx%d (%s) of %dx%d\n", f.value().name.c_str(), f.value().geometry.x,
                     f.value().geometry.y, f.value().geometry.width, f.value().geometry.height,
-                    f.value().application.c_str());
+                    f.value().application.c_str(), f.value().desktop.width, f.value().desktop.height);
+        check(f.value().desktop.width >= f.value().geometry.width, "the desktop holds the focused screen");
     } else {
         std::printf("focused screen: not known (%s)\n", f.error().message().c_str());
         const ErrorCode c = f.error().code();

@@ -7,6 +7,7 @@
 #include <unistd.h>
 
 #include <atomic>
+#include <cstdio>
 #include <cstdlib>
 
 #include "DBus.h"
@@ -53,10 +54,16 @@ Result<FocusedScreen> focusedScreen() {
                       "const s = o ? o : (workspace.activeScreen !== undefined && typeof workspace.activeScreen === 'object'"
                       " ? workspace.activeScreen : null);\n"
                       "const g = s ? s.geometry : (w ? w.frameGeometry : {x: 0, y: 0, width: 0, height: 0});\n"
+                      "let x0 = g.x, y0 = g.y, x1 = g.x + g.width, y1 = g.y + g.height;\n"
+                      "for (const o2 of (workspace.screens || [])) {\n"
+                      "  const h = o2.geometry;\n"
+                      "  x0 = Math.min(x0, h.x); y0 = Math.min(y0, h.y);\n"
+                      "  x1 = Math.max(x1, h.x + h.width); y1 = Math.max(y1, h.y + h.height);\n"
+                      "}\n"
                       "callDBus(\"" +
                       bus.uniqueName() + "\", \"/\", \"" + kInterface +
                       "\", \"Report\", s ? String(s.name) : \"\", g.x, g.y, g.width, g.height,"
-                      " w ? String(w.resourceClass) : \"\");\n";
+                      " w ? String(w.resourceClass) : \"\", [x0, y0, x1 - x0, y1 - y0].join(\",\"));\n";
     if (auto w = writeFileAtomic(script, js); !w) {
         return w.error();
     }
@@ -68,6 +75,13 @@ Result<FocusedScreen> focusedScreen() {
             f.name = call.body[0].text;
             f.geometry = {number(call.body[1]), number(call.body[2]), number(call.body[3]), number(call.body[4])};
             f.application = call.body[5].text;
+            // KWin passes only a few arguments through: the desktop's box as "x,y,w,h".
+            if (call.body.size() >= 7) {
+                int d[4] = {};
+                if (std::sscanf(call.body[6].text.c_str(), "%d,%d,%d,%d", &d[0], &d[1], &d[2], &d[3]) == 4) {
+                    f.desktop = {d[0], d[1], d[2], d[3]};
+                }
+            }
             answer = f;
         }
         if (!(call.flags & 1)) {

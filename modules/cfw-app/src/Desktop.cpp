@@ -196,6 +196,8 @@ Result<FocusedScreen> focusedScreen() {
     f.name = narrow(info.szDevice);
     f.geometry = {int(info.rcMonitor.left), int(info.rcMonitor.top), int(info.rcMonitor.right - info.rcMonitor.left),
                   int(info.rcMonitor.bottom - info.rcMonitor.top)};
+    f.desktop = {GetSystemMetrics(SM_XVIRTUALSCREEN), GetSystemMetrics(SM_YVIRTUALSCREEN),
+                 GetSystemMetrics(SM_CXVIRTUALSCREEN), GetSystemMetrics(SM_CYVIRTUALSCREEN)};
     if (window) {
         wchar_t cls[256] = {};
         if (GetClassNameW(window, cls, 256) > 0) {

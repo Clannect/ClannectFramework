@@ -58,6 +58,11 @@ struct WindowOptions {
     // as a normal one does. On Windows the edges keep their native resize
     // hit area; elsewhere the application (UiWindow) provides it.
     bool frameless = false;
+    // The application's id ("dev.example.App"): on X11 the window's class
+    // (WM_CLASS), which desktops match to the application's desktop entry
+    // (its StartupWMClass) for the taskbar's icon and grouping. Empty: the
+    // executable's name.
+    String applicationId;
 };
 
 // An edge or corner of a window, for beginSystemResize().
@@ -75,6 +80,11 @@ public:
     virtual void show() = 0;
     virtual void hide() = 0;
     virtual void setTitle(StringView title) = 0;
+    // The window's icon (the taskbar's, the window switcher's): a square
+    // picture, ideally 256 px; smaller sizes are made from it where the
+    // system wants them. Does nothing where the platform takes icons from
+    // the application bundle (macOS).
+    virtual void setIcon(const Image &icon) { (void)icon; }
     // Client area in logical pixels.
     virtual void setSize(Vec2i size) = 0;
     // Client area in physical pixels (what present() expects).

@@ -6,7 +6,7 @@ if(WIN32)
     set(CFW_APP_ACCESSIBILITY src/AccessibilityWin32.cpp src/ScreenCastNone.cpp)
 elseif(UNIX AND NOT APPLE)
     set(CFW_APP_ACCESSIBILITY src/linux/DBus.cpp src/linux/AccessibilityAtspi.cpp src/linux/ScreenCastPortal.cpp
-        src/linux/FocusedScreen.cpp)
+        src/linux/FocusedScreen.cpp src/linux/Portal.cpp)
 else()
     set(CFW_APP_ACCESSIBILITY src/AccessibilityNone.cpp src/ScreenCastNone.cpp src/FocusedScreenNone.cpp)
 endif()
@@ -19,6 +19,7 @@ endif()
 cfw_add_module(cfw-app
     SOURCES
         src/Desktop.cpp
+        src/GlobalShortcuts.cpp
         src/GlUiWindow.cpp
         src/UiWindow.cpp
         ${CFW_APP_ACCESSIBILITY}
@@ -29,7 +30,7 @@ cfw_add_module(cfw-app
         cfw-ui
 )
 if(WIN32)
-    target_link_libraries(cfw-app PRIVATE comdlg32 shell32 oleacc oleaut32 ole32 uuid)
+    target_link_libraries(cfw-app PRIVATE comdlg32 shell32 user32 oleacc oleaut32 ole32 uuid)
 elseif(APPLE)
     target_link_libraries(cfw-app PRIVATE "-framework AppKit" "-framework UniformTypeIdentifiers")
 endif()

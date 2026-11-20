@@ -23,6 +23,11 @@
 //   razor         a press with Tool::Razor: where to split (the timeline
 //                 does not split; the owner does and calls setClips).
 //
+// A click on the ruler or on an empty part of the lanes moves the playhead
+// there (seeked). Several clips can be selected: drag a box over them from an
+// empty part of the lanes, or Shift / Ctrl + click clips to add or remove them
+// (selectionChanged). Dragging one of them then moves them all.
+//
 // Clips in the same `group` (a video clip and its own audio) move and trim
 // together. A clip on a locked track does not move: lockedClipPressed tells
 // you, so you can say why.
@@ -30,6 +35,10 @@
 // What a clip shows under its name (frames, a waveform) is the owner's: set
 // paintClipBody. Everything else is drawn from the theme and the colours
 // given here.
+//
+// Track names can be renamed in place (setTrackNamesEditable): a double
+// click on a name edits it; Enter or a click elsewhere keeps the new name
+// (trackRenamed), Escape cancels.
 //
 // Input: the wheel scrolls the tracks, Shift + wheel (or a horizontal wheel)
 // scrolls time, Ctrl + wheel zooms around the pointer.
@@ -49,6 +58,8 @@
 #include "cfw/ui/Icon.h"
 
 namespace cfw {
+
+class TextField;
 
 class Timeline : public Element {
 public:
@@ -71,6 +82,7 @@ public:
         Icon icon;              // before the label (optional)
         std::uint64_t group = 0; // non-zero: moves and trims with its group
         bool accent = false;     // a 2 px accent line on top (a suggestion)
+        std::optional<Color> color; // its own colour (unset: its track's)
     };
     struct Marker {
         double time = 0.0;
@@ -103,6 +115,14 @@ public:
     void setMarkers(std::vector<Marker> markers);
     void setBadges(std::vector<Badge> badges);
     void setIcons(Icons icons);
+    // Double-clicking a track's name edits it (off by default).
+    void setTrackNamesEditable(bool editable) noexcept { m_namesEditable = editable; }
+    [[nodiscard]] bool trackNamesEditable() const noexcept { return m_namesEditable; }
+    // Starts editing a track's name (as a double click does).
+    void renameTrack(std::size_t track);
+    [[nodiscard]] std::optional<std::size_t> renamingTrack() const noexcept { return m_renaming; }
+    // Where a track's name is drawn (surface coordinates).
+    [[nodiscard]] RectF trackNameRect(std::size_t track) const;
     // Draws what a clip shows below its name (frames, a waveform) in `body`.
     std::function<void(Painter &, const Clip &, const RectF &body, const Theme &)> paintClipBody;
 
@@ -120,8 +140,13 @@ public:
     [[nodiscard]] bool snapping() const noexcept { return m_snapping; }
     void setTool(Tool tool);
     [[nodiscard]] Tool tool() const noexcept { return m_tool; }
+    // The selected clip (the one pressed last), and every selected clip.
+    // Setting one clip selects only it.
     void setSelectedClip(std::optional<std::uint64_t> id);
     [[nodiscard]] std::optional<std::uint64_t> selectedClip() const noexcept { return m_selected; }
+    void setSelectedClips(std::vector<std::uint64_t> ids);
+    [[nodiscard]] const std::vector<std::uint64_t> &selectedClips() const noexcept { return m_selection; }
+    [[nodiscard]] bool isSelected(std::uint64_t id) const;
     void setSelectedBadge(std::optional<std::uint64_t> id);
     void setHeaderWidth(float width);
     [[nodiscard]] float headerWidth() const noexcept { return m_headerWidth; }
@@ -142,6 +167,7 @@ public:
     // ---- Signals ----
     Signal<double> seeked;                                // the user moved the playhead
     Signal<std::optional<std::uint64_t>> clipSelected;    // a press on a clip / on an empty lane
+    Signal<const std::vector<std::uint64_t> &> selectionChanged; // after any change to the selection
     Signal<std::uint64_t> badgeSelected;
     Signal<> editStarted;                                 // a drag is about to change clips
     Signal<std::uint64_t> clipChanged;                    // during the drag
@@ -151,9 +177,11 @@ public:
     Signal<std::size_t, TrackFlag> trackFlagToggled;      // after the flag changed
     Signal<std::uint64_t, Vec2> clipContextMenuRequested; // surface position
     Signal<double> zoomChanged;                           // Ctrl + wheel
+    Signal<std::size_t, const String &> trackRenamed;     // a new, non-empty name (already set)
 
     void paint(Painter &painter, const Theme &theme) override;
     bool onPointer(const PointerEvent &event) override;
+    bool onKey(const KeyEvent &event) override;
     [[nodiscard]] std::optional<Cursor> cursorAt(Vec2 position) const override;
     void describeAccessible(AccessibleNode &node) const override;
 
@@ -186,6 +214,7 @@ private:
                                  const Theme &theme);
     void paintRuler(Painter &painter, const Theme &theme, const RectF &lanes);
     void paintClip(Painter &painter, const Theme &theme, const Clip &clip, bool dimmed);
+    void finishRename(bool keep);
 
     std::vector<Track> m_tracks;
     std::vector<Clip> m_clips;
@@ -202,7 +231,7 @@ private:
     Vec2 m_scroll;
 
     // The gesture in progress.
-    enum class Drag : std::uint8_t { None, Seek, Move, TrimLeft, TrimRight };
+    enum class Drag : std::uint8_t { None, Seek, Move, TrimLeft, TrimRight, Box };
     Drag m_drag = Drag::None;
     std::size_t m_dragClip = 0;
     float m_pressX = 0.0f;
@@ -212,8 +241,19 @@ private:
         double start, duration;
     };
     std::vector<Original> m_original; // the dragged clip first, then its group
+    std::vector<std::uint64_t> m_selection;    // every selected clip
+    std::vector<std::uint64_t> m_boxBase;      // selected before a box drag that adds (Shift)
+    bool m_pressedInMany = false;              // the press was on one of several selected clips
+    Vec2 m_boxFrom, m_boxTo;                   // the selection box, surface coordinates
+    void selectionDidChange();
+    void boxSelect();
 
     std::unordered_map<std::string, TextLayout> m_text;
+
+    // Renaming a track: a child field over the name, hidden otherwise.
+    TextField *m_nameEditor = nullptr;
+    std::optional<std::size_t> m_renaming;
+    bool m_namesEditable = false;
 };
 
 } // namespace cfw

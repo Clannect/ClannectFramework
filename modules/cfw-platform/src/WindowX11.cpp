@@ -684,6 +684,41 @@ public:
         XFlush(c.display);
     }
 
+    void setIcon(const Image &icon) override {
+        // _NET_WM_ICON: width, height, then ARGB pixels (straight alpha),
+        // each in a CARDINAL (a long), at a few sizes.
+        X11Connection &c = connection();
+        if (icon.width() == 0 || icon.height() == 0) {
+            return;
+        }
+        std::vector<unsigned long> data;
+        for (const std::uint32_t size : {256u, 128u, 64u, 48u, 32u, 16u}) {
+            const std::uint32_t w = std::min(size, icon.width()), h = std::min(size, icon.height());
+            data.push_back(w);
+            data.push_back(h);
+            const auto px = icon.pixels();
+            const bool premultiplied = icon.alphaMode() == AlphaMode::Premultiplied;
+            for (std::uint32_t y = 0; y < h; ++y) {
+                for (std::uint32_t x = 0; x < w; ++x) {
+                    // Nearest pixel of the source (a scaled-down copy).
+                    const std::size_t sx = std::size_t(x) * icon.width() / w, sy = std::size_t(y) * icon.height() / h;
+                    const std::uint8_t *p = &px[(sy * icon.width() + sx) * 4];
+                    unsigned r = p[0], g = p[1], b = p[2], a = p[3];
+                    if (premultiplied && a > 0 && a < 255) {
+                        r = std::min(255u, r * 255 / a);
+                        g = std::min(255u, g * 255 / a);
+                        b = std::min(255u, b * 255 / a);
+                    }
+                    data.push_back((static_cast<unsigned long>(a) << 24) | (r << 16) | (g << 8) | b);
+                }
+            }
+        }
+        const Atom netWmIcon = XInternAtom(c.display, "_NET_WM_ICON", False);
+        XChangeProperty(c.display, m_window, netWmIcon, XA_CARDINAL, 32, PropModeReplace,
+                        reinterpret_cast<const unsigned char *>(data.data()), int(data.size()));
+        XFlush(c.display);
+    }
+
     void setSize(Vec2i size) override {
         XResizeWindow(connection().display, m_window, unsigned(std::max(1, int(float(size.x) * m_scale))),
                       unsigned(std::max(1, int(float(size.y) * m_scale))));
@@ -1257,6 +1292,15 @@ Result<std::unique_ptr<Window>> Window::create(const WindowOptions &options) {
                      ButtonReleaseMask | PointerMotionMask | LeaveWindowMask | FocusChangeMask);
     Atom protocols[] = {c.deleteWindow};
     XSetWMProtocols(display, window, protocols, 1);
+    if (!options.applicationId.empty()) {
+        // WM_CLASS: "instance\0class\0".
+        XClassHint *hint = XAllocClassHint();
+        String id = options.applicationId;
+        hint->res_name = id.data();
+        hint->res_class = id.data();
+        XSetClassHint(display, window, hint);
+        XFree(hint);
+    }
     // Files can be dropped on every window (XDND 5); a window without a drop
     // handler refuses them.
     const unsigned long xdndVersion = 5;

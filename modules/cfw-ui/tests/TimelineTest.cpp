@@ -186,6 +186,108 @@ void lockedRazorFlags() {
     checkNear(f.tl->clip(2)->duration, 10.0, 1e-9, "the timeline leaves the split to its owner");
 }
 
+void renaming() {
+    Fixture f;
+    std::size_t renamed = 99;
+    String to;
+    ScopedConnection a = f.tl->trackRenamed.connect([&](std::size_t t, const String &n) {
+        renamed = t;
+        to = n;
+    });
+    auto doubleClick = [&](Vec2 at) {
+        f.surface.dispatch(pointer(PointerEvent::Type::Move, at));
+        PointerEvent press = pointer(PointerEvent::Type::Press, at);
+        f.surface.dispatch(press);
+        f.surface.dispatch(pointer(PointerEvent::Type::Release, at));
+        press.clickCount = 2;
+        f.surface.dispatch(press);
+        f.surface.dispatch(pointer(PointerEvent::Type::Release, at));
+    };
+    const RectF name = f.tl->trackNameRect(1);
+    doubleClick({name.x + 10, name.y + name.height / 2});
+    check(!f.tl->renamingTrack(), "names are not editable unless asked for");
+
+    f.tl->setTrackNamesEditable(true);
+    doubleClick({name.x + 10, name.y + name.height / 2});
+    check(f.tl->renamingTrack() == std::optional<std::size_t>(1), "a double click on a name edits it");
+    TextEvent typed;
+    typed.text = "Audio - Game";
+    f.surface.dispatch(typed); // replaces the selected old name
+    KeyEvent enter;
+    enter.key = Key::Enter;
+    f.surface.dispatch(enter);
+    check(!f.tl->renamingTrack(), "Enter finishes");
+    checkEqual(renamed, std::size_t(1), "trackRenamed names the track");
+    checkEqual(to, String("Audio - Game"), "and the new name");
+    checkEqual(f.tl->tracks()[1].name, String("Audio - Game"), "which the track now has");
+
+    renamed = 99;
+    f.tl->renameTrack(0);
+    TextEvent other;
+    other.text = "Nope";
+    f.surface.dispatch(other);
+    KeyEvent escape;
+    escape.key = Key::Escape;
+    f.surface.dispatch(escape);
+    check(!f.tl->renamingTrack(), "Escape cancels");
+    checkEqual(f.tl->tracks()[0].name, String("Video"), "keeping the old name");
+    checkEqual(renamed, std::size_t(99), "without a rename");
+
+    f.tl->renameTrack(0);
+    TextEvent third;
+    third.text = "Video - Screen";
+    f.surface.dispatch(third);
+    click(f.surface, f.in(2)); // a click elsewhere keeps it
+    checkEqual(f.tl->tracks()[0].name, String("Video - Screen"), "a click elsewhere keeps the name");
+}
+
+void multiSelect() {
+    Fixture f;
+    std::vector<std::uint64_t> last;
+    ScopedConnection a = f.tl->selectionChanged.connect([&](const std::vector<std::uint64_t> &ids) { last = ids; });
+    // A box from an empty spot over clips 1 and 2 on the video track
+    // (clip 1 spans 0-10 s, clip 2 20-30 s; 10 px per second after a 100 px header).
+    const RectF r = f.tl->rect();
+    const float videoMid = r.y + Timeline::kRulerHeight + 25;
+    const Vec2 from{r.x + 100 + 350, videoMid - 20};
+    dragTo(f.surface, from, {r.x + 100 + 5, videoMid + 5});
+    check(f.tl->isSelected(1) && f.tl->isSelected(2) && !f.tl->isSelected(3), "a box selects the clips it touches");
+    checkEqual(last.size(), std::size_t(2), "and says so");
+
+    // Shift + click adds the audio clip; again takes it out.
+    PointerEvent press = pointer(PointerEvent::Type::Press, f.in(3));
+    press.modifiers = Modifier::Shift;
+    f.surface.dispatch(pointer(PointerEvent::Type::Move, f.in(3)));
+    f.surface.dispatch(press);
+    f.surface.dispatch(pointer(PointerEvent::Type::Release, f.in(3)));
+    check(f.tl->isSelected(3) && f.tl->selectedClips().size() == 3, "Shift + click adds a clip");
+    f.surface.dispatch(press);
+    f.surface.dispatch(pointer(PointerEvent::Type::Release, f.in(3)));
+    check(!f.tl->isSelected(3) && f.tl->selectedClips().size() == 2, "and takes it out again");
+
+    // A click (no drag) on one of the selected clips selects only it.
+    {
+        Fixture g;
+        g.tl->setSelectedClips({1, 2, 3});
+        click(g.surface, g.in(2));
+        check(g.tl->selectedClips() == std::vector<std::uint64_t>{2}, "a click on one of several selects just it");
+    }
+    // Dragging one selected clip moves the others too.
+    const Vec2 p = f.in(2);
+    dragTo(f.surface, p, {p.x + 50, p.y});
+    checkNear(f.tl->clip(2)->start, 25.0, 0.2, "the dragged clip moves");
+    checkNear(f.tl->clip(1)->start, 5.0, 0.2, "and the other selected one with it");
+
+    // A plain press on an empty spot clears the selection and seeks there.
+    double seekedTo = -1;
+    ScopedConnection b = f.tl->seeked.connect([&](double t) { seekedTo = t; });
+    // (An empty spot on the audio track at 25 s: its clip moved to 5-15 s.)
+    const Vec2 spot{r.x + 100 + 250, r.y + Timeline::kRulerHeight + 50 + 20};
+    click(f.surface, spot);
+    check(f.tl->selectedClips().empty(), "a press on an empty spot clears the selection");
+    checkNear(seekedTo, f.tl->timeAt(spot.x), 0.05, "and moves the playhead there");
+}
+
 void wheelAndPaint() {
     Fixture f;
     double zoomed = 0;
@@ -230,6 +332,8 @@ int main() {
     moveSnapAndGroups();
     trim();
     lockedRazorFlags();
+    renaming();
+    multiSelect();
     wheelAndPaint();
     return cfw::test::finish("TimelineTest");
 }

@@ -61,6 +61,7 @@ struct FocusedScreen {
     String name;        // the system's name for the monitor: "HDMI-A-1", \\.\DISPLAY1
     Recti geometry;     // on the desktop, in the desktop's coordinates
     String application; // the focused window's application class, when known
+    Recti desktop;      // every screen together (their bounding box), same coordinates
 };
 
 // Windows asks the window manager; on Linux, KWin (Plasma), through a short

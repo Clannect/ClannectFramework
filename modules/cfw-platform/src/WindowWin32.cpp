@@ -352,6 +352,72 @@ public:
     void hide() override { ShowWindow(m_hwnd, SW_HIDE); }
     void setTitle(StringView title) override { SetWindowTextW(m_hwnd, wide(title).c_str()); }
 
+    void setIcon(const Image &icon) override {
+        if (icon.width() == 0 || icon.height() == 0) {
+            return;
+        }
+        // A 32-bit top-down DIB (BGRA, straight alpha, as icons take it) and
+        // an empty mask.
+        auto make = [&](int size) -> HICON {
+            BITMAPV5HEADER bi{};
+            bi.bV5Size = sizeof bi;
+            bi.bV5Width = size;
+            bi.bV5Height = -size;
+            bi.bV5Planes = 1;
+            bi.bV5BitCount = 32;
+            bi.bV5Compression = BI_BITFIELDS;
+            bi.bV5RedMask = 0x00FF0000;
+            bi.bV5GreenMask = 0x0000FF00;
+            bi.bV5BlueMask = 0x000000FF;
+            bi.bV5AlphaMask = 0xFF000000;
+            void *bits = nullptr;
+            HDC dc = GetDC(nullptr);
+            HBITMAP color = CreateDIBSection(dc, reinterpret_cast<BITMAPINFO *>(&bi), DIB_RGB_COLORS, &bits, nullptr, 0);
+            ReleaseDC(nullptr, dc);
+            if (!color) {
+                return nullptr;
+            }
+            auto *out = static_cast<std::uint32_t *>(bits);
+            const auto px = icon.pixels();
+            const bool premultiplied = icon.alphaMode() == AlphaMode::Premultiplied;
+            for (int y = 0; y < size; ++y) {
+                for (int x = 0; x < size; ++x) {
+                    const std::size_t sx = std::size_t(x) * icon.width() / std::size_t(size);
+                    const std::size_t sy = std::size_t(y) * icon.height() / std::size_t(size);
+                    const std::uint8_t *p = &px[(sy * icon.width() + sx) * 4];
+                    unsigned r = p[0], g = p[1], b = p[2], a = p[3];
+                    if (premultiplied && a > 0 && a < 255) {
+                        r = std::min(255u, r * 255 / a);
+                        g = std::min(255u, g * 255 / a);
+                        b = std::min(255u, b * 255 / a);
+                    }
+                    out[y * size + x] = (a << 24) | (r << 16) | (g << 8) | b;
+                }
+            }
+            HBITMAP mask = CreateBitmap(size, size, 1, 1, nullptr);
+            ICONINFO ii{};
+            ii.fIcon = TRUE;
+            ii.hbmColor = color;
+            ii.hbmMask = mask;
+            HICON h = CreateIconIndirect(&ii);
+            DeleteObject(color);
+            DeleteObject(mask);
+            return h;
+        };
+        const HICON big = make(GetSystemMetrics(SM_CXICON) > 32 ? 64 : 32);
+        const HICON small = make(GetSystemMetrics(SM_CXSMICON) > 16 ? 32 : 16);
+        if (big) {
+            if (HICON old = reinterpret_cast<HICON>(SendMessageW(m_hwnd, WM_SETICON, ICON_BIG, LPARAM(big)))) {
+                DestroyIcon(old);
+            }
+        }
+        if (small) {
+            if (HICON old = reinterpret_cast<HICON>(SendMessageW(m_hwnd, WM_SETICON, ICON_SMALL, LPARAM(small)))) {
+                DestroyIcon(old);
+            }
+        }
+    }
+
     void setTextInputArea(const std::optional<RectF> &caret) override {
         if (!caret) {
             // Keys go to the application as keys (a game's WASD), not to
