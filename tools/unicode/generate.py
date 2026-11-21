@@ -17,6 +17,7 @@ generated files, so a regeneration is reproducible. Writes:
     modules/cfw-text/src/ArabicFallback.inc             presentation forms for fonts without Arabic GSUB
     modules/cfw-text/src/SyllabicTables.inc             the syllabic shapers' character categories
 """
+import utils.session
 import hashlib
 import os
 import sys

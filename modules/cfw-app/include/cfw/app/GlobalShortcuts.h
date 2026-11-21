@@ -1,11 +1,11 @@
 #pragma once
 
 // System-wide keyboard shortcuts: keys that reach the application while
-// another one has the keyboard (a game, a full-screen video), for "save a
-// clip" or "start recording".
+// another one has the keyboard (a full-screen game or video, another
+// window), for things like push-to-talk, play / pause, or show / hide.
 //
 //     auto keys = GlobalShortcuts::start("dev.example.App",
-//                                        {{"clip", "Save a clip", "F8"}, {"rec", "Record", "Alt+F9"}});
+//                                        {{"toggle", "Show or hide", "Ctrl+Alt+Space"}, {"mute", "Mute", "F9"}});
 //     ...every pass of the main loop:
 //     for (const String &id : keys->takeActivated()) { ... }
 //
@@ -29,8 +29,8 @@
 namespace cfw {
 
 struct GlobalShortcut {
-    String id;          // "clip"
-    String description; // "Save a clip" (the desktop shows it)
+    String id;          // "toggle"
+    String description; // "Show or hide" (the desktop shows it)
     String trigger;     // "F8", "Alt+F9", "Ctrl+Shift+S"
 };
 
@@ -39,7 +39,7 @@ public:
     enum class State { Registering, Active, Failed };
 
     // `applicationId` names the application to the desktop (reverse DNS,
-    // like its .desktop file: "dev.clannect.Capture").
+    // like its .desktop file: "dev.example.App").
     [[nodiscard]] static std::unique_ptr<GlobalShortcuts> start(String applicationId,
                                                                std::vector<GlobalShortcut> shortcuts);
     ~GlobalShortcuts();

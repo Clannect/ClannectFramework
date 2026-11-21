@@ -1,7 +1,8 @@
 /build/
 /CMakeUserPresets.json
 /.vs/
-/.vscode/
 /.cache/
 compile_commands.json
 __pycache__/
+config.bat
+node_modules
