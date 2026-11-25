@@ -1,0 +1,146 @@
+# Signed-push guard: undoes pushes that did not come from a trusted, signing account.
+#
+# The PolinRider malware force-pushes forged copies of real commits (same message,
+# author and date, unsigned) with a dropper added. Branch protection is not available
+# for these private repos, so this workflow is the protection: on every branch push it
+# checks, through the GitHub API only (the pushed code is never checked out or run):
+#
+#   - the account that pushed is on TRUSTED, and
+#   - every new commit is verified by GitHub and committed by a TRUSTED account
+#     (or by web-flow, GitHub's own signer for web merges, with a TRUSTED author).
+#
+# If not, it moves the branch back to the last good commit (a new branch is deleted)
+# and opens an issue. The same file is in every Clannect repo; change it everywhere.
+# See docs/security/malware-incidents.md in Clannect-App.
+
+name: Signed-push guard
+
+on:
+  push:
+    branches: ["**"]
+
+permissions:
+  contents: write
+  issues: write
+
+concurrency:
+  group: signed-push-guard-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check the push
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          REF: ${{ github.ref }}
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.event.after }}
+          DELETED: ${{ github.event.deleted }}
+          PUSHER: ${{ github.actor }}
+          # Accounts that may push. Each must sign its commits with a key added to
+          # GitHub as a signing key. MuhammedYigitDemirci stays off until that
+          # machine is cleaned and the account's tokens are revoked.
+          TRUSTED: "itsr3dguy necatiprok1 nabeel929 hamilton-ai0"
+          ALERT: itsr3dguy
+        run: |
+          set -euo pipefail
+          ZERO=0000000000000000000000000000000000000000
+          branch="${REF#refs/heads/}"
+          trusted=" $TRUSTED "
+          is_trusted() { [[ "$trusted" == *" $1 "* ]]; }
+
+          if [ "$DELETED" = "true" ]; then
+            echo "Branch $branch was deleted by $PUSHER; nothing to check."
+            exit 0
+          fi
+
+          # A commit is good when GitHub verified its signature and a trusted
+          # account committed it (web-flow: a web merge by a trusted author).
+          commit_ok() { # verified committer author
+            [ "$1" = "true" ] || return 1
+            is_trusted "$2" && return 0
+            [ "$2" = "web-flow" ] && is_trusted "$3"
+          }
+          sha_ok() {
+            local v c a
+            read -r v c a < <(gh api "repos/$REPO/commits/$1" \
+              --jq '[(.commit.verification.verified|tostring), (.committer.login // "none"), (.author.login // "none")] | join(" ")')
+            commit_ok "$v" "$c" "$a"
+          }
+
+          problems=""
+          if ! is_trusted "$PUSHER"; then
+            problems+="- Pushed by \`$PUSHER\`, who is not on the trusted list."$'\n'
+          fi
+
+          if [ "$BEFORE" = "$ZERO" ]; then
+            base=$(gh api "repos/$REPO" --jq .default_branch)
+          else
+            base="$BEFORE"
+          fi
+          gh api --paginate "repos/$REPO/compare/$base...$AFTER?per_page=100" \
+            --jq '.commits[] | [.sha, (.commit.verification.verified|tostring), .commit.verification.reason, (.committer.login // "none"), (.author.login // "none"), (.commit.message|split("\n")[0])] | @tsv' \
+            > commits.tsv
+          echo "New commits on $branch (pushed by $PUSHER):"
+          cat commits.tsv
+
+          while IFS=$'\t' read -r sha verified reason committer author subject; do
+            if ! commit_ok "$verified" "$committer" "$author"; then
+              problems+="- \`${sha:0:8}\` ${subject} (signature: ${reason}, committer: ${committer})"$'\n'
+            fi
+          done < commits.tsv
+
+          if [ -z "$problems" ]; then
+            echo "All good."
+            exit 0
+          fi
+
+          echo "::error::Untrusted push to $branch"
+          printf '%s' "$problems"
+
+          # Act only if the branch still points at this push; an earlier run may
+          # already have moved it.
+          current=$(gh api "repos/$REPO/git/ref/heads/$branch" --jq .object.sha 2>/dev/null || echo gone)
+          if [ "$current" != "$AFTER" ]; then
+            action="The branch had already moved to \`${current:0:8}\`, so nothing was changed. Check that commit."
+          elif [ "$BEFORE" = "$ZERO" ]; then
+            if gh api -X DELETE "repos/$REPO/git/refs/heads/$branch"; then
+              action="The new branch \`$branch\` was deleted."
+            else
+              action="Deleting the new branch \`$branch\` **failed**. Delete it by hand."
+            fi
+          else
+            # Go back to the last good commit at or before BEFORE (first parents).
+            target="$BEFORE"
+            for _ in $(seq 1 50); do
+              sha_ok "$target" && break
+              target=$(gh api "repos/$REPO/commits/$target" --jq '.parents[0].sha // empty')
+              [ -n "$target" ] || break
+            done
+            if [ -n "$target" ] && sha_ok "$target"; then
+              if gh api -X PATCH "repos/$REPO/git/refs/heads/$branch" -f sha="$target" -F force=true > /dev/null; then
+                action="\`$branch\` was moved back to \`${target:0:8}\`."
+              else
+                action="Moving \`$branch\` back to \`${target:0:8}\` **failed** (a workflow file may differ). Force-push it by hand."
+              fi
+            else
+              action="No good commit was found to go back to, so \`$branch\` was left as it is. **Fix it by hand.**"
+            fi
+          fi
+
+          {
+            echo "@$ALERT the signed-push guard stopped a push to \`$branch\`."
+            echo
+            echo "$problems"
+            echo "**Action:** $action"
+            echo
+            echo "Pushed commit: \`$AFTER\` · previous: \`$BEFORE\` · run: $GITHUB_SERVER_URL/$REPO/actions/runs/$GITHUB_RUN_ID"
+            echo
+            echo "If this was malware, tag the pushed commits with \`git notes add -m 'INCLUDES MALWARE!' <sha>\` and don't check them out. If it was a real push, sign the commits and push again."
+          } > body.md
+          gh issue create -R "$REPO" --title "Signed-push guard: push to $branch undone" --body-file body.md
+          exit 1
